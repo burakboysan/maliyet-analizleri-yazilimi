@@ -1,0 +1,16 @@
+db_config.json
+smtp_config.json
+update_config.json
+*.env
+logs/
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+build/
+dist/
+dist_installer/
+Bomaksan_Maliyet_Analizleri_Setup/
+.deploy_tmp_mobile_api/
+.deploy_tmp_mobile_api_v2/

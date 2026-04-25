@@ -1,0 +1,13 @@
+{
+  "host": "DB_HOST_BURAYA",
+  "port": 3306,
+  "user": "DB_KULLANICI",
+  "password": "DB_SIFRE",
+  "database": "DB_ADI",
+  "connection_timeout": 30,
+  "pool_timeout": 5,
+  "pool_size": 1,
+  "use_pure": true,
+  "charset": "utf8mb4",
+  "collation": "utf8mb4_unicode_ci"
+}
