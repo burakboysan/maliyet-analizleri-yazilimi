@@ -403,6 +403,10 @@ def exclude_ai_lead(token, lead_id, reason):
     )
 
 
+def delete_ai_lead(token, lead_id):
+    return request_json("DELETE", f"/desktop/ai-leads/{int(lead_id)}", headers=auth_headers(token)) or {}
+
+
 def generate_ai_email_draft(token, lead_id, step_number=1):
     return request_json(
         "POST",

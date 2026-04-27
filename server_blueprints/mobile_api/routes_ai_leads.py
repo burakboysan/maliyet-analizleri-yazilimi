@@ -903,6 +903,18 @@ def _dedupe_strings(values: list[str]) -> list[str]:
     return deduped
 
 
+def _apollo_person_key(person: dict[str, Any]) -> str:
+    organization = person.get("organization") or {}
+    for key in ("id", "email", "linkedin_url"):
+        value = _normalize(person.get(key))
+        if value:
+            return f"{key}:{value.casefold()}"
+    name = _normalize(person.get("name") or " ".join(part for part in [person.get("first_name"), person.get("last_name")] if part))
+    title = _normalize(person.get("title"))
+    org_name = _normalize(organization.get("name") or person.get("organization_name"))
+    return f"fallback:{name.casefold()}|{title.casefold()}|{org_name.casefold()}"
+
+
 def _email_enrichment_note(person: dict[str, Any], email_value: str, email_status: str, attempted: bool = True) -> str:
     status = _normalize(email_status).casefold()
     if email_value:
@@ -1695,6 +1707,7 @@ def search_apollo_by_segment(
     selected_attempt = None
     try:
         people = []
+        seen_people = set()
         attempts = _segment_search_attempts(recipe, country, limit)
         start_page = max(int(payload.page or 1), 1)
         for attempt in attempts:
@@ -1702,10 +1715,19 @@ def search_apollo_by_segment(
             people_query["page"] = start_page
             attempt_name = str(people_query.pop("name", "search"))
             people_response = _apollo_post("/mixed_people/api_search", payload={}, query=people_query)
-            people = people_response.get("people") or people_response.get("contacts") or []
+            attempt_people = people_response.get("people") or people_response.get("contacts") or []
+            if attempt_people:
+                selected_attempt = attempt_name if not selected_attempt else f"{selected_attempt}, {attempt_name}"
+            for person in attempt_people:
+                person_key = _apollo_person_key(person)
+                if person_key in seen_people:
+                    continue
+                seen_people.add(person_key)
+                people.append(person)
+                if len(people) >= limit:
+                    break
             found_contacts = len(people)
-            selected_attempt = attempt_name
-            if people:
+            if len(people) >= limit:
                 break
         if payload.enrich and people:
             people = _bulk_enrich_people(people, "")
@@ -2030,6 +2052,23 @@ def exclude_ai_lead(
     _log_action(db, lead_id, "exclude", _normalize(payload.reason), current_user.id)
     db.commit()
     return {"status": "ok"}
+
+
+@router.delete("/ai-leads/{lead_id}")
+def delete_ai_lead(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    row = db.execute(text("SELECT company_name FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Lead bulunamadı.")
+    result = db.execute(text("DELETE FROM ai_leads WHERE id = :id"), {"id": lead_id})
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Lead bulunamadı.")
+    db.commit()
+    return {"status": "deleted", "lead_id": lead_id, "company_name": row[0]}
 
 
 @router.post("/ai-leads/{lead_id}/email-drafts")

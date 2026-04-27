@@ -4,7 +4,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, enrich_ai_lead_from_apollo, generate_ai_email_sequence, list_ai_leads, search_apollo_ai_leads, search_apollo_segment_leads
+from core.api_client import ApiClientError, delete_ai_lead, enrich_ai_lead_from_apollo, generate_ai_email_sequence, list_ai_leads, search_apollo_ai_leads, search_apollo_segment_leads
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
@@ -602,12 +602,37 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def delete_selected_lead():
+        token = get_app_token()
+        lead = selected_lead()
+        if not token:
+            messagebox.showerror("Lead Sil", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+        if not lead:
+            messagebox.showwarning("Lead Sil", "Lütfen silinecek lead'i seçin.", parent=win)
+            return
+        company = lead.get("company_name") or "seçili lead"
+        if not messagebox.askyesno("Lead Sil", f"{company} tablodan silinsin mi?", parent=win):
+            return
+
+        def worker():
+            try:
+                delete_ai_lead(token, lead.get("id"))
+                state["leads"] = [item for item in state["leads"] if str(item.get("id")) != str(lead.get("id"))]
+                win.after(0, apply_filters)
+                win.after(0, lambda: messagebox.showinfo("Lead Sil", "Lead tablodan silindi.", parent=win))
+            except Exception as exc:
+                win.after(0, lambda err=str(exc): messagebox.showerror("Lead Sil", f"Lead silinemedi: {err}", parent=win))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     ctk.CTkButton(actions, text="Yenile", width=110, command=load_from_api, fg_color="#ffffff", text_color="#d32f2f", border_width=1, border_color="#d32f2f").pack(side="left", padx=(0, 8))
     ctk.CTkButton(actions, text="CSV Import", width=120, command=import_csv, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Segmentten Lead Bul", width=165, command=segment_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Apollo Search", width=130, command=apollo_search, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Email Enrich", width=120, command=enrich_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Sekans Oluştur", width=145, command=create_sequence_for_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left", padx=8)
+    ctk.CTkButton(actions, text="Sil", width=90, command=delete_selected_lead, fg_color="#ffffff", text_color="#dc2626", border_width=1, border_color="#dc2626").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Manuel Lead", width=130, command=add_manual_lead, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=(8, 0))
 
     search_var.trace_add("write", apply_filters)
