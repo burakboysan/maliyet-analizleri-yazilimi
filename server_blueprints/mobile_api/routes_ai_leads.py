@@ -1,4 +1,7 @@
+import json
+import os
 from typing import Any, List, Optional
+from urllib import error, parse, request
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -45,6 +48,7 @@ class AiLeadContactRequest(BaseModel):
     last_name: Optional[str] = None
     title: Optional[str] = None
     email: Optional[str] = None
+    email_status: Optional[str] = None
     linkedin_url: Optional[str] = None
     phone: Optional[str] = None
 
@@ -81,6 +85,16 @@ class AiExcludeRequest(BaseModel):
 
 class AiEmailDraftRequest(BaseModel):
     step_number: int = 1
+
+
+class ApolloSearchRequest(BaseModel):
+    country: Optional[str] = None
+    person_titles: List[str] = []
+    keywords: List[str] = []
+    organization_locations: List[str] = []
+    per_page: int = 25
+    page: int = 1
+    reveal_emails: bool = False
 
 
 def _normalize(value: Any) -> str:
@@ -191,6 +205,9 @@ def _ensure_tables(db: Session) -> None:
             local_language VARCHAR(100),
             source ENUM('Apollo', 'Manual', 'CSV') DEFAULT 'Manual',
             source_reference VARCHAR(255),
+            apollo_person_id VARCHAR(100),
+            apollo_organization_id VARCHAR(100),
+            apollo_raw_json JSON,
             company_description TEXT,
             detected_activity TEXT,
             status ENUM(
@@ -226,8 +243,11 @@ def _ensure_tables(db: Session) -> None:
             last_name VARCHAR(120),
             title VARCHAR(255),
             email VARCHAR(255),
+            email_status VARCHAR(80),
             linkedin_url VARCHAR(500),
             phone VARCHAR(100),
+            apollo_person_id VARCHAR(100),
+            apollo_raw_json JSON,
             decision_maker_score INT DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (lead_id) REFERENCES ai_leads(id) ON DELETE CASCADE,
@@ -300,6 +320,31 @@ def _ensure_tables(db: Session) -> None:
     for statement in statements:
         db.execute(text(statement))
     db.commit()
+    _ensure_column(db, "ai_leads", "apollo_person_id", "VARCHAR(100)")
+    _ensure_column(db, "ai_leads", "apollo_organization_id", "VARCHAR(100)")
+    _ensure_column(db, "ai_leads", "apollo_raw_json", "JSON")
+    _ensure_column(db, "ai_lead_contacts", "email_status", "VARCHAR(80)")
+    _ensure_column(db, "ai_lead_contacts", "apollo_person_id", "VARCHAR(100)")
+    _ensure_column(db, "ai_lead_contacts", "apollo_raw_json", "JSON")
+    _ensure_column(db, "ai_segmentation_results", "suggested_sequence", "VARCHAR(100)")
+    db.commit()
+
+
+def _ensure_column(db: Session, table_name: str, column_name: str, column_definition: str) -> None:
+    exists = db.execute(
+        text(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = :table_name
+              AND COLUMN_NAME = :column_name
+            """
+        ),
+        {"table_name": table_name, "column_name": column_name},
+    ).scalar()
+    if not exists:
+        db.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"))
 
 
 def _log_action(db: Session, lead_id: int | None, action_type: str, output_summary: str, user_id: int | None = None) -> None:
@@ -388,6 +433,7 @@ def _latest_segmentation(db: Session, lead_id: int) -> dict[str, Any] | None:
 def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
     lead = _lead_row_to_dict(lead_row)
     segmentation = _latest_segmentation(db, int(lead["id"])) or {}
+    contact = _primary_contact(db, int(lead["id"])) or {}
     draft_count = db.execute(
         text("SELECT COUNT(*) FROM ai_email_drafts WHERE lead_id = :lead_id"),
         {"lead_id": lead["id"]},
@@ -399,6 +445,10 @@ def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
         "segment_name": segmentation.get("segment_name") or "",
         "priority": segmentation.get("priority") or ("Excluded" if lead.get("exclusion_status") == "Excluded" else ""),
         "ai_score": segmentation.get("ai_score") or 0,
+        "contact_name": _contact_name(contact),
+        "contact_title": contact.get("title") or "",
+        "contact_email": contact.get("email") or "",
+        "email_status": contact.get("email_status") or "",
         "suggested_sequence": segmentation.get("suggested_sequence") or "",
         "ai_status": lead.get("status"),
         "approval_status": "Awaiting Approval" if lead.get("status") in {"Segmented", "Draft Generated"} else "",
@@ -407,6 +457,26 @@ def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
         "personalization_angle": segmentation.get("personalization_angle") or "",
         "draft_count": draft_count,
     }
+
+
+def _primary_contact(db: Session, lead_id: int) -> dict[str, Any] | None:
+    row = db.execute(
+        text(
+            """
+            SELECT *
+            FROM ai_lead_contacts
+            WHERE lead_id = :lead_id
+            ORDER BY id ASC
+            LIMIT 1
+            """
+        ),
+        {"lead_id": lead_id},
+    ).first()
+    return _lead_row_to_dict(row) if row else None
+
+
+def _contact_name(contact: dict[str, Any]) -> str:
+    return " ".join(part for part in [contact.get("first_name"), contact.get("last_name")] if part)
 
 
 def _latest_action(db: Session, lead_id: int) -> dict[str, Any] | None:
@@ -549,8 +619,8 @@ def create_ai_lead(
         db.execute(
             text(
                 """
-                INSERT INTO ai_lead_contacts (lead_id, first_name, last_name, title, email, linkedin_url, phone)
-                VALUES (:lead_id, :first_name, :last_name, :title, :email, :linkedin_url, :phone)
+                INSERT INTO ai_lead_contacts (lead_id, first_name, last_name, title, email, email_status, linkedin_url, phone)
+                VALUES (:lead_id, :first_name, :last_name, :title, :email, :email_status, :linkedin_url, :phone)
                 """
             ),
             {"lead_id": lead_id, **contact.dict()},
@@ -573,6 +643,12 @@ def import_ai_leads(
         company_name = _first_import_value(row, ["company_name", "Company", "Company Name", "company", "Firma"])
         if not company_name:
             continue
+        email = _first_import_value(row, ["email", "Email", "Email Address", "person_email", "contact_email"])
+        first_name = _first_import_value(row, ["first_name", "First Name"])
+        last_name = _first_import_value(row, ["last_name", "Last Name"])
+        full_name = _first_import_value(row, ["name", "Name", "Person Name"])
+        if full_name and not first_name:
+            first_name, last_name = _split_name(full_name)
         create_payload = AiLeadCreateRequest(
             company_name=company_name,
             website=_first_import_value(row, ["website", "Website"]),
@@ -581,6 +657,15 @@ def import_ai_leads(
             source="CSV",
             company_description=_first_import_value(row, ["description", "Company Description", "industry", "Industry", "Açıklama"]),
             detected_activity=_first_import_value(row, ["detected_activity", "Activity", "industry", "Industry"]),
+            contact=AiLeadContactRequest(
+                first_name=first_name,
+                last_name=last_name,
+                title=_first_import_value(row, ["title", "Title", "Job Title"]),
+                email=email,
+                email_status=_first_import_value(row, ["email_status", "Email Status", "contact_email_status"]) or ("user managed" if email else "missing"),
+                linkedin_url=_first_import_value(row, ["linkedin_url", "LinkedIn", "Person Linkedin Url"]),
+                phone=_first_import_value(row, ["phone", "Phone"]),
+            ),
         )
         created.append(create_ai_lead(create_payload, db, current_user))
     return {"created": len(created), "rows": created}
@@ -592,6 +677,308 @@ def _first_import_value(row: dict[str, Any], keys: list[str]) -> str:
         if value:
             return _normalize(value)
     return ""
+
+
+def _apollo_api_key() -> str:
+    api_key = os.getenv("APOLLO_API_KEY", "").strip()
+    if not api_key:
+        raise HTTPException(status_code=503, detail="APOLLO_API_KEY sunucuda tanımlı değil.")
+    return api_key
+
+
+def _apollo_post(path: str, payload: dict[str, Any] | None = None, query: dict[str, Any] | None = None) -> dict[str, Any]:
+    base_url = "https://api.apollo.io/api/v1"
+    url = f"{base_url}{path}"
+    if query:
+        url += "?" + parse.urlencode({key: value for key, value in query.items() if value not in (None, "")}, doseq=True)
+    data = json.dumps(payload or {}).encode("utf-8")
+    req = request.Request(
+        url,
+        data=data,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Cache-Control": "no-cache",
+            "X-Api-Key": _apollo_api_key(),
+        },
+    )
+    try:
+        with request.urlopen(req, timeout=45) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=exc.code, detail=f"Apollo API hatası: {detail}") from exc
+    except error.URLError as exc:
+        raise HTTPException(status_code=502, detail=f"Apollo API erişilemedi: {exc.reason}") from exc
+
+
+def _company_domain(website: str | None) -> str:
+    raw = _normalize(website)
+    if not raw:
+        return ""
+    raw = raw.replace("https://", "").replace("http://", "").split("/")[0]
+    return raw.replace("www.", "")
+
+
+def _split_name(full_name: str | None) -> tuple[str, str]:
+    parts = _normalize(full_name).split()
+    if not parts:
+        return "", ""
+    if len(parts) == 1:
+        return parts[0], ""
+    return parts[0], " ".join(parts[1:])
+
+
+def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current_user: UserTable) -> dict[str, Any]:
+    organization = person.get("organization") or {}
+    company_name = _normalize(organization.get("name") or person.get("organization_name"))
+    if not company_name:
+        company_name = _normalize(person.get("employment_history", [{}])[0].get("organization_name") if person.get("employment_history") else "")
+    if not company_name:
+        raise ValueError("Apollo kaydında firma adı bulunamadı.")
+
+    country = _normalize(
+        organization.get("country")
+        or person.get("organization_country")
+        or person.get("country")
+        or person.get("person_country")
+    )
+    website = _normalize(organization.get("website_url") or organization.get("primary_domain") or person.get("organization_website_url"))
+    title = _normalize(person.get("title"))
+    first_name = _normalize(person.get("first_name"))
+    last_name = _normalize(person.get("last_name"))
+    name = _normalize(person.get("name"))
+    if not first_name and name:
+        first_name, last_name = _split_name(name)
+    activity = " ".join(
+        item
+        for item in [
+            _normalize(organization.get("short_description")),
+            _normalize(organization.get("industry")),
+            title,
+        ]
+        if item
+    )
+
+    analysis = _analyze_values(
+        {
+            "company_name": company_name,
+            "country": country,
+            "local_language": _language_for_country(country),
+            "company_description": activity,
+            "detected_activity": activity,
+        },
+        has_contact=True,
+    )
+    status_value = "Excluded" if analysis["is_excluded"] else "Segmented"
+    result = db.execute(
+        text(
+            """
+            INSERT INTO ai_leads (
+                company_name, website, country, region, local_language, source, source_reference,
+                apollo_person_id, apollo_organization_id, apollo_raw_json,
+                company_description, detected_activity, status, exclusion_status, exclusion_reason, created_by_user_id
+            )
+            VALUES (
+                :company_name, :website, :country, :region, :local_language, 'Apollo', :source_reference,
+                :apollo_person_id, :apollo_organization_id, :apollo_raw_json,
+                :company_description, :detected_activity, :status, :exclusion_status, :exclusion_reason, :user_id
+            )
+            """
+        ),
+        {
+            "company_name": company_name,
+            "website": website,
+            "country": country,
+            "region": "EMEA",
+            "local_language": analysis["local_language"],
+            "source_reference": person.get("id"),
+            "apollo_person_id": person.get("id"),
+            "apollo_organization_id": organization.get("id") or person.get("organization_id"),
+            "apollo_raw_json": json.dumps(person, ensure_ascii=False),
+            "company_description": activity,
+            "detected_activity": activity,
+            "status": status_value,
+            "exclusion_status": "Excluded" if analysis["is_excluded"] else "Active",
+            "exclusion_reason": analysis["exclusion_reason"],
+            "user_id": current_user.id,
+        },
+    )
+    lead_id = int(result.lastrowid)
+    db.execute(
+        text(
+            """
+            INSERT INTO ai_lead_contacts (
+                lead_id, first_name, last_name, title, email, email_status, linkedin_url, phone, apollo_person_id, apollo_raw_json
+            )
+            VALUES (
+                :lead_id, :first_name, :last_name, :title, :email, :email_status, :linkedin_url, :phone, :apollo_person_id, :apollo_raw_json
+            )
+            """
+        ),
+        {
+            "lead_id": lead_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "title": title,
+            "email": _normalize(person.get("email")),
+            "email_status": _normalize(person.get("email_status") or person.get("contact_email_status") or "not_revealed"),
+            "linkedin_url": _normalize(person.get("linkedin_url")),
+            "phone": _normalize(person.get("phone") or person.get("sanitized_phone")),
+            "apollo_person_id": person.get("id"),
+            "apollo_raw_json": json.dumps(person, ensure_ascii=False),
+        },
+    )
+    _save_segmentation(db, lead_id, analysis)
+    _log_action(db, lead_id, "apollo_search_import", "Apollo search sonucu lead olarak eklendi.", current_user.id)
+    row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    return _lead_response(db, row)
+
+
+@router.post("/ai-leads/apollo/search")
+def search_apollo_ai_leads(
+    payload: ApolloSearchRequest,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    organization_locations = list(payload.organization_locations or [])
+    if payload.country and payload.country not in organization_locations:
+        organization_locations.append(payload.country)
+    search_payload = {
+        "person_titles": payload.person_titles,
+        "organization_locations": organization_locations,
+        "q_keywords": " ".join(payload.keywords or []),
+        "page": max(int(payload.page or 1), 1),
+        "per_page": min(max(int(payload.per_page or 25), 1), 100),
+    }
+    apollo_response = _apollo_post("/mixed_people/api_search", payload=search_payload)
+    people = apollo_response.get("people") or apollo_response.get("contacts") or []
+    created = []
+    for person in people:
+        try:
+            created.append(_create_lead_from_apollo_person(db, person, current_user))
+        except ValueError:
+            continue
+    db.commit()
+    return {"created": len(created), "rows": created, "apollo_count": len(people)}
+
+
+@router.post("/ai-leads/{lead_id}/apollo-enrich")
+def enrich_ai_lead_from_apollo(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    lead_row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    if not lead_row:
+        raise HTTPException(status_code=404, detail="Lead bulunamadı.")
+    lead = _lead_row_to_dict(lead_row)
+    contact = _primary_contact(db, lead_id) or {}
+    full_name = _contact_name(contact)
+    domain = _company_domain(lead.get("website"))
+    query = {
+        "name": full_name or None,
+        "first_name": contact.get("first_name") or None,
+        "last_name": contact.get("last_name") or None,
+        "email": contact.get("email") or None,
+        "domain": domain or None,
+        "organization_name": lead.get("company_name"),
+        "reveal_personal_emails": "false",
+        "reveal_phone_number": "false",
+    }
+    apollo_response = _apollo_post("/people/match", query=query)
+    person = apollo_response.get("person") or {}
+    if not person:
+        raise HTTPException(status_code=404, detail="Apollo enrichment sonucu kişi bulunamadı.")
+    first_name = _normalize(person.get("first_name")) or contact.get("first_name")
+    last_name = _normalize(person.get("last_name")) or contact.get("last_name")
+    title = _normalize(person.get("title")) or contact.get("title")
+    email_value = _normalize(person.get("email")) or contact.get("email")
+    email_status = _normalize(person.get("email_status") or person.get("contact_email_status") or contact.get("email_status") or "enriched")
+    phone = _normalize(person.get("phone") or person.get("sanitized_phone")) or contact.get("phone")
+    linkedin_url = _normalize(person.get("linkedin_url")) or contact.get("linkedin_url")
+
+    if contact:
+        db.execute(
+            text(
+                """
+                UPDATE ai_lead_contacts
+                SET first_name = :first_name,
+                    last_name = :last_name,
+                    title = :title,
+                    email = :email,
+                    email_status = :email_status,
+                    linkedin_url = :linkedin_url,
+                    phone = :phone,
+                    apollo_person_id = :apollo_person_id,
+                    apollo_raw_json = :apollo_raw_json
+                WHERE id = :contact_id
+                """
+            ),
+            {
+                "contact_id": contact["id"],
+                "first_name": first_name,
+                "last_name": last_name,
+                "title": title,
+                "email": email_value,
+                "email_status": email_status,
+                "linkedin_url": linkedin_url,
+                "phone": phone,
+                "apollo_person_id": person.get("id") or contact.get("apollo_person_id"),
+                "apollo_raw_json": json.dumps(person, ensure_ascii=False),
+            },
+        )
+    else:
+        db.execute(
+            text(
+                """
+                INSERT INTO ai_lead_contacts (
+                    lead_id, first_name, last_name, title, email, email_status, linkedin_url, phone, apollo_person_id, apollo_raw_json
+                )
+                VALUES (
+                    :lead_id, :first_name, :last_name, :title, :email, :email_status, :linkedin_url, :phone, :apollo_person_id, :apollo_raw_json
+                )
+                """
+            ),
+            {
+                "lead_id": lead_id,
+                "first_name": first_name,
+                "last_name": last_name,
+                "title": title,
+                "email": email_value,
+                "email_status": email_status,
+                "linkedin_url": linkedin_url,
+                "phone": phone,
+                "apollo_person_id": person.get("id"),
+                "apollo_raw_json": json.dumps(person, ensure_ascii=False),
+            },
+        )
+    db.execute(
+        text(
+            """
+            UPDATE ai_leads
+            SET apollo_person_id = COALESCE(apollo_person_id, :apollo_person_id),
+                apollo_raw_json = :apollo_raw_json
+            WHERE id = :lead_id
+            """
+        ),
+        {"lead_id": lead_id, "apollo_person_id": person.get("id"), "apollo_raw_json": json.dumps(apollo_response, ensure_ascii=False)},
+    )
+    _log_action(db, lead_id, "apollo_enrich", f"Apollo enrichment tamamlandı. Email status: {email_status}", current_user.id)
+    db.commit()
+    return {
+        "status": "ok",
+        "contact": {
+            "name": " ".join(part for part in [first_name, last_name] if part),
+            "title": title,
+            "email": email_value,
+            "email_status": email_status,
+            "linkedin_url": linkedin_url,
+            "phone": phone,
+        },
+    }
 
 
 def _save_segmentation(db: Session, lead_id: int, analysis: dict[str, Any]) -> None:

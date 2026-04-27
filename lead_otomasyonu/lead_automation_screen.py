@@ -4,7 +4,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, list_ai_leads
+from core.api_client import ApiClientError, enrich_ai_lead_from_apollo, list_ai_leads, search_apollo_ai_leads
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
@@ -128,6 +128,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     x_scroll = ttk.Scrollbar(table_wrap, orient="horizontal")
     columns = (
         "company_name",
+        "contact_email",
+        "email_status",
         "country",
         "local_language",
         "source",
@@ -154,6 +156,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     headings = {
         "company_name": "Firma",
+        "contact_email": "Email",
+        "email_status": "Email Durumu",
         "country": "Ülke",
         "local_language": "Dil",
         "source": "Kaynak",
@@ -168,6 +172,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     }
     widths = {
         "company_name": 230,
+        "contact_email": 210,
+        "email_status": 120,
         "country": 120,
         "local_language": 110,
         "source": 90,
@@ -204,7 +210,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         priority = priority_var.get()
         filtered = []
         for item in state["leads"]:
-            haystack = " ".join(str(item.get(key, "")) for key in ("company_name", "country", "segment_name", "sales_channel", "product_category")).casefold()
+            haystack = " ".join(str(item.get(key, "")) for key in ("company_name", "contact_email", "country", "segment_name", "sales_channel", "product_category")).casefold()
             if query and query not in haystack:
                 continue
             if channel != "Tüm Kanallar" and item.get("sales_channel") != channel:
@@ -247,7 +253,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     def add_manual_lead():
         dialog = ctk.CTkToplevel(win)
         dialog.title("Manuel Lead Ekle")
-        dialog.geometry("520x520")
+        dialog.geometry("560x660")
         dialog.configure(fg_color="#f5f5f5")
         dialog.transient(win)
         dialog.grab_set()
@@ -256,6 +262,9 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         form.pack(fill="both", expand=True, padx=18, pady=18)
         vars_ = {
             "company_name": ctk.StringVar(),
+            "contact_name": ctk.StringVar(),
+            "contact_title": ctk.StringVar(),
+            "contact_email": ctk.StringVar(),
             "country": ctk.StringVar(),
             "local_language": ctk.StringVar(value="English"),
             "sales_channel": ctk.StringVar(value="White Label / Resellers"),
@@ -263,11 +272,14 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             "detected_activity": ctk.StringVar(),
         }
         _form_entry(form, "Firma", vars_["company_name"], 0)
-        _form_entry(form, "Ülke", vars_["country"], 1)
-        _form_entry(form, "Dil", vars_["local_language"], 2)
-        _form_combo(form, "Satış Kanalı", vars_["sales_channel"], SALES_CHANNELS, 3)
-        _form_combo(form, "Ürün / Hizmet", vars_["product_category"], PRODUCT_CATEGORIES, 4)
-        _form_entry(form, "Aktivite", vars_["detected_activity"], 5)
+        _form_entry(form, "Kişi", vars_["contact_name"], 1)
+        _form_entry(form, "Unvan", vars_["contact_title"], 2)
+        _form_entry(form, "Email", vars_["contact_email"], 3)
+        _form_entry(form, "Ülke", vars_["country"], 4)
+        _form_entry(form, "Dil", vars_["local_language"], 5)
+        _form_combo(form, "Satış Kanalı", vars_["sales_channel"], SALES_CHANNELS, 6)
+        _form_combo(form, "Ürün / Hizmet", vars_["product_category"], PRODUCT_CATEGORIES, 7)
+        _form_entry(form, "Aktivite", vars_["detected_activity"], 8)
 
         def save():
             company = vars_["company_name"].get().strip()
@@ -280,6 +292,10 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             lead = {
                 "id": _next_id(state["leads"]),
                 "company_name": company,
+                "contact_name": vars_["contact_name"].get().strip(),
+                "contact_title": vars_["contact_title"].get().strip(),
+                "contact_email": vars_["contact_email"].get().strip(),
+                "email_status": "user managed" if vars_["contact_email"].get().strip() else "missing",
                 "country": vars_["country"].get().strip(),
                 "local_language": vars_["local_language"].get().strip(),
                 "source": "Manual",
@@ -301,7 +317,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             dialog.destroy()
             apply_filters()
 
-        ctk.CTkButton(form, text="Kaydet", command=save, fg_color="#d32f2f", hover_color="#b91c1c").grid(row=6, column=1, sticky="e", padx=16, pady=18)
+        ctk.CTkButton(form, text="Kaydet", command=save, fg_color="#d32f2f", hover_color="#b91c1c").grid(row=9, column=1, sticky="e", padx=16, pady=18)
 
     def import_csv():
         path = filedialog.askopenfilename(
@@ -320,6 +336,11 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 if not company:
                     continue
                 country = _first_value(row, ["country", "Country", "Ülke"])
+                email = _first_value(row, ["email", "Email", "Email Address", "person_email", "contact_email"])
+                email_status = _first_value(row, ["email_status", "Email Status", "contact_email_status"]) or ("user managed" if email else "missing")
+                first_name = _first_value(row, ["first_name", "First Name"])
+                last_name = _first_value(row, ["last_name", "Last Name"])
+                contact_name = _first_value(row, ["name", "Name", "Person Name"]) or " ".join(part for part in [first_name, last_name] if part)
                 activity = _first_value(row, ["description", "Company Description", "industry", "Industry", "Açıklama"])
                 channel = _guess_channel(activity)
                 product = _guess_product(activity)
@@ -328,6 +349,10 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                     {
                         "id": _next_id(state["leads"]),
                         "company_name": company,
+                        "contact_name": contact_name,
+                        "contact_title": _first_value(row, ["title", "Title", "Job Title"]),
+                        "contact_email": email,
+                        "email_status": email_status,
                         "country": country,
                         "local_language": _guess_language(country),
                         "source": "CSV",
@@ -375,8 +400,93 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def apollo_search():
+        token = get_app_token()
+        if not token:
+            messagebox.showerror("Apollo", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+
+        dialog = ctk.CTkToplevel(win)
+        dialog.title("Apollo Search")
+        dialog.geometry("560x460")
+        dialog.configure(fg_color="#f5f5f5")
+        dialog.transient(win)
+        dialog.grab_set()
+
+        form = ctk.CTkFrame(dialog, fg_color="#ffffff", corner_radius=14)
+        form.pack(fill="both", expand=True, padx=18, pady=18)
+        vars_ = {
+            "country": ctk.StringVar(value="Germany"),
+            "titles": ctk.StringVar(value="Business Development Manager, Sales Manager, Managing Director"),
+            "keywords": ctk.StringVar(value="industrial ventilation, dust collection, fume extraction"),
+            "per_page": ctk.StringVar(value="25"),
+        }
+        _form_entry(form, "Ülke", vars_["country"], 0)
+        _form_entry(form, "Unvanlar", vars_["titles"], 1)
+        _form_entry(form, "Anahtar Kelimeler", vars_["keywords"], 2)
+        _form_entry(form, "Limit", vars_["per_page"], 3)
+        note = ctk.CTkLabel(
+            form,
+            text="Not: Apollo People Search email döndürmez. Email için enrichment çalıştırılır ve ai_lead_contacts.email alanına yazılır.",
+            text_color="#64748b",
+            wraplength=460,
+            justify="left",
+        )
+        note.grid(row=4, column=0, columnspan=2, sticky="w", padx=16, pady=(10, 4))
+
+        def run_search():
+            payload = {
+                "country": vars_["country"].get().strip(),
+                "person_titles": [item.strip() for item in vars_["titles"].get().split(",") if item.strip()],
+                "keywords": [item.strip() for item in vars_["keywords"].get().split(",") if item.strip()],
+                "per_page": int(vars_["per_page"].get() or 25),
+            }
+
+            def worker():
+                try:
+                    result = search_apollo_ai_leads(token, payload)
+                    created = int(result.get("created") or 0)
+                    win.after(0, lambda: messagebox.showinfo("Apollo", f"{created} lead eklendi. Email için enrichment çalıştırın.", parent=win))
+                    win.after(0, load_from_api)
+                    win.after(0, dialog.destroy)
+                except Exception as exc:
+                    win.after(0, lambda err=str(exc): messagebox.showerror("Apollo", f"Apollo search başarısız: {err}", parent=dialog))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        ctk.CTkButton(form, text="Apollo'dan Lead Çek", command=run_search, fg_color="#d32f2f", hover_color="#b91c1c").grid(row=5, column=1, sticky="e", padx=16, pady=18)
+
+    def enrich_selected():
+        token = get_app_token()
+        lead = selected_lead()
+        if not token:
+            messagebox.showerror("Apollo", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+        if not lead:
+            messagebox.showwarning("Apollo", "Lütfen enrichment yapılacak lead'i seçin.", parent=win)
+            return
+
+        def worker():
+            try:
+                result = enrich_ai_lead_from_apollo(token, lead.get("id"))
+                contact = result.get("contact") or {}
+                if contact:
+                    lead["contact_email"] = contact.get("email") or lead.get("contact_email") or ""
+                    lead["email_status"] = contact.get("email_status") or lead.get("email_status") or "enriched"
+                    lead["contact_name"] = contact.get("name") or lead.get("contact_name") or ""
+                    lead["contact_title"] = contact.get("title") or lead.get("contact_title") or ""
+                lead["last_action"] = "Apollo enrichment tamamlandı"
+                win.after(0, apply_filters)
+                win.after(0, lambda: messagebox.showinfo("Apollo", "Apollo enrichment tamamlandı.", parent=win))
+            except Exception as exc:
+                win.after(0, lambda err=str(exc): messagebox.showerror("Apollo", f"Apollo enrichment başarısız: {err}", parent=win))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     ctk.CTkButton(actions, text="Yenile", width=110, command=load_from_api, fg_color="#ffffff", text_color="#d32f2f", border_width=1, border_color="#d32f2f").pack(side="left", padx=(0, 8))
     ctk.CTkButton(actions, text="CSV Import", width=120, command=import_csv, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
+    ctk.CTkButton(actions, text="Apollo Search", width=130, command=apollo_search, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
+    ctk.CTkButton(actions, text="Email Enrich", width=120, command=enrich_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Manuel Lead", width=130, command=add_manual_lead, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=(8, 0))
 
     search_var.trace_add("write", apply_filters)

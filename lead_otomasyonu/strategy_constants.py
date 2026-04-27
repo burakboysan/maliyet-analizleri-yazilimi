@@ -87,6 +87,10 @@ MOCK_LEADS = [
     {
         "id": 1,
         "company_name": "Nord Lufttechnik GmbH",
+        "contact_name": "Anna Keller",
+        "contact_title": "Business Development Manager",
+        "contact_email": "anna.keller@example.com",
+        "email_status": "verified",
         "country": "Germany",
         "local_language": "German",
         "source": "Apollo",
@@ -107,6 +111,10 @@ MOCK_LEADS = [
     {
         "id": 2,
         "company_name": "Iberica Welding Automation",
+        "contact_name": "Carlos Ruiz",
+        "contact_title": "Sales Manager",
+        "contact_email": "carlos.ruiz@example.com",
+        "email_status": "unverified",
         "country": "Spain",
         "local_language": "Spanish",
         "source": "Manual",
@@ -127,6 +135,10 @@ MOCK_LEADS = [
     {
         "id": 3,
         "company_name": "Britannia Industrial Supplies",
+        "contact_name": "James Taylor",
+        "contact_title": "Managing Director",
+        "contact_email": "",
+        "email_status": "unavailable",
         "country": "United Kingdom",
         "local_language": "English",
         "source": "Apollo",

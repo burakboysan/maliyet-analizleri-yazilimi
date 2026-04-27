@@ -349,6 +349,14 @@ def list_ai_leads(token, filters=None):
     return response or []
 
 
+def search_apollo_ai_leads(token, payload):
+    return request_json("POST", "/desktop/ai-leads/apollo/search", payload=payload, headers=auth_headers(token)) or {}
+
+
+def enrich_ai_lead_from_apollo(token, lead_id):
+    return request_json("POST", f"/desktop/ai-leads/{int(lead_id)}/apollo-enrich", headers=auth_headers(token)) or {}
+
+
 def get_ai_lead_detail(token, lead_id):
     return request_json("GET", f"/desktop/ai-leads/{int(lead_id)}", headers=auth_headers(token)) or {}
 

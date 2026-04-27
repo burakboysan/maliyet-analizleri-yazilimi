@@ -27,6 +27,8 @@ Blueprint şu endpointleri sağlar:
 - `GET /desktop/ai-leads`
 - `POST /desktop/ai-leads`
 - `POST /desktop/ai-leads/import`
+- `POST /desktop/ai-leads/apollo/search`
+- `POST /desktop/ai-leads/{lead_id}/apollo-enrich`
 - `GET /desktop/ai-leads/segments`
 - `GET /desktop/ai-leads/sequences`
 - `GET /desktop/ai-leads/{lead_id}`
@@ -35,5 +37,7 @@ Blueprint şu endpointleri sağlar:
 - `POST /desktop/ai-leads/{lead_id}/exclude`
 - `POST /desktop/ai-leads/{lead_id}/email-drafts`
 - `POST /desktop/ai-leads/email-drafts/{draft_id}/approve`
+
+Email verisi `ai_lead_contacts.email` alanında tutulur. Apollo People Search net-new kişi/şirket datasını lead ve contact iskeleti olarak ekler; email bulunması veya doğrulanması için People Enrichment akışı `ai_lead_contacts.email`, `ai_lead_contacts.email_status` ve Apollo raw JSON alanlarını günceller.
 
 İlk sürüm gerçek AI çağrısı yapmaz; deterministic MVP segmentasyon kurallarıyla sonuç üretir. Böylece masaüstü modül canlı API'ye bağlanabilir, veri kalıcılığı ve onay akışı test edilebilir. Gerçek AI entegrasyonu daha sonra `analyze_ai_lead` ve `generate_ai_email_draft` akışlarına eklenmelidir.
