@@ -245,6 +245,7 @@ class AiLeadContactRequest(BaseModel):
     title: Optional[str] = None
     email: Optional[str] = None
     email_status: Optional[str] = None
+    enrichment_note: Optional[str] = None
     linkedin_url: Optional[str] = None
     phone: Optional[str] = None
 
@@ -519,6 +520,7 @@ def _ensure_tables(db: Session) -> None:
             title VARCHAR(255),
             email VARCHAR(255),
             email_status VARCHAR(80),
+            enrichment_note TEXT,
             linkedin_url VARCHAR(500),
             phone VARCHAR(100),
             apollo_person_id VARCHAR(100),
@@ -636,6 +638,7 @@ def _ensure_tables(db: Session) -> None:
     _ensure_column(db, "ai_leads", "apollo_organization_id", "VARCHAR(100)")
     _ensure_column(db, "ai_leads", "apollo_raw_json", "JSON")
     _ensure_column(db, "ai_lead_contacts", "email_status", "VARCHAR(80)")
+    _ensure_column(db, "ai_lead_contacts", "enrichment_note", "TEXT")
     _ensure_column(db, "ai_lead_contacts", "apollo_person_id", "VARCHAR(100)")
     _ensure_column(db, "ai_lead_contacts", "apollo_raw_json", "JSON")
     _ensure_column(db, "ai_segmentation_results", "suggested_sequence", "VARCHAR(100)")
@@ -843,6 +846,7 @@ def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
         "contact_title": contact.get("title") or "",
         "contact_email": contact.get("email") or "",
         "email_status": contact.get("email_status") or "",
+        "enrichment_note": contact.get("enrichment_note") or "",
         "suggested_sequence": segmentation.get("suggested_sequence") or "",
         "ai_status": lead.get("status"),
         "approval_status": "Awaiting Approval" if lead.get("status") in {"Segmented", "Draft Generated"} else "",
@@ -897,6 +901,25 @@ def _dedupe_strings(values: list[str]) -> list[str]:
             seen.add(key)
             deduped.append(normalized)
     return deduped
+
+
+def _email_enrichment_note(person: dict[str, Any], email_value: str, email_status: str, attempted: bool = True) -> str:
+    status = _normalize(email_status).casefold()
+    if email_value:
+        if status == "verified":
+            return "Apollo enrichment email buldu ve verified olarak döndürdü."
+        return f"Apollo enrichment email buldu. Status: {email_status or 'unknown'}."
+    if not attempted:
+        return "Email enrichment çalıştırılmadı; Apollo Search email döndürmez."
+    if status in {"verified", "guessed", "unverified"}:
+        return f"Apollo status '{email_status}' döndürdü ancak email alanı boş geldi."
+    if status in {"unavailable", "no_email", "not_found", "email_not_found", "missing"}:
+        return "Apollo kişi kaydını buldu ancak bu kişi için email datası döndürmedi."
+    if status in {"not_revealed", "locked"}:
+        return "Email Apollo Search aşamasında açık değil; enrichment/reveal gerekir."
+    if not person:
+        return "Apollo enrichment kişi eşleşmesi bulamadı."
+    return "Apollo enrichment çalıştı ancak email alanı boş döndü; kredi/plan hatası olsaydı ayrı API hatası olarak gösterilir."
 
 
 def _segment_search_attempts(recipe: dict[str, Any], country: str, limit: int) -> list[dict[str, Any]]:
@@ -1223,6 +1246,9 @@ def _apollo_post(path: str, payload: dict[str, Any] | None = None, query: dict[s
             return json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
+        lowered = detail.casefold()
+        if any(token in lowered for token in ["credit", "credits", "insufficient", "limit", "quota", "plan"]):
+            detail = f"Apollo kredi/limit/plan hatası olabilir: {detail}"
         raise HTTPException(status_code=exc.code, detail=f"Apollo API hatası: {detail}") from exc
     except error.URLError as exc:
         raise HTTPException(status_code=502, detail=f"Apollo API erişilemedi: {exc.reason}") from exc
@@ -1248,6 +1274,9 @@ def _apollo_get(path: str, query: dict[str, Any] | None = None) -> dict[str, Any
             return json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
+        lowered = detail.casefold()
+        if any(token in lowered for token in ["credit", "credits", "insufficient", "limit", "quota", "plan"]):
+            detail = f"Apollo kredi/limit/plan hatası olabilir: {detail}"
         raise HTTPException(status_code=exc.code, detail=f"Apollo API hatası: {detail}") from exc
     except error.URLError as exc:
         raise HTTPException(status_code=502, detail=f"Apollo API erişilemedi: {exc.reason}") from exc
@@ -1393,10 +1422,10 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
         text(
             """
             INSERT INTO ai_lead_contacts (
-                lead_id, first_name, last_name, title, email, email_status, linkedin_url, phone, apollo_person_id, apollo_raw_json
+                lead_id, first_name, last_name, title, email, email_status, enrichment_note, linkedin_url, phone, apollo_person_id, apollo_raw_json
             )
             VALUES (
-                :lead_id, :first_name, :last_name, :title, :email, :email_status, :linkedin_url, :phone, :apollo_person_id, :apollo_raw_json
+                :lead_id, :first_name, :last_name, :title, :email, :email_status, :enrichment_note, :linkedin_url, :phone, :apollo_person_id, :apollo_raw_json
             )
             """
         ),
@@ -1407,6 +1436,12 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
             "title": title,
             "email": _normalize(person.get("email")),
             "email_status": _normalize(person.get("email_status") or person.get("contact_email_status") or "not_revealed"),
+            "enrichment_note": _email_enrichment_note(
+                person,
+                _normalize(person.get("email")),
+                _normalize(person.get("email_status") or person.get("contact_email_status") or "not_revealed"),
+                attempted=bool(person.get("email") or person.get("email_status") or person.get("contact_email_status")),
+            ),
             "linkedin_url": _normalize(person.get("linkedin_url")),
             "phone": _normalize(person.get("phone") or person.get("sanitized_phone")),
             "apollo_person_id": person.get("id"),
@@ -1686,6 +1721,7 @@ def enrich_ai_lead_from_apollo(
     title = _normalize(person.get("title")) or contact.get("title")
     email_value = _normalize(person.get("email")) or contact.get("email")
     email_status = _normalize(person.get("email_status") or person.get("contact_email_status") or contact.get("email_status") or "enriched")
+    enrichment_note = _email_enrichment_note(person, email_value, email_status, attempted=True)
     phone = _normalize(person.get("phone") or person.get("sanitized_phone")) or contact.get("phone")
     linkedin_url = _normalize(person.get("linkedin_url")) or contact.get("linkedin_url")
 
@@ -1699,6 +1735,7 @@ def enrich_ai_lead_from_apollo(
                     title = :title,
                     email = :email,
                     email_status = :email_status,
+                    enrichment_note = :enrichment_note,
                     linkedin_url = :linkedin_url,
                     phone = :phone,
                     apollo_person_id = :apollo_person_id,
@@ -1713,6 +1750,7 @@ def enrich_ai_lead_from_apollo(
                 "title": title,
                 "email": email_value,
                 "email_status": email_status,
+                "enrichment_note": enrichment_note,
                 "linkedin_url": linkedin_url,
                 "phone": phone,
                 "apollo_person_id": person.get("id") or contact.get("apollo_person_id"),
@@ -1724,10 +1762,10 @@ def enrich_ai_lead_from_apollo(
             text(
                 """
                 INSERT INTO ai_lead_contacts (
-                    lead_id, first_name, last_name, title, email, email_status, linkedin_url, phone, apollo_person_id, apollo_raw_json
+                    lead_id, first_name, last_name, title, email, email_status, enrichment_note, linkedin_url, phone, apollo_person_id, apollo_raw_json
                 )
                 VALUES (
-                    :lead_id, :first_name, :last_name, :title, :email, :email_status, :linkedin_url, :phone, :apollo_person_id, :apollo_raw_json
+                    :lead_id, :first_name, :last_name, :title, :email, :email_status, :enrichment_note, :linkedin_url, :phone, :apollo_person_id, :apollo_raw_json
                 )
                 """
             ),
@@ -1738,6 +1776,7 @@ def enrich_ai_lead_from_apollo(
                 "title": title,
                 "email": email_value,
                 "email_status": email_status,
+                "enrichment_note": enrichment_note,
                 "linkedin_url": linkedin_url,
                 "phone": phone,
                 "apollo_person_id": person.get("id"),
@@ -1755,7 +1794,7 @@ def enrich_ai_lead_from_apollo(
         ),
         {"lead_id": lead_id, "apollo_person_id": person.get("id"), "apollo_raw_json": json.dumps(apollo_response, ensure_ascii=False)},
     )
-    _log_action(db, lead_id, "apollo_enrich", f"Apollo enrichment tamamlandı. Email status: {email_status}", current_user.id)
+    _log_action(db, lead_id, "apollo_enrich", f"Apollo enrichment tamamlandı. Email status: {email_status}. {enrichment_note}", current_user.id)
     db.commit()
     return {
         "status": "ok",
@@ -1764,6 +1803,7 @@ def enrich_ai_lead_from_apollo(
             "title": title,
             "email": email_value,
             "email_status": email_status,
+            "enrichment_note": enrichment_note,
             "linkedin_url": linkedin_url,
             "phone": phone,
         },

@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS ai_lead_contacts (
     title VARCHAR(255),
     email VARCHAR(255),
     email_status VARCHAR(80),
+    enrichment_note TEXT,
     linkedin_url VARCHAR(500),
     phone VARCHAR(100),
     apollo_person_id VARCHAR(100),

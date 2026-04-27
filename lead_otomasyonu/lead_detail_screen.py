@@ -49,6 +49,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     _kv(left, "Unvan", lead.get("contact_title"))
     _kv(left, "Email", lead.get("contact_email"))
     _kv(left, "Email Durumu", lead.get("email_status"))
+    _kv(left, "Enrichment Notu", lead.get("enrichment_note"))
 
     _section_title(left, "AI Aksiyonları")
     _kv(left, "Son Aksiyon", lead.get("last_action"))

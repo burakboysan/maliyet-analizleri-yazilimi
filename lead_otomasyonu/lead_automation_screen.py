@@ -132,6 +132,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "company_name",
         "contact_email",
         "email_status",
+        "enrichment_note",
         "country",
         "local_language",
         "source",
@@ -160,6 +161,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "company_name": "Firma",
         "contact_email": "Email",
         "email_status": "Email Durumu",
+        "enrichment_note": "Enrichment Notu",
         "country": "Ülke",
         "local_language": "Dil",
         "source": "Kaynak",
@@ -176,6 +178,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "company_name": 230,
         "contact_email": 210,
         "email_status": 120,
+        "enrichment_note": 320,
         "country": 120,
         "local_language": 110,
         "source": 90,
@@ -212,7 +215,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         priority = priority_var.get()
         filtered = []
         for item in state["leads"]:
-            haystack = " ".join(str(item.get(key, "")) for key in ("company_name", "contact_email", "country", "segment_name", "sales_channel", "product_category")).casefold()
+            haystack = " ".join(str(item.get(key, "")) for key in ("company_name", "contact_email", "email_status", "enrichment_note", "country", "segment_name", "sales_channel", "product_category")).casefold()
             if query and query not in haystack:
                 continue
             if channel != "Tüm Kanallar" and item.get("sales_channel") != channel:
@@ -559,11 +562,13 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 if contact:
                     lead["contact_email"] = contact.get("email") or lead.get("contact_email") or ""
                     lead["email_status"] = contact.get("email_status") or lead.get("email_status") or "enriched"
+                    lead["enrichment_note"] = contact.get("enrichment_note") or lead.get("enrichment_note") or ""
                     lead["contact_name"] = contact.get("name") or lead.get("contact_name") or ""
                     lead["contact_title"] = contact.get("title") or lead.get("contact_title") or ""
-                lead["last_action"] = "Apollo enrichment tamamlandı"
+                note = lead.get("enrichment_note") or "Apollo enrichment tamamlandı."
+                lead["last_action"] = note
                 win.after(0, apply_filters)
-                win.after(0, lambda: messagebox.showinfo("Apollo", "Apollo enrichment tamamlandı.", parent=win))
+                win.after(0, lambda msg=note: messagebox.showinfo("Apollo", msg, parent=win))
             except Exception as exc:
                 win.after(0, lambda err=str(exc): messagebox.showerror("Apollo", f"Apollo enrichment başarısız: {err}", parent=win))
 
