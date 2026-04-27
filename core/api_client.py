@@ -337,6 +337,70 @@ def create_mobile_price_list_entry(token, payload):
     )
 
 
+def list_ai_leads(token, filters=None):
+    query = {}
+    for key, value in (filters or {}).items():
+        if value not in (None, ""):
+            query[str(key)] = str(value)
+    path = "/desktop/ai-leads"
+    if query:
+        path += "?" + parse.urlencode(query)
+    response = request_json("GET", path, headers=auth_headers(token))
+    return response or []
+
+
+def get_ai_lead_detail(token, lead_id):
+    return request_json("GET", f"/desktop/ai-leads/{int(lead_id)}", headers=auth_headers(token)) or {}
+
+
+def create_ai_lead(token, payload):
+    return request_json("POST", "/desktop/ai-leads", payload=payload, headers=auth_headers(token))
+
+
+def import_ai_leads_csv(token, rows):
+    return request_json("POST", "/desktop/ai-leads/import", payload={"rows": rows}, headers=auth_headers(token))
+
+
+def analyze_ai_lead(token, lead_id):
+    return request_json("POST", f"/desktop/ai-leads/{int(lead_id)}/analyze", headers=auth_headers(token))
+
+
+def update_ai_lead_segment(token, lead_id, payload):
+    return request_json("PUT", f"/desktop/ai-leads/{int(lead_id)}/segment", payload=payload, headers=auth_headers(token))
+
+
+def exclude_ai_lead(token, lead_id, reason):
+    return request_json(
+        "POST",
+        f"/desktop/ai-leads/{int(lead_id)}/exclude",
+        payload={"reason": str(reason or "").strip()},
+        headers=auth_headers(token),
+    )
+
+
+def generate_ai_email_draft(token, lead_id, step_number=1):
+    return request_json(
+        "POST",
+        f"/desktop/ai-leads/{int(lead_id)}/email-drafts",
+        payload={"step_number": int(step_number or 1)},
+        headers=auth_headers(token),
+    )
+
+
+def approve_ai_email_draft(token, draft_id):
+    return request_json("POST", f"/desktop/ai-leads/email-drafts/{int(draft_id)}/approve", headers=auth_headers(token))
+
+
+def list_ai_segments(token):
+    response = request_json("GET", "/desktop/ai-leads/segments", headers=auth_headers(token))
+    return response or []
+
+
+def list_ai_sequences(token):
+    response = request_json("GET", "/desktop/ai-leads/sequences", headers=auth_headers(token))
+    return response or []
+
+
 def get_projects(token):
     response = request_json("GET", "/desktop/projects", headers=auth_headers(token))
     return response or []

@@ -23,6 +23,7 @@ from sihirbaz.pkfc_v2 import open_pkfc_wizard
 from sihirbaz.verty_v2 import open_verty_wizard
 from dokuman_yonetimi.documents_screen import dokumanlar_ekrani
 from izin_yonetimi.leave_management import izin_yonetimi_ekrani
+from lead_otomasyonu.lead_automation_screen import lead_otomasyonu_ekrani
 from urun_konfigurator import model_selection_screen, urun_konfigurator_ekrani_ac
 from core.api_client import (
     ApiClientError,
@@ -2075,6 +2076,14 @@ def ana_menu_ac(kullanici_adi, kullanici_rolu, parent_root=None):
             "command": lambda: dokumanlar_ekrani(kullanici_rolu, parent=pencere),
             "row": 2,
             "column": 2
+        },
+        {
+            "icon": "AI",
+            "title": "Lead Otomasyonu",
+            "description": "AI destekli lead segmentasyonu, partner skoru ve email taslaklarını yönetin.",
+            "command": lambda: lead_otomasyonu_ekrani(parent=pencere, kullanici_rolu=kullanici_rolu),
+            "row": 3,
+            "column": 0
         },
     ]
 
