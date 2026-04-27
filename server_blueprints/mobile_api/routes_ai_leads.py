@@ -222,6 +222,23 @@ SEARCH_RECIPES = [
 ]
 
 
+CHANNEL_FALLBACK_KEYWORDS = {
+    "White Label / Resellers": ["distributor", "reseller", "equipment supplier", "industrial equipment distributor"],
+    "Clean Air Solution Partner": ["industrial HVAC", "air filtration", "industrial ventilation", "clean air solutions"],
+    "System Integration Solution Partner": ["system integrator", "industrial automation", "process engineering", "plant engineering"],
+    "OEM": ["manufacturer", "machine manufacturer", "equipment manufacturer"],
+    "Direct Sales": ["manufacturing", "industrial plant", "factory"],
+}
+
+PRODUCT_FALLBACK_KEYWORDS = {
+    "Hall Ventilation": ["industrial ventilation", "factory ventilation", "hall ventilation"],
+    "Fume Extraction": ["welding", "fume extraction", "welding equipment"],
+    "Dust Collection": ["dust collection", "dust control", "industrial filtration"],
+    "Oil Mist Filtration": ["CNC", "machine tool", "metalworking"],
+    "Turnkey Solutions": ["turnkey", "EPC", "industrial project"],
+}
+
+
 class AiLeadContactRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -870,6 +887,56 @@ def _json_list(value: Any) -> list[str]:
     return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
+def _dedupe_strings(values: list[str]) -> list[str]:
+    seen = set()
+    deduped = []
+    for value in values:
+        normalized = value.strip()
+        key = normalized.casefold()
+        if normalized and key not in seen:
+            seen.add(key)
+            deduped.append(normalized)
+    return deduped
+
+
+def _segment_search_attempts(recipe: dict[str, Any], country: str, limit: int) -> list[dict[str, Any]]:
+    sales_channel = str(recipe.get("sales_channel") or "")
+    product_category = str(recipe.get("product_category") or "")
+    company_keywords = _json_list(recipe.get("company_keywords"))
+    positive_signals = _json_list(recipe.get("positive_signals"))
+    person_titles = _json_list(recipe.get("person_titles")) or DEFAULT_TITLES
+    fallback_terms = _dedupe_strings(
+        CHANNEL_FALLBACK_KEYWORDS.get(sales_channel, [])
+        + PRODUCT_FALLBACK_KEYWORDS.get(product_category, [])
+        + positive_signals
+    )
+
+    attempts = []
+    if company_keywords:
+        attempts.append(
+            {
+                "name": "focused_recipe",
+                "person_titles[]": person_titles,
+                "q_keywords": " OR ".join(company_keywords),
+                "organization_locations[]": [country] if country else [],
+                "page": 1,
+                "per_page": limit,
+            }
+        )
+    for term in fallback_terms[:8]:
+        attempts.append(
+            {
+                "name": f"fallback:{term}",
+                "person_titles[]": person_titles,
+                "q_keywords": term,
+                "organization_locations[]": [country] if country else [],
+                "page": 1,
+                "per_page": limit,
+            }
+        )
+    return attempts
+
+
 def _latest_action(db: Session, lead_id: int) -> dict[str, Any] | None:
     row = db.execute(
         text("SELECT * FROM ai_actions WHERE lead_id = :lead_id ORDER BY id DESC LIMIT 1"),
@@ -1500,25 +1567,25 @@ def search_apollo_by_segment(
     run_id = int(run_result.lastrowid)
     db.commit()
 
-    company_keywords = _json_list(recipe.get("company_keywords"))
-    person_titles = _json_list(recipe.get("person_titles")) or DEFAULT_TITLES
-    search_query = " OR ".join(company_keywords)
-    people_query = {
-        "person_titles[]": person_titles,
-        "q_keywords": search_query,
-        "organization_locations[]": [country] if country else [],
-        "page": max(int(payload.page or 1), 1),
-        "per_page": limit,
-    }
-
     created = []
     skipped_duplicates = 0
     verified_emails = 0
     found_contacts = 0
+    selected_attempt = None
     try:
-        people_response = _apollo_post("/mixed_people/api_search", payload={}, query=people_query)
-        people = people_response.get("people") or people_response.get("contacts") or []
-        found_contacts = len(people)
+        people = []
+        attempts = _segment_search_attempts(recipe, country, limit)
+        start_page = max(int(payload.page or 1), 1)
+        for attempt in attempts:
+            people_query = dict(attempt)
+            people_query["page"] = start_page
+            attempt_name = str(people_query.pop("name", "search"))
+            people_response = _apollo_post("/mixed_people/api_search", payload={}, query=people_query)
+            people = people_response.get("people") or people_response.get("contacts") or []
+            found_contacts = len(people)
+            selected_attempt = attempt_name
+            if people:
+                break
         if payload.enrich and people:
             people = _bulk_enrich_people(people, "")
         for person in people:
@@ -1568,6 +1635,7 @@ def search_apollo_by_segment(
             "created": len(created),
             "skipped_duplicates": skipped_duplicates,
             "verified_emails": verified_emails,
+            "search_attempt": selected_attempt,
             "rows": created,
         }
     except Exception as exc:
