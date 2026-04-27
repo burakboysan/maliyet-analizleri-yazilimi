@@ -927,8 +927,10 @@ def _email_enrichment_note(person: dict[str, Any], email_value: str, email_statu
         return f"Apollo status '{email_status}' döndürdü ancak email alanı boş geldi."
     if status in {"unavailable", "no_email", "not_found", "email_not_found", "missing"}:
         return "Apollo kişi kaydını buldu ancak bu kişi için email datası döndürmedi."
-    if status in {"not_revealed", "locked"}:
+    if status in {"not_revealed", "locked"} and not attempted:
         return "Email Apollo Search aşamasında açık değil; enrichment/reveal gerekir."
+    if status in {"not_revealed", "locked"}:
+        return "Apollo enrichment çalıştı ancak email hâlâ açık dönmedi; bu kişi için work email bulunmamış olabilir veya Apollo reveal/plan kısıtı olabilir."
     if not person:
         return "Apollo enrichment kişi eşleşmesi bulamadı."
     return "Apollo enrichment çalıştı ancak email alanı boş döndü; kredi/plan hatası olsaydı ayrı API hatası olarak gösterilir."
@@ -1810,7 +1812,9 @@ def enrich_ai_lead_from_apollo(
     contact = _primary_contact(db, lead_id) or {}
     full_name = _contact_name(contact)
     domain = _company_domain(lead.get("website"))
+    apollo_person_id = _normalize(contact.get("apollo_person_id") or lead.get("apollo_person_id"))
     query = {
+        "id": apollo_person_id or None,
         "name": full_name or None,
         "first_name": contact.get("first_name") or None,
         "last_name": contact.get("last_name") or None,
@@ -1822,6 +1826,11 @@ def enrich_ai_lead_from_apollo(
     }
     apollo_response = _apollo_post("/people/match", query=query)
     person = apollo_response.get("person") or {}
+    if not person and apollo_person_id:
+        fallback_query = dict(query)
+        fallback_query.pop("id", None)
+        apollo_response = _apollo_post("/people/match", query=fallback_query)
+        person = apollo_response.get("person") or {}
     if not person:
         raise HTTPException(status_code=404, detail="Apollo enrichment sonucu kişi bulunamadı.")
     first_name = _normalize(person.get("first_name")) or contact.get("first_name")
