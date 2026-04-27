@@ -43,6 +43,161 @@ SEQUENCE_BY_CHANNEL = {
 }
 
 
+DEFAULT_TITLES = [
+    "Managing Director",
+    "General Manager",
+    "Business Development Manager",
+    "Sales Manager",
+    "Technical Sales Manager",
+    "Project Manager",
+    "Engineering Manager",
+]
+
+
+SEARCH_RECIPES = [
+    {
+        "segment_name": "Hall Ventilation x White Label / Resellers",
+        "sales_channel": "White Label / Resellers",
+        "product_category": "Hall Ventilation",
+        "priority": "High",
+        "company_keywords": ["industrial ventilation reseller", "dust extraction distributor", "welding safety equipment supplier", "industrial ventilation distributor"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["market access", "distributor", "reseller", "industrial ventilation", "dust extraction"],
+        "negative_signals": ["residential hvac", "consumer air purifier"],
+    },
+    {
+        "segment_name": "Hall Ventilation x Clean Air Solution Partner",
+        "sales_channel": "Clean Air Solution Partner",
+        "product_category": "Hall Ventilation",
+        "priority": "High",
+        "company_keywords": ["industrial HVAC company", "indoor air quality company", "industrial ventilation contractor", "clean air solutions provider"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["industrial hvac", "clean air", "indoor air quality", "ventilation project"],
+        "negative_signals": ["residential hvac", "home ventilation"],
+    },
+    {
+        "segment_name": "Hall Ventilation x System Integration Solution Partner",
+        "sales_channel": "System Integration Solution Partner",
+        "product_category": "Hall Ventilation",
+        "priority": "High",
+        "company_keywords": ["robotic welding integrator", "industrial automation integrator", "plant ventilation contractor", "factory ventilation project company"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["integration", "automation", "project", "factory ventilation"],
+        "negative_signals": ["end user only", "retail"],
+    },
+    {
+        "segment_name": "Fume Extraction x White Label / Resellers",
+        "sales_channel": "White Label / Resellers",
+        "product_category": "Fume Extraction",
+        "priority": "High",
+        "company_keywords": ["fume extraction distributor", "welding equipment supplier", "welding safety supplier", "extraction arm reseller"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["welding", "fume extraction", "safety supplier", "reseller"],
+        "negative_signals": ["consumer", "retail only"],
+    },
+    {
+        "segment_name": "Fume Extraction x Clean Air Solution Partner",
+        "sales_channel": "Clean Air Solution Partner",
+        "product_category": "Fume Extraction",
+        "priority": "High",
+        "company_keywords": ["industrial HVAC company", "air filtration company", "workplace air quality company", "ventilation engineering company"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["air filtration", "workplace air", "fume", "ventilation engineering"],
+        "negative_signals": ["residential", "consumer"],
+    },
+    {
+        "segment_name": "Fume Extraction x System Integration Solution Partner",
+        "sales_channel": "System Integration Solution Partner",
+        "product_category": "Fume Extraction",
+        "priority": "High",
+        "company_keywords": ["robotic welding integrator", "welding automation integrator", "laser cutting system integrator", "manufacturing automation integrator"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["robotic welding", "welding automation", "laser cutting", "integration"],
+        "negative_signals": ["end user only"],
+    },
+    {
+        "segment_name": "Dust Collection x White Label / Resellers",
+        "sales_channel": "White Label / Resellers",
+        "product_category": "Dust Collection",
+        "priority": "High",
+        "company_keywords": ["dust collector distributor", "industrial filtration distributor", "dust extraction reseller", "air filtration equipment supplier"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["dust collector", "industrial filtration", "distributor", "reseller"],
+        "negative_signals": ["vacuum cleaner", "consumer"],
+    },
+    {
+        "segment_name": "Dust Collection x Clean Air Solution Partner",
+        "sales_channel": "Clean Air Solution Partner",
+        "product_category": "Dust Collection",
+        "priority": "High",
+        "company_keywords": ["industrial air filtration company", "dust control company", "industrial HVAC contractor", "environmental control solutions"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["dust control", "industrial air filtration", "environmental control", "hvac contractor"],
+        "negative_signals": ["residential"],
+    },
+    {
+        "segment_name": "Dust Collection x System Integration Solution Partner",
+        "sales_channel": "System Integration Solution Partner",
+        "product_category": "Dust Collection",
+        "priority": "Very High",
+        "company_keywords": ["industrial plant system integrator", "bulk material handling system integrator", "foundry equipment integrator", "battery production system integrator", "process engineering company"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["plant systems", "bulk material", "foundry", "battery production", "process engineering"],
+        "negative_signals": ["end user only"],
+    },
+    {
+        "segment_name": "Oil Mist Filtration x White Label / Resellers",
+        "sales_channel": "White Label / Resellers",
+        "product_category": "Oil Mist Filtration",
+        "priority": "High",
+        "company_keywords": ["CNC machine reseller", "machine tool distributor", "CNC equipment distributor", "metalworking machinery reseller"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["cnc", "machine tool", "metalworking", "distributor"],
+        "negative_signals": ["consumer"],
+    },
+    {
+        "segment_name": "Oil Mist Filtration x Clean Air Solution Partner",
+        "sales_channel": "Clean Air Solution Partner",
+        "product_category": "Oil Mist Filtration",
+        "priority": "High",
+        "company_keywords": ["industrial air filtration company", "indoor air quality company", "machining air filtration", "industrial ventilation company"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["machining", "air filtration", "oil mist", "industrial ventilation"],
+        "negative_signals": ["residential"],
+    },
+    {
+        "segment_name": "Oil Mist Filtration x System Integration Solution Partner",
+        "sales_channel": "System Integration Solution Partner",
+        "product_category": "Oil Mist Filtration",
+        "priority": "High",
+        "company_keywords": ["special purpose CNC machine builder", "CNC automation integrator", "machining system integrator", "custom machine builder"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["cnc automation", "machining system", "custom machine", "integration"],
+        "negative_signals": ["end user only"],
+    },
+    {
+        "segment_name": "Turnkey Solutions x Clean Air Solution Partner",
+        "sales_channel": "Clean Air Solution Partner",
+        "product_category": "Turnkey Solutions",
+        "priority": "High",
+        "company_keywords": ["industrial HVAC project company", "clean air project company", "industrial ventilation engineering", "air filtration project contractor"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["project", "engineering", "clean air", "industrial ventilation"],
+        "negative_signals": ["residential"],
+    },
+    {
+        "segment_name": "Turnkey Solutions x System Integration Solution Partner",
+        "sales_channel": "System Integration Solution Partner",
+        "product_category": "Turnkey Solutions",
+        "priority": "Very High",
+        "company_keywords": ["EPC contractor", "system integrator", "process engineering company", "industrial plant engineering", "turnkey industrial solutions"],
+        "person_titles": DEFAULT_TITLES,
+        "positive_signals": ["epc", "system integrator", "process engineering", "turnkey", "industrial plant"],
+        "negative_signals": ["end user only"],
+    },
+]
+
+
 class AiLeadContactRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -101,6 +256,14 @@ class ApolloDomainImportRequest(BaseModel):
     domains: List[dict[str, Any]]
     per_domain_people: int = 5
     enrich: bool = True
+
+
+class ApolloSegmentSearchRequest(BaseModel):
+    segment_name: str
+    country: str
+    limit: int = 25
+    enrich: bool = True
+    page: int = 1
 
 
 def _normalize(value: Any) -> str:
@@ -387,6 +550,43 @@ def _ensure_tables(db: Session) -> None:
             INDEX idx_ai_actions_created (created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """,
+        """
+        CREATE TABLE IF NOT EXISTS ai_search_recipes (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            segment_name VARCHAR(255) NOT NULL,
+            sales_channel VARCHAR(100) NOT NULL,
+            product_category VARCHAR(100) NOT NULL,
+            priority VARCHAR(50) NOT NULL,
+            company_keywords JSON,
+            person_titles JSON,
+            positive_signals JSON,
+            negative_signals JSON,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uq_ai_search_recipes_segment (segment_name)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS ai_search_runs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            recipe_id INT,
+            segment_name VARCHAR(255) NOT NULL,
+            country VARCHAR(100),
+            requested_limit INT DEFAULT 0,
+            found_contacts INT DEFAULT 0,
+            created_leads INT DEFAULT 0,
+            skipped_duplicates INT DEFAULT 0,
+            verified_emails INT DEFAULT 0,
+            status VARCHAR(50) DEFAULT 'started',
+            error_message TEXT,
+            created_by_user_id INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP NULL,
+            INDEX idx_ai_search_runs_segment (segment_name),
+            INDEX idx_ai_search_runs_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """,
     ]
     for statement in statements:
         db.execute(text(statement))
@@ -398,6 +598,42 @@ def _ensure_tables(db: Session) -> None:
     _ensure_column(db, "ai_lead_contacts", "apollo_person_id", "VARCHAR(100)")
     _ensure_column(db, "ai_lead_contacts", "apollo_raw_json", "JSON")
     _ensure_column(db, "ai_segmentation_results", "suggested_sequence", "VARCHAR(100)")
+    db.commit()
+    _seed_search_recipes(db)
+
+
+def _seed_search_recipes(db: Session) -> None:
+    for recipe in SEARCH_RECIPES:
+        db.execute(
+            text(
+                """
+                INSERT INTO ai_search_recipes (
+                    segment_name, sales_channel, product_category, priority,
+                    company_keywords, person_titles, positive_signals, negative_signals, is_active
+                )
+                VALUES (
+                    :segment_name, :sales_channel, :product_category, :priority,
+                    :company_keywords, :person_titles, :positive_signals, :negative_signals, TRUE
+                )
+                ON DUPLICATE KEY UPDATE
+                    sales_channel = VALUES(sales_channel),
+                    product_category = VALUES(product_category),
+                    priority = VALUES(priority),
+                    company_keywords = VALUES(company_keywords),
+                    person_titles = VALUES(person_titles),
+                    positive_signals = VALUES(positive_signals),
+                    negative_signals = VALUES(negative_signals),
+                    is_active = TRUE
+                """
+            ),
+            {
+                **{key: recipe[key] for key in ("segment_name", "sales_channel", "product_category", "priority")},
+                "company_keywords": json.dumps(recipe["company_keywords"], ensure_ascii=False),
+                "person_titles": json.dumps(recipe["person_titles"], ensure_ascii=False),
+                "positive_signals": json.dumps(recipe["positive_signals"], ensure_ascii=False),
+                "negative_signals": json.dumps(recipe["negative_signals"], ensure_ascii=False),
+            },
+        )
     db.commit()
 
 
@@ -594,6 +830,20 @@ def _primary_contact(db: Session, lead_id: int) -> dict[str, Any] | None:
 
 def _contact_name(contact: dict[str, Any]) -> str:
     return " ".join(part for part in [contact.get("first_name"), contact.get("last_name")] if part)
+
+
+def _json_list(value: Any) -> list[str]:
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    try:
+        parsed = json.loads(value)
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed if str(item).strip()]
+    except Exception:
+        pass
+    return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
 def _latest_action(db: Session, lead_id: int) -> dict[str, Any] | None:
@@ -962,6 +1212,9 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
         company_name = _normalize(person.get("employment_history", [{}])[0].get("organization_name") if person.get("employment_history") else "")
     if not company_name:
         raise ValueError("Apollo kaydında firma adı bulunamadı.")
+    existing_id = _find_existing_apollo_lead(db, person, company_name)
+    if existing_id:
+        raise ValueError("duplicate")
 
     country = _normalize(
         organization.get("country")
@@ -986,6 +1239,7 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
         if item
     )
 
+    forced_segment = person.get("__forced_segment") or {}
     analysis = _analyze_values(
         {
             "company_name": company_name,
@@ -996,6 +1250,19 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
         },
         has_contact=True,
     )
+    if forced_segment and not analysis["is_excluded"]:
+        analysis.update(
+            {
+                "sales_channel": forced_segment.get("sales_channel") or analysis["sales_channel"],
+                "product_category": forced_segment.get("product_category") or analysis["product_category"],
+                "segment_name": forced_segment.get("segment_name") or analysis["segment_name"],
+                "priority": forced_segment.get("priority") or analysis["priority"],
+                "suggested_sequence": forced_segment.get("suggested_sequence") or analysis["suggested_sequence"],
+                "partner_type": forced_segment.get("sales_channel") or analysis["partner_type"],
+                "short_reasoning": f"Segment Search recipe matched: {forced_segment.get('segment_name')}",
+            }
+        )
+        analysis["ai_score"] = _score(analysis["priority"], False, True, analysis["sales_channel"])
     status_value = "Excluded" if analysis["is_excluded"] else "Segmented"
     result = db.execute(
         text(
@@ -1061,6 +1328,26 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
     return _lead_response(db, row)
 
 
+def _find_existing_apollo_lead(db: Session, person: dict[str, Any], company_name: str) -> int | None:
+    person_id = _normalize(person.get("id"))
+    email_value = _normalize(person.get("email"))
+    if person_id:
+        row = db.execute(
+            text("SELECT lead_id FROM ai_lead_contacts WHERE apollo_person_id = :person_id LIMIT 1"),
+            {"person_id": person_id},
+        ).first()
+        if row:
+            return int(row[0])
+    if email_value:
+        row = db.execute(
+            text("SELECT lead_id FROM ai_lead_contacts WHERE email = :email LIMIT 1"),
+            {"email": email_value},
+        ).first()
+        if row:
+            return int(row[0])
+    return None
+
+
 @router.post("/ai-leads/apollo/search")
 def search_apollo_ai_leads(
     payload: ApolloSearchRequest,
@@ -1078,7 +1365,7 @@ def search_apollo_ai_leads(
         "page": max(int(payload.page or 1), 1),
         "per_page": min(max(int(payload.per_page or 25), 1), 100),
     }
-    apollo_response = _apollo_post("/mixed_people/api_search", payload=search_payload)
+    apollo_response = _apollo_post("/mixed_people/api_search", payload={}, query=search_payload)
     people = apollo_response.get("people") or apollo_response.get("contacts") or []
     created = []
     for person in people:
@@ -1130,7 +1417,7 @@ def import_apollo_seed_domains(
             "page": 1,
             "per_page": min(max(int(payload.per_domain_people or 5), 1), 10),
         }
-        people_response = _apollo_post("/mixed_people/api_search", payload=people_payload)
+        people_response = _apollo_post("/mixed_people/api_search", payload={}, query=people_payload)
         people = people_response.get("people") or people_response.get("contacts") or []
         if payload.enrich and people:
             people = _bulk_enrich_people(people, domain)
@@ -1145,6 +1432,133 @@ def import_apollo_seed_domains(
                 continue
     db.commit()
     return {"created": len(created), "rows": created}
+
+
+@router.post("/ai-leads/apollo/segment-search")
+def search_apollo_by_segment(
+    payload: ApolloSegmentSearchRequest,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    segment_name = _normalize(payload.segment_name)
+    if not segment_name:
+        raise HTTPException(status_code=400, detail="Segment zorunludur.")
+
+    recipe_row = db.execute(
+        text("SELECT * FROM ai_search_recipes WHERE segment_name = :segment_name AND is_active = TRUE LIMIT 1"),
+        {"segment_name": segment_name},
+    ).first()
+    if not recipe_row:
+        raise HTTPException(status_code=404, detail="Bu segment için Apollo Search Recipe bulunamadı.")
+    recipe = _lead_row_to_dict(recipe_row)
+    recipe_id = int(recipe["id"])
+    limit = min(max(int(payload.limit or 25), 1), 100)
+    country = _normalize(payload.country)
+
+    run_result = db.execute(
+        text(
+            """
+            INSERT INTO ai_search_runs (
+                recipe_id, segment_name, country, requested_limit, status, created_by_user_id
+            )
+            VALUES (:recipe_id, :segment_name, :country, :requested_limit, 'started', :user_id)
+            """
+        ),
+        {
+            "recipe_id": recipe_id,
+            "segment_name": segment_name,
+            "country": country,
+            "requested_limit": limit,
+            "user_id": current_user.id,
+        },
+    )
+    run_id = int(run_result.lastrowid)
+    db.commit()
+
+    company_keywords = _json_list(recipe.get("company_keywords"))
+    person_titles = _json_list(recipe.get("person_titles")) or DEFAULT_TITLES
+    search_query = " OR ".join(company_keywords)
+    people_query = {
+        "person_titles[]": person_titles,
+        "q_keywords": search_query,
+        "organization_locations[]": [country] if country else [],
+        "page": max(int(payload.page or 1), 1),
+        "per_page": limit,
+    }
+
+    created = []
+    skipped_duplicates = 0
+    verified_emails = 0
+    found_contacts = 0
+    try:
+        people_response = _apollo_post("/mixed_people/api_search", payload={}, query=people_query)
+        people = people_response.get("people") or people_response.get("contacts") or []
+        found_contacts = len(people)
+        if payload.enrich and people:
+            people = _bulk_enrich_people(people, "")
+        for person in people:
+            person["__forced_segment"] = {
+                "sales_channel": recipe["sales_channel"],
+                "product_category": recipe["product_category"],
+                "segment_name": recipe["segment_name"],
+                "priority": recipe["priority"],
+                "suggested_sequence": _sequence_code(recipe["sales_channel"]),
+            }
+            try:
+                lead = _create_lead_from_apollo_person(db, person, current_user)
+                created.append(lead)
+                if str(lead.get("email_status") or "").casefold() == "verified":
+                    verified_emails += 1
+            except ValueError as exc:
+                if str(exc) == "duplicate":
+                    skipped_duplicates += 1
+                continue
+        db.execute(
+            text(
+                """
+                UPDATE ai_search_runs
+                SET found_contacts = :found_contacts,
+                    created_leads = :created_leads,
+                    skipped_duplicates = :skipped_duplicates,
+                    verified_emails = :verified_emails,
+                    status = 'completed',
+                    completed_at = CURRENT_TIMESTAMP
+                WHERE id = :run_id
+                """
+            ),
+            {
+                "run_id": run_id,
+                "found_contacts": found_contacts,
+                "created_leads": len(created),
+                "skipped_duplicates": skipped_duplicates,
+                "verified_emails": verified_emails,
+            },
+        )
+        db.commit()
+        return {
+            "run_id": run_id,
+            "segment_name": segment_name,
+            "country": country,
+            "found_contacts": found_contacts,
+            "created": len(created),
+            "skipped_duplicates": skipped_duplicates,
+            "verified_emails": verified_emails,
+            "rows": created,
+        }
+    except Exception as exc:
+        db.execute(
+            text(
+                """
+                UPDATE ai_search_runs
+                SET status = 'failed', error_message = :error_message, completed_at = CURRENT_TIMESTAMP
+                WHERE id = :run_id
+                """
+            ),
+            {"run_id": run_id, "error_message": str(exc)[:1000]},
+        )
+        db.commit()
+        raise
 
 
 @router.post("/ai-leads/{lead_id}/apollo-enrich")

@@ -129,3 +129,38 @@ CREATE TABLE IF NOT EXISTS ai_actions (
     INDEX idx_ai_actions_type (action_type),
     INDEX idx_ai_actions_created (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ai_search_recipes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    segment_name VARCHAR(255) NOT NULL,
+    sales_channel VARCHAR(100) NOT NULL,
+    product_category VARCHAR(100) NOT NULL,
+    priority VARCHAR(50) NOT NULL,
+    company_keywords JSON,
+    person_titles JSON,
+    positive_signals JSON,
+    negative_signals JSON,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_ai_search_recipes_segment (segment_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ai_search_runs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    recipe_id INT,
+    segment_name VARCHAR(255) NOT NULL,
+    country VARCHAR(100),
+    requested_limit INT DEFAULT 0,
+    found_contacts INT DEFAULT 0,
+    created_leads INT DEFAULT 0,
+    skipped_duplicates INT DEFAULT 0,
+    verified_emails INT DEFAULT 0,
+    status VARCHAR(50) DEFAULT 'started',
+    error_message TEXT,
+    created_by_user_id INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP NULL,
+    INDEX idx_ai_search_runs_segment (segment_name),
+    INDEX idx_ai_search_runs_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

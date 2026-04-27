@@ -43,6 +43,22 @@ STATUS_OPTIONS = [
 
 PRIORITY_OPTIONS = ["Very High", "High", "Medium", "Low", "Excluded"]
 
+TARGET_COUNTRIES = [
+    "Germany",
+    "France",
+    "Italy",
+    "Spain",
+    "Netherlands",
+    "Belgium",
+    "Austria",
+    "Romania",
+    "Czech Republic",
+    "Hungary",
+    "United Arab Emirates",
+    "Saudi Arabia",
+    "Turkey",
+]
+
 
 def get_sequence_code(sales_channel):
     return SEQUENCE_CODES.get(str(sales_channel or "").strip(), "DIRECT_SALES_REVIEW")
@@ -80,6 +96,18 @@ SEGMENTS = [
     }
     for product in PRODUCT_CATEGORIES
     for channel in SALES_CHANNELS
+]
+
+
+HIGH_PRIORITY_SEGMENT_NAMES = [
+    item["segment_name"]
+    for item in SEGMENTS
+    if item["priority"] in {"High", "Very High"}
+    and item["sales_channel"] in {
+        "White Label / Resellers",
+        "Clean Air Solution Partner",
+        "System Integration Solution Partner",
+    }
 ]
 
 

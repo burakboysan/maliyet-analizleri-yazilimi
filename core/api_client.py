@@ -353,6 +353,10 @@ def search_apollo_ai_leads(token, payload):
     return request_json("POST", "/desktop/ai-leads/apollo/search", payload=payload, headers=auth_headers(token)) or {}
 
 
+def search_apollo_segment_leads(token, payload):
+    return request_json("POST", "/desktop/ai-leads/apollo/segment-search", payload=payload, headers=auth_headers(token)) or {}
+
+
 def import_apollo_seed_domains(token, domains, per_domain_people=5, enrich=True):
     return request_json(
         "POST",
