@@ -152,7 +152,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         show="headings",
         yscrollcommand=y_scroll.set,
         xscrollcommand=x_scroll.set,
-        selectmode="browse",
+        selectmode="extended",
     )
     y_scroll.config(command=tree.yview)
     x_scroll.config(command=tree.xview)
@@ -242,14 +242,18 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         refresh_metrics()
 
     def selected_lead():
-        selection = tree.selection()
-        if not selection:
-            return None
-        lead_id = str(selection[0])
+        leads = selected_leads()
+        return leads[0] if leads else None
+
+    def selected_leads():
+        selected_ids = {str(item_id) for item_id in tree.selection()}
+        if not selected_ids:
+            return []
+        leads = []
         for item in state["leads"]:
-            if str(item.get("id")) == lead_id:
-                return item
-        return None
+            if str(item.get("id")) in selected_ids:
+                leads.append(item)
+        return leads
 
     def open_detail(_event=None):
         lead = selected_lead()
@@ -550,28 +554,42 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     def enrich_selected():
         token = get_app_token()
-        lead = selected_lead()
+        leads = selected_leads()
         if not token:
             messagebox.showerror("Apollo", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
             return
-        if not lead:
-            messagebox.showwarning("Apollo", "Lütfen enrichment yapılacak lead'i seçin.", parent=win)
+        if not leads:
+            messagebox.showwarning("Apollo", "Lütfen enrichment yapılacak leadleri seçin.", parent=win)
             return
 
         def worker():
+            success = 0
+            failed = 0
+            last_note = ""
             try:
-                result = enrich_ai_lead_from_apollo(token, lead.get("id"))
-                contact = result.get("contact") or {}
-                if contact:
-                    lead["contact_email"] = contact.get("email") or lead.get("contact_email") or ""
-                    lead["email_status"] = contact.get("email_status") or lead.get("email_status") or "enriched"
-                    lead["enrichment_note"] = contact.get("enrichment_note") or lead.get("enrichment_note") or ""
-                    lead["contact_name"] = contact.get("name") or lead.get("contact_name") or ""
-                    lead["contact_title"] = contact.get("title") or lead.get("contact_title") or ""
-                note = lead.get("enrichment_note") or "Apollo enrichment tamamlandı."
-                lead["last_action"] = note
+                for lead in leads:
+                    try:
+                        result = enrich_ai_lead_from_apollo(token, lead.get("id"))
+                        contact = result.get("contact") or {}
+                        if contact:
+                            lead["contact_email"] = contact.get("email") or lead.get("contact_email") or ""
+                            lead["email_status"] = contact.get("email_status") or lead.get("email_status") or "enriched"
+                            lead["enrichment_note"] = contact.get("enrichment_note") or lead.get("enrichment_note") or ""
+                            lead["contact_name"] = contact.get("name") or lead.get("contact_name") or ""
+                            lead["contact_title"] = contact.get("title") or lead.get("contact_title") or ""
+                        note = lead.get("enrichment_note") or "Apollo enrichment tamamlandı."
+                        lead["last_action"] = note
+                        last_note = note
+                        success += 1
+                    except Exception:
+                        failed += 1
                 win.after(0, apply_filters)
-                win.after(0, lambda msg=note: messagebox.showinfo("Apollo", msg, parent=win))
+                message = f"{success} lead için enrichment tamamlandı."
+                if failed:
+                    message += f" {failed} lead başarısız oldu."
+                if success == 1 and last_note:
+                    message += f"\n\n{last_note}"
+                win.after(0, lambda msg=message: messagebox.showinfo("Apollo", msg, parent=win))
             except Exception as exc:
                 win.after(0, lambda err=str(exc): messagebox.showerror("Apollo", f"Apollo enrichment başarısız: {err}", parent=win))
 
@@ -604,23 +622,38 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     def delete_selected_lead():
         token = get_app_token()
-        lead = selected_lead()
+        leads = selected_leads()
         if not token:
             messagebox.showerror("Lead Sil", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
             return
-        if not lead:
-            messagebox.showwarning("Lead Sil", "Lütfen silinecek lead'i seçin.", parent=win)
+        if not leads:
+            messagebox.showwarning("Lead Sil", "Lütfen silinecek leadleri seçin.", parent=win)
             return
-        company = lead.get("company_name") or "seçili lead"
-        if not messagebox.askyesno("Lead Sil", f"{company} tablodan silinsin mi?", parent=win):
+        if len(leads) == 1:
+            prompt = f"{leads[0].get('company_name') or 'seçili lead'} tablodan silinsin mi?"
+        else:
+            prompt = f"Seçili {len(leads)} lead tablodan silinsin mi?"
+        if not messagebox.askyesno("Lead Sil", prompt, parent=win):
             return
 
         def worker():
+            deleted = 0
+            failed = 0
             try:
-                delete_ai_lead(token, lead.get("id"))
-                state["leads"] = [item for item in state["leads"] if str(item.get("id")) != str(lead.get("id"))]
+                deleted_ids = set()
+                for lead in leads:
+                    try:
+                        delete_ai_lead(token, lead.get("id"))
+                        deleted_ids.add(str(lead.get("id")))
+                        deleted += 1
+                    except Exception:
+                        failed += 1
+                state["leads"] = [item for item in state["leads"] if str(item.get("id")) not in deleted_ids]
                 win.after(0, apply_filters)
-                win.after(0, lambda: messagebox.showinfo("Lead Sil", "Lead tablodan silindi.", parent=win))
+                message = f"{deleted} lead tablodan silindi."
+                if failed:
+                    message += f" {failed} lead silinemedi."
+                win.after(0, lambda msg=message: messagebox.showinfo("Lead Sil", msg, parent=win))
             except Exception as exc:
                 win.after(0, lambda err=str(exc): messagebox.showerror("Lead Sil", f"Lead silinemedi: {err}", parent=win))
 
