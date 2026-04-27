@@ -16,6 +16,30 @@ from app.db.tables import UserTable
 router = APIRouter(prefix="/desktop", tags=["desktop-ai-leads"])
 
 
+def _read_env_file_value(name: str) -> str:
+    env_paths = [
+        "/opt/mobile_api/app/.env",
+        "/opt/mobile_api/.env",
+        os.path.join(os.getcwd(), ".env"),
+        os.path.join(os.getcwd(), "app", ".env"),
+    ]
+    for env_path in env_paths:
+        if not os.path.exists(env_path):
+            continue
+        try:
+            with open(env_path, "r", encoding="utf-8") as env_file:
+                for line in env_file:
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#") or "=" not in stripped:
+                        continue
+                    key, value = stripped.split("=", 1)
+                    if key.strip() == name:
+                        return value.strip().strip('"').strip("'")
+        except OSError:
+            continue
+    return ""
+
+
 SALES_CHANNELS = [
     "OEM",
     "White Label / Resellers",
@@ -1104,7 +1128,7 @@ def _first_import_value(row: dict[str, Any], keys: list[str]) -> str:
 
 
 def _apollo_api_key() -> str:
-    api_key = os.getenv("APOLLO_API_KEY", "").strip()
+    api_key = os.getenv("APOLLO_API_KEY", "").strip() or _read_env_file_value("APOLLO_API_KEY")
     if not api_key:
         raise HTTPException(status_code=503, detail="APOLLO_API_KEY sunucuda tanımlı değil.")
     return api_key
