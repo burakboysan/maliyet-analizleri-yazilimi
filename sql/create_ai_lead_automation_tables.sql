@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS ai_segmentation_results (
     risks_or_uncertainties TEXT,
     personalization_angle TEXT,
     short_reasoning TEXT,
+    suggested_sequence VARCHAR(100),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (lead_id) REFERENCES ai_leads(id) ON DELETE CASCADE,
     INDEX idx_ai_segmentation_lead (lead_id),
