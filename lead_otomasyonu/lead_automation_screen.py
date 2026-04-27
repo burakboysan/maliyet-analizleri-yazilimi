@@ -342,9 +342,15 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 last_name = _first_value(row, ["last_name", "Last Name"])
                 contact_name = _first_value(row, ["name", "Name", "Person Name"]) or " ".join(part for part in [first_name, last_name] if part)
                 activity = _first_value(row, ["description", "Company Description", "industry", "Industry", "Açıklama"])
-                channel = _guess_channel(activity)
-                product = _guess_product(activity)
-                priority = priority_for_segment(product, channel)
+                partner_reason = _first_value(row, ["partner_fit_reason", "Partner Fit Reason"])
+                value_proposition = _first_value(row, ["value_proposition", "Value Proposition"])
+                recommended_campaign = _first_value(row, ["recommended_campaign", "Recommended Campaign"])
+                segment_hint = _first_value(row, ["segment", "Segment"])
+                combined_signal = " ".join(item for item in [activity, partner_reason, value_proposition, recommended_campaign, segment_hint] if item)
+                channel = _channel_from_apollo_row(row, combined_signal)
+                product = _product_from_apollo_row(row, combined_signal)
+                priority = _priority_from_icp(row) or priority_for_segment(product, channel)
+                score = _score_from_icp(row, priority)
                 state["leads"].append(
                     {
                         "id": _next_id(state["leads"]),
@@ -360,15 +366,18 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                         "product_category": product,
                         "segment_name": build_segment_name(product, channel),
                         "priority": priority,
-                        "ai_score": 70 if priority in {"High", "Very High"} else 45,
-                        "suggested_sequence": get_sequence_code(channel),
+                        "ai_score": score,
+                        "suggested_sequence": _sequence_from_campaign(recommended_campaign, channel),
                         "ai_status": "Segmented",
                         "approval_status": "Awaiting Approval",
                         "last_action": "CSV import ile eklendi",
                         "website": _first_value(row, ["website", "Website"]),
-                        "detected_activity": activity,
-                        "short_reasoning": "CSV import sonrası MVP kural setiyle segment önerildi.",
-                        "personalization_angle": activity,
+                        "detected_activity": combined_signal or activity,
+                        "short_reasoning": partner_reason or "Apollo import sonrası ICP ve segment sinyalleriyle öneri oluşturuldu.",
+                        "personalization_angle": _first_value(row, ["personalized_opener", "Personalized Opener"]) or value_proposition or combined_signal,
+                        "value_proposition": value_proposition,
+                        "icp_tier": _first_value(row, ["icp_tier", "ICP Tier"]),
+                        "recommended_campaign": recommended_campaign,
                     }
                 )
                 added += 1
@@ -547,6 +556,21 @@ def _guess_channel(text):
     return "White Label / Resellers"
 
 
+def _channel_from_apollo_row(row, text):
+    segment = _first_value(row, ["segment", "Segment"]).casefold()
+    campaign = _first_value(row, ["recommended_campaign", "Recommended Campaign"]).casefold()
+    haystack = f"{segment} {campaign} {text}".casefold()
+    if any(word in haystack for word in ["system integrator", "integration", "integrator", "epc", "turnkey"]):
+        return "System Integration Solution Partner"
+    if any(word in haystack for word in ["hvac", "clean air", "ventilation", "industrial_hvac"]):
+        return "Clean Air Solution Partner"
+    if any(word in haystack for word in ["distributor", "reseller", "dealer", "supplier"]):
+        return "White Label / Resellers"
+    if any(word in haystack for word in ["oem", "manufacturer", "machine builder"]):
+        return "OEM"
+    return _guess_channel(text)
+
+
 def _guess_product(text):
     haystack = str(text or "").casefold()
     if any(word in haystack for word in ["oil mist", "cnc", "machining", "die casting"]):
@@ -558,6 +582,56 @@ def _guess_product(text):
     if any(word in haystack for word in ["turnkey", "epc", "plant"]):
         return "Turnkey Solutions"
     return "Hall Ventilation"
+
+
+def _product_from_apollo_row(row, text):
+    campaign = _first_value(row, ["recommended_campaign", "Recommended Campaign"]).casefold()
+    haystack = f"{campaign} {text}".casefold()
+    if any(word in haystack for word in ["oil_mist", "oil mist", "cnc", "machining"]):
+        return "Oil Mist Filtration"
+    if any(word in haystack for word in ["dust", "atex", "bulk", "foundry", "powder"]):
+        return "Dust Collection"
+    if any(word in haystack for word in ["fume", "welding", "cutting", "grinding"]):
+        return "Fume Extraction"
+    if any(word in haystack for word in ["turnkey", "epc", "plant"]):
+        return "Turnkey Solutions"
+    if any(word in haystack for word in ["hvac", "ventilation", "clean air"]):
+        return "Hall Ventilation"
+    return _guess_product(text)
+
+
+def _priority_from_icp(row):
+    tier = _first_value(row, ["icp_tier", "ICP Tier"])
+    if tier == "A+ Partner Target":
+        return "Very High"
+    if tier == "A Partner Target":
+        return "High"
+    if tier == "B Partner Target":
+        return "Medium"
+    if tier:
+        return "Low"
+    return ""
+
+
+def _score_from_icp(row, priority):
+    raw = _first_value(row, ["icp_score", "ICP Score"])
+    try:
+        return max(0, min(int(float(raw)), 100))
+    except Exception:
+        return 82 if priority == "Very High" else 70 if priority == "High" else 50 if priority == "Medium" else 30
+
+
+def _sequence_from_campaign(campaign, channel):
+    normalized = str(campaign or "").casefold()
+    if "hvac" in normalized or "clean" in normalized:
+        return "CASP"
+    if "integr" in normalized or "turnkey" in normalized:
+        return "SISP"
+    if "oem" in normalized:
+        return "OEM"
+    if "reseller" in normalized or "distributor" in normalized:
+        return "WL_RESELLER"
+    return get_sequence_code(channel)
 
 
 def _guess_language(country):

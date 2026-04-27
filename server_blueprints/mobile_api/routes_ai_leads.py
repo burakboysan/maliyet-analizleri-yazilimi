@@ -97,6 +97,12 @@ class ApolloSearchRequest(BaseModel):
     reveal_emails: bool = False
 
 
+class ApolloDomainImportRequest(BaseModel):
+    domains: List[dict[str, Any]]
+    per_domain_people: int = 5
+    enrich: bool = True
+
+
 def _normalize(value: Any) -> str:
     return " ".join(str(value or "").strip().split())
 
@@ -175,6 +181,71 @@ def _guess_product_category(text_value: str) -> str:
     if any(word in haystack for word in ["turnkey", "epc", "plant", "project"]):
         return "Turnkey Solutions"
     return "Hall Ventilation"
+
+
+def _sales_channel_from_import_row(row: dict[str, Any], fallback_text: str) -> str:
+    segment = _first_import_value(row, ["segment", "Segment"]).casefold()
+    campaign = _first_import_value(row, ["recommended_campaign", "Recommended Campaign"]).casefold()
+    haystack = f"{segment} {campaign} {fallback_text}".casefold()
+    if any(word in haystack for word in ["system integrator", "integration", "integrator", "epc", "turnkey"]):
+        return "System Integration Solution Partner"
+    if any(word in haystack for word in ["hvac", "clean air", "ventilation", "industrial_hvac"]):
+        return "Clean Air Solution Partner"
+    if any(word in haystack for word in ["distributor", "reseller", "dealer", "supplier"]):
+        return "White Label / Resellers"
+    if any(word in haystack for word in ["oem", "manufacturer", "machine builder"]):
+        return "OEM"
+    return _guess_sales_channel(fallback_text)
+
+
+def _product_category_from_import_row(row: dict[str, Any], fallback_text: str) -> str:
+    campaign = _first_import_value(row, ["recommended_campaign", "Recommended Campaign"]).casefold()
+    haystack = f"{campaign} {fallback_text}".casefold()
+    if any(word in haystack for word in ["oil_mist", "oil mist", "cnc", "machining"]):
+        return "Oil Mist Filtration"
+    if any(word in haystack for word in ["dust", "atex", "bulk", "foundry", "powder"]):
+        return "Dust Collection"
+    if any(word in haystack for word in ["fume", "welding", "cutting", "grinding"]):
+        return "Fume Extraction"
+    if any(word in haystack for word in ["turnkey", "epc", "plant"]):
+        return "Turnkey Solutions"
+    if any(word in haystack for word in ["hvac", "ventilation", "clean air"]):
+        return "Hall Ventilation"
+    return _guess_product_category(fallback_text)
+
+
+def _priority_from_import_row(row: dict[str, Any], product_category: str, sales_channel: str) -> str:
+    tier = _first_import_value(row, ["icp_tier", "ICP Tier"])
+    if tier == "A+ Partner Target":
+        return "Very High"
+    if tier == "A Partner Target":
+        return "High"
+    if tier == "B Partner Target":
+        return "Medium"
+    if tier:
+        return "Low"
+    return _priority_for_segment(product_category, sales_channel)
+
+
+def _score_from_import_row(row: dict[str, Any], priority: str) -> int:
+    raw = _first_import_value(row, ["icp_score", "ICP Score"])
+    try:
+        return max(0, min(int(float(raw)), 100))
+    except Exception:
+        return {"Very High": 82, "High": 70, "Medium": 50, "Low": 30}.get(priority, 45)
+
+
+def _sequence_from_import_row(row: dict[str, Any], sales_channel: str) -> str:
+    campaign = _first_import_value(row, ["recommended_campaign", "Recommended Campaign"]).casefold()
+    if "hvac" in campaign or "clean" in campaign:
+        return "CASP"
+    if "integr" in campaign or "turnkey" in campaign:
+        return "SISP"
+    if "oem" in campaign:
+        return "OEM"
+    if "reseller" in campaign or "distributor" in campaign:
+        return "WL_RESELLER"
+    return _sequence_code(sales_channel)
 
 
 def _score(priority: str, excluded: bool, has_contact: bool, sales_channel: str) -> int:
@@ -406,6 +477,52 @@ def _analyze_values(lead: dict[str, Any], has_contact: bool = False) -> dict[str
         "suggested_sequence": sequence,
         "personalization_angle": personalization,
         "short_reasoning": reasoning,
+    }
+
+
+def _analysis_from_import_row(row: dict[str, Any], lead: dict[str, Any], has_contact: bool = False) -> dict[str, Any]:
+    partner_reason = _first_import_value(row, ["partner_fit_reason", "Partner Fit Reason"])
+    value_proposition = _first_import_value(row, ["value_proposition", "Value Proposition"])
+    personalized_opener = _first_import_value(row, ["personalized_opener", "Personalized Opener"])
+    recommended_campaign = _first_import_value(row, ["recommended_campaign", "Recommended Campaign"])
+    segment_hint = _first_import_value(row, ["segment", "Segment"])
+    fallback_text = " ".join(
+        item
+        for item in [
+            _normalize(lead.get("company_name")),
+            _normalize(lead.get("company_description")),
+            _normalize(lead.get("detected_activity")),
+            partner_reason,
+            value_proposition,
+            recommended_campaign,
+            segment_hint,
+        ]
+        if item
+    )
+    country = _normalize(lead.get("country"))
+    excluded = _casefold(country) in EXCLUDED_COUNTRIES
+    sales_channel = _sales_channel_from_import_row(row, fallback_text)
+    product_category = _product_category_from_import_row(row, fallback_text)
+    priority = "Excluded" if excluded else _priority_from_import_row(row, product_category, sales_channel)
+    ai_score = 0 if excluded else _score_from_import_row(row, priority)
+    sequence = _sequence_from_import_row(row, sales_channel)
+    return {
+        "country": country,
+        "local_language": _normalize(lead.get("local_language")) or _language_for_country(country),
+        "is_excluded": excluded,
+        "exclusion_reason": "UK/Poland exclusive partner rule" if excluded else None,
+        "sales_channel": sales_channel,
+        "product_category": product_category,
+        "segment_name": _segment_name(product_category, sales_channel),
+        "priority": priority,
+        "ai_score": ai_score,
+        "partner_type": segment_hint or sales_channel,
+        "end_user_fit_signals": value_proposition,
+        "key_match_signals": fallback_text,
+        "risks_or_uncertainties": "Imported from Apollo automation output.",
+        "suggested_sequence": sequence,
+        "personalization_angle": personalized_opener or value_proposition,
+        "short_reasoning": partner_reason or f"Imported ICP tier mapped to {priority}.",
     }
 
 
@@ -667,8 +784,65 @@ def import_ai_leads(
                 phone=_first_import_value(row, ["phone", "Phone"]),
             ),
         )
-        created.append(create_ai_lead(create_payload, db, current_user))
+        created.append(_create_ai_lead_from_import_row(db, create_payload, row, current_user))
     return {"created": len(created), "rows": created}
+
+
+def _create_ai_lead_from_import_row(
+    db: Session,
+    payload: AiLeadCreateRequest,
+    import_row: dict[str, Any],
+    current_user: UserTable,
+) -> dict[str, Any]:
+    company_name = _normalize(payload.company_name)
+    analysis_input = payload.dict()
+    analysis = _analysis_from_import_row(import_row, analysis_input, has_contact=payload.contact is not None)
+    status_value = "Excluded" if analysis["is_excluded"] else "Segmented"
+    result = db.execute(
+        text(
+            """
+            INSERT INTO ai_leads (
+                company_name, website, country, region, local_language, source, source_reference,
+                company_description, detected_activity, status, exclusion_status, exclusion_reason, created_by_user_id
+            )
+            VALUES (
+                :company_name, :website, :country, :region, :local_language, :source, :source_reference,
+                :company_description, :detected_activity, :status, :exclusion_status, :exclusion_reason, :user_id
+            )
+            """
+        ),
+        {
+            "company_name": company_name,
+            "website": payload.website,
+            "country": analysis["country"] or payload.country,
+            "region": payload.region,
+            "local_language": analysis["local_language"],
+            "source": payload.source if payload.source in {"Apollo", "Manual", "CSV"} else "CSV",
+            "source_reference": payload.source_reference,
+            "company_description": payload.company_description,
+            "detected_activity": payload.detected_activity,
+            "status": status_value,
+            "exclusion_status": "Excluded" if analysis["is_excluded"] else "Active",
+            "exclusion_reason": analysis["exclusion_reason"],
+            "user_id": current_user.id,
+        },
+    )
+    lead_id = int(result.lastrowid)
+    if payload.contact:
+        contact = payload.contact
+        db.execute(
+            text(
+                """
+                INSERT INTO ai_lead_contacts (lead_id, first_name, last_name, title, email, email_status, linkedin_url, phone)
+                VALUES (:lead_id, :first_name, :last_name, :title, :email, :email_status, :linkedin_url, :phone)
+                """
+            ),
+            {"lead_id": lead_id, **contact.dict()},
+        )
+    _save_segmentation(db, lead_id, analysis)
+    _log_action(db, lead_id, "apollo_automation_import", analysis["short_reasoning"], current_user.id)
+    row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    return _lead_response(db, row)
 
 
 def _first_import_value(row: dict[str, Any], keys: list[str]) -> str:
@@ -699,6 +873,7 @@ def _apollo_post(path: str, payload: dict[str, Any] | None = None, query: dict[s
         headers={
             "Content-Type": "application/json",
             "Cache-Control": "no-cache",
+            "User-Agent": "BomaksanLeadAutomation/1.0",
             "X-Api-Key": _apollo_api_key(),
         },
     )
@@ -710,6 +885,57 @@ def _apollo_post(path: str, payload: dict[str, Any] | None = None, query: dict[s
         raise HTTPException(status_code=exc.code, detail=f"Apollo API hatası: {detail}") from exc
     except error.URLError as exc:
         raise HTTPException(status_code=502, detail=f"Apollo API erişilemedi: {exc.reason}") from exc
+
+
+def _apollo_get(path: str, query: dict[str, Any] | None = None) -> dict[str, Any]:
+    base_url = "https://api.apollo.io/api/v1"
+    url = f"{base_url}{path}"
+    if query:
+        url += "?" + parse.urlencode({key: value for key, value in query.items() if value not in (None, "")}, doseq=True)
+    req = request.Request(
+        url,
+        method="GET",
+        headers={
+            "Accept": "application/json",
+            "Cache-Control": "no-cache",
+            "User-Agent": "BomaksanLeadAutomation/1.0",
+            "X-Api-Key": _apollo_api_key(),
+        },
+    )
+    try:
+        with request.urlopen(req, timeout=45) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=exc.code, detail=f"Apollo API hatası: {detail}") from exc
+    except error.URLError as exc:
+        raise HTTPException(status_code=502, detail=f"Apollo API erişilemedi: {exc.reason}") from exc
+
+
+def _bulk_enrich_people(people: list[dict[str, Any]], domain: str) -> list[dict[str, Any]]:
+    details = []
+    for person in people[:10]:
+        detail = {"id": person.get("id")}
+        if not detail["id"]:
+            detail = {
+                "first_name": person.get("first_name"),
+                "last_name": person.get("last_name"),
+                "name": person.get("name"),
+                "domain": domain,
+            }
+        details.append({key: value for key, value in detail.items() if value})
+    if not details:
+        return people
+    response = _apollo_post("/people/bulk_match", payload={"details": details}, query={"reveal_personal_emails": "false", "reveal_phone_number": "false"})
+    matches = response.get("matches") or response.get("people") or []
+    if not matches:
+        return people
+    by_id = {str(item.get("id")): item for item in matches if item.get("id")}
+    enriched = []
+    for person in people:
+        match = by_id.get(str(person.get("id")))
+        enriched.append({**person, **match} if match else person)
+    return enriched
 
 
 def _company_domain(website: str | None) -> str:
@@ -862,6 +1088,63 @@ def search_apollo_ai_leads(
             continue
     db.commit()
     return {"created": len(created), "rows": created, "apollo_count": len(people)}
+
+
+@router.post("/ai-leads/apollo/domain-import")
+def import_apollo_seed_domains(
+    payload: ApolloDomainImportRequest,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    created = []
+    for seed in payload.domains:
+        domain = _normalize(seed.get("domain") or seed.get("website"))
+        domain = _company_domain(domain)
+        if not domain:
+            continue
+        organization = {
+            "name": seed.get("company_name") or domain,
+            "website_url": f"https://{domain}",
+            "country": seed.get("country"),
+            "short_description": " ".join(
+                item for item in [seed.get("source_note"), seed.get("brand_signal"), seed.get("industry")] if item
+            ),
+        }
+        try:
+            enriched_org = _apollo_get("/organizations/enrich", query={"domain": domain})
+            organization.update(enriched_org.get("organization") or enriched_org)
+        except HTTPException:
+            pass
+
+        people_payload = {
+            "person_titles": [
+                "Managing Director",
+                "Sales Manager",
+                "Business Development Manager",
+                "Technical Sales Manager",
+                "Project Manager",
+                "General Manager",
+            ],
+            "q_organization_domains_list": [domain],
+            "page": 1,
+            "per_page": min(max(int(payload.per_domain_people or 5), 1), 10),
+        }
+        people_response = _apollo_post("/mixed_people/api_search", payload=people_payload)
+        people = people_response.get("people") or people_response.get("contacts") or []
+        if payload.enrich and people:
+            people = _bulk_enrich_people(people, domain)
+        if not people:
+            people = [{"organization": organization}]
+        for person in people:
+            merged = dict(person)
+            merged["organization"] = {**organization, **(person.get("organization") or {})}
+            try:
+                created.append(_create_lead_from_apollo_person(db, merged, current_user))
+            except ValueError:
+                continue
+    db.commit()
+    return {"created": len(created), "rows": created}
 
 
 @router.post("/ai-leads/{lead_id}/apollo-enrich")

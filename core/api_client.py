@@ -353,6 +353,19 @@ def search_apollo_ai_leads(token, payload):
     return request_json("POST", "/desktop/ai-leads/apollo/search", payload=payload, headers=auth_headers(token)) or {}
 
 
+def import_apollo_seed_domains(token, domains, per_domain_people=5, enrich=True):
+    return request_json(
+        "POST",
+        "/desktop/ai-leads/apollo/domain-import",
+        payload={
+            "domains": domains,
+            "per_domain_people": int(per_domain_people or 5),
+            "enrich": bool(enrich),
+        },
+        headers=auth_headers(token),
+    ) or {}
+
+
 def enrich_ai_lead_from_apollo(token, lead_id):
     return request_json("POST", f"/desktop/ai-leads/{int(lead_id)}/apollo-enrich", headers=auth_headers(token)) or {}
 
