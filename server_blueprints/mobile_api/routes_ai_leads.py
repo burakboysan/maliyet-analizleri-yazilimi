@@ -915,6 +915,26 @@ def _apollo_person_key(person: dict[str, Any]) -> str:
     return f"fallback:{name.casefold()}|{title.casefold()}|{org_name.casefold()}"
 
 
+def _apollo_company_key(person: dict[str, Any]) -> str:
+    organization = person.get("organization") or {}
+    for key in ("id", "organization_id"):
+        value = _normalize(organization.get(key) or person.get(key))
+        if value:
+            return f"{key}:{value.casefold()}"
+    website = _normalize(
+        organization.get("website_url")
+        or organization.get("primary_domain")
+        or person.get("organization_website_url")
+    )
+    domain = _company_domain(website)
+    if domain:
+        return f"domain:{domain.casefold()}"
+    company_name = _normalize(organization.get("name") or person.get("organization_name"))
+    if company_name:
+        return f"name:{company_name.casefold()}"
+    return _apollo_person_key(person)
+
+
 def _email_enrichment_note(person: dict[str, Any], email_value: str, email_status: str, attempted: bool = True) -> str:
     status = _normalize(email_status).casefold()
     if email_value:
@@ -1557,6 +1577,10 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
 def _find_existing_apollo_lead(db: Session, person: dict[str, Any], company_name: str) -> int | None:
     person_id = _normalize(person.get("id"))
     email_value = _normalize(person.get("email"))
+    organization = person.get("organization") or {}
+    organization_id = _normalize(organization.get("id") or person.get("organization_id"))
+    website = _normalize(organization.get("website_url") or organization.get("primary_domain") or person.get("organization_website_url"))
+    domain = _company_domain(website)
     if person_id:
         row = db.execute(
             text("SELECT lead_id FROM ai_lead_contacts WHERE apollo_person_id = :person_id LIMIT 1"),
@@ -1568,6 +1592,34 @@ def _find_existing_apollo_lead(db: Session, person: dict[str, Any], company_name
         row = db.execute(
             text("SELECT lead_id FROM ai_lead_contacts WHERE email = :email LIMIT 1"),
             {"email": email_value},
+        ).first()
+        if row:
+            return int(row[0])
+    if organization_id:
+        row = db.execute(
+            text("SELECT id FROM ai_leads WHERE apollo_organization_id = :organization_id LIMIT 1"),
+            {"organization_id": organization_id},
+        ).first()
+        if row:
+            return int(row[0])
+    if domain:
+        row = db.execute(
+            text(
+                """
+                SELECT id
+                FROM ai_leads
+                WHERE LOWER(REPLACE(REPLACE(REPLACE(website, 'https://', ''), 'http://', ''), 'www.', '')) LIKE :domain_like
+                LIMIT 1
+                """
+            ),
+            {"domain_like": f"{domain.casefold()}%"},
+        ).first()
+        if row:
+            return int(row[0])
+    if company_name:
+        row = db.execute(
+            text("SELECT id FROM ai_leads WHERE LOWER(company_name) = :company_name LIMIT 1"),
+            {"company_name": company_name.casefold()},
         ).first()
         if row:
             return int(row[0])
@@ -1710,11 +1762,13 @@ def search_apollo_by_segment(
     try:
         people = []
         seen_people = set()
+        seen_companies = set()
         attempts = _segment_search_attempts(recipe, country, limit)
         start_page = max(int(payload.page or 1), 1)
         for attempt in attempts:
             people_query = dict(attempt)
             people_query["page"] = start_page
+            people_query["per_page"] = min(max(limit * 3, int(people_query.get("per_page") or limit)), 100)
             attempt_name = str(people_query.pop("name", "search"))
             people_response = _apollo_post("/mixed_people/api_search", payload={}, query=people_query)
             attempt_people = people_response.get("people") or people_response.get("contacts") or []
@@ -1722,9 +1776,11 @@ def search_apollo_by_segment(
                 selected_attempt = attempt_name if not selected_attempt else f"{selected_attempt}, {attempt_name}"
             for person in attempt_people:
                 person_key = _apollo_person_key(person)
-                if person_key in seen_people:
+                company_key = _apollo_company_key(person)
+                if person_key in seen_people or company_key in seen_companies:
                     continue
                 seen_people.add(person_key)
+                seen_companies.add(company_key)
                 people.append(person)
                 if len(people) >= limit:
                     break
