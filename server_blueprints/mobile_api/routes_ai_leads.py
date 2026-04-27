@@ -922,6 +922,92 @@ def _email_enrichment_note(person: dict[str, Any], email_value: str, email_statu
     return "Apollo enrichment çalıştı ancak email alanı boş döndü; kredi/plan hatası olsaydı ayrı API hatası olarak gösterilir."
 
 
+def _sequence_step_copy(lead: dict[str, Any], segmentation: dict[str, Any], step_number: int) -> tuple[str, str, str]:
+    company = lead.get("company_name") or "your company"
+    product = segmentation.get("product_category") or "industrial air filtration"
+    channel = segmentation.get("sales_channel") or "partner"
+    activity = lead.get("detected_activity") or lead.get("company_description") or "industrial projects"
+    language = lead.get("local_language") or _language_for_country(lead.get("country"))
+    angle = segmentation.get("personalization_angle") or f"{company} looks relevant for {product} cooperation."
+
+    if step_number == 1:
+        subject = f"Cooperation opportunity around {product}"
+        body = (
+            "Hi,\n\n"
+            f"I noticed {company} is active around {activity}.\n\n"
+            f"Bomaksan supports {channel} partners with {product} solutions, technical know-how, reliable manufacturing and competitive project support. "
+            "The idea is to help you offer stronger clean air and filtration solutions to your customers without increasing engineering load.\n\n"
+            "Would it make sense to have a short introductory call next week?\n\n"
+            "Best regards,"
+        )
+    elif step_number == 2:
+        subject = f"Technical support for {product} projects"
+        body = (
+            "Hi,\n\n"
+            f"Just following up on my note about {product} cooperation.\n\n"
+            "What is usually valuable for partners is not only the product range, but also support in selecting the right solution, sizing the system and handling demanding applications. "
+            f"Based on your focus around {activity}, this could be relevant when customers ask for clean air, filtration or ventilation improvements.\n\n"
+            "If useful, I can share a short overview of where Bomaksan can support your team.\n\n"
+            "Best regards,"
+        )
+    else:
+        subject = f"Should we explore a partner fit?"
+        body = (
+            "Hi,\n\n"
+            "I do not want to crowd your inbox, so I will keep this short.\n\n"
+            f"We are mapping potential {channel} partners in your market for {product}. "
+            "If this is relevant, a brief call would be enough to understand whether there is a fit. If not, I can close the loop here.\n\n"
+            "Would you be open to a 15-minute conversation?\n\n"
+            "Best regards,"
+        )
+    personalization = f"Language target: {language}. Personalization basis: {angle}"
+    return subject, body, personalization
+
+
+def _insert_email_draft(
+    db: Session,
+    lead_id: int,
+    sequence: str,
+    step_number: int,
+    language: str,
+    subject: str,
+    body: str,
+    personalization: str,
+) -> dict[str, Any]:
+    result = db.execute(
+        text(
+            """
+            INSERT INTO ai_email_drafts (
+                lead_id, sequence_code, step_number, language, subject, body, personalization_used, status
+            )
+            VALUES (
+                :lead_id, :sequence_code, :step_number, :language, :subject, :body, :personalization_used, 'Awaiting Approval'
+            )
+            """
+        ),
+        {
+            "lead_id": lead_id,
+            "sequence_code": sequence,
+            "step_number": step_number,
+            "language": language,
+            "subject": subject,
+            "body": body,
+            "personalization_used": personalization,
+        },
+    )
+    return {
+        "id": int(result.lastrowid),
+        "lead_id": lead_id,
+        "sequence_code": sequence,
+        "step_number": step_number,
+        "language": language,
+        "subject": subject,
+        "body": body,
+        "personalization_used": personalization,
+        "status": "Awaiting Approval",
+    }
+
+
 def _segment_search_attempts(recipe: dict[str, Any], country: str, limit: int) -> list[dict[str, Any]]:
     sales_channel = str(recipe.get("sales_channel") or "")
     product_category = str(recipe.get("product_category") or "")
@@ -1964,39 +2050,56 @@ def generate_ai_email_draft(
         segmentation = _latest_segmentation(db, lead_id)
     sequence = segmentation.get("suggested_sequence") or _sequence_code(segmentation.get("sales_channel"))
     language = lead.get("local_language") or _language_for_country(lead.get("country"))
-    subject = f"Possible cooperation around {segmentation.get('product_category')}"
-    body = (
-        f"Hi,\n\n"
-        f"I noticed {lead.get('company_name')} is active around {lead.get('detected_activity') or lead.get('company_description') or 'industrial projects'}.\n\n"
-        f"Bomaksan can support partners with {segmentation.get('product_category')} solutions, technical know-how and reliable manufacturing. "
-        f"For {segmentation.get('sales_channel')} partners, the goal is to help you offer stronger clean air and filtration solutions to your customers.\n\n"
-        f"Would it make sense to have a short introductory call?\n"
-    )
-    result = db.execute(
+    step_number = min(max(int(payload.step_number or 1), 1), 3)
+    subject, body, personalization = _sequence_step_copy(lead, segmentation, step_number)
+    draft = _insert_email_draft(db, lead_id, sequence, step_number, language, subject, body, personalization)
+    db.execute(text("UPDATE ai_leads SET status = 'Draft Generated' WHERE id = :id"), {"id": lead_id})
+    _log_action(db, lead_id, "generate_email_draft", f"Email {step_number} taslağı üretildi.", current_user.id)
+    db.commit()
+    return draft
+
+
+@router.post("/ai-leads/{lead_id}/sequence-drafts")
+def generate_ai_email_sequence(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Lead bulunamadı.")
+    lead = _lead_row_to_dict(row)
+    contact = _primary_contact(db, lead_id) or {}
+    if not contact.get("email"):
+        raise HTTPException(status_code=400, detail="Sekans başlatmak için lead email adresi gerekli. Önce Email Enrich çalıştırın veya emaili manuel ekleyin.")
+    if str(contact.get("email_status") or "").casefold() not in {"verified", "user managed"}:
+        raise HTTPException(status_code=400, detail=f"Email durumu sekans için uygun değil: {contact.get('email_status') or 'boş'}.")
+
+    segmentation = _latest_segmentation(db, lead_id)
+    if not segmentation:
+        analyze_ai_lead(lead_id, db, current_user)
+        segmentation = _latest_segmentation(db, lead_id)
+    sequence = segmentation.get("suggested_sequence") or _sequence_code(segmentation.get("sales_channel"))
+    language = lead.get("local_language") or _language_for_country(lead.get("country"))
+
+    db.execute(
         text(
             """
-            INSERT INTO ai_email_drafts (
-                lead_id, sequence_code, step_number, language, subject, body, personalization_used, status
-            )
-            VALUES (
-                :lead_id, :sequence_code, :step_number, :language, :subject, :body, :personalization_used, 'Awaiting Approval'
-            )
+            DELETE FROM ai_email_drafts
+            WHERE lead_id = :lead_id AND status IN ('Draft', 'Awaiting Approval', 'Rejected')
             """
         ),
-        {
-            "lead_id": lead_id,
-            "sequence_code": sequence,
-            "step_number": payload.step_number,
-            "language": language,
-            "subject": subject,
-            "body": body,
-            "personalization_used": segmentation.get("personalization_angle") or "",
-        },
+        {"lead_id": lead_id},
     )
+    drafts = []
+    for step_number in (1, 2, 3):
+        subject, body, personalization = _sequence_step_copy(lead, segmentation, step_number)
+        drafts.append(_insert_email_draft(db, lead_id, sequence, step_number, language, subject, body, personalization))
     db.execute(text("UPDATE ai_leads SET status = 'Draft Generated' WHERE id = :id"), {"id": lead_id})
-    _log_action(db, lead_id, "generate_email_draft", f"Email {payload.step_number} taslağı üretildi.", current_user.id)
+    _log_action(db, lead_id, "generate_email_sequence", "3 adımlı email sekansı taslakları oluşturuldu.", current_user.id)
     db.commit()
-    return {"id": int(result.lastrowid), "subject": subject, "body": body, "language": language, "sequence_code": sequence}
+    return {"status": "ok", "lead_id": lead_id, "sequence_code": sequence, "drafts": drafts}
 
 
 @router.post("/ai-leads/email-drafts/{draft_id}/approve")

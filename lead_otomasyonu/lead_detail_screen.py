@@ -1,6 +1,10 @@
+import threading
 from tkinter import messagebox
 
 import customtkinter as ctk
+
+from core.api_client import ApiClientError, approve_ai_email_draft, generate_ai_email_sequence, get_ai_lead_detail
+from core.session import get_app_token
 
 
 def lead_detay_ekrani(parent, lead, on_update=None):
@@ -36,6 +40,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     left.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
     right = _panel(root)
     right.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
+    state = {"detail": dict(lead), "drafts": []}
 
     _section_title(left, "Firma Bilgileri")
     _kv(left, "Ülke", lead.get("country"))
@@ -76,8 +81,104 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     angle.insert("1.0", lead.get("personalization_angle") or "Henüz kişiselleştirme açısı yok.")
     angle.configure(state="disabled")
 
+    _section_title(right, "Email Sekansı")
+    drafts_box = ctk.CTkTextbox(right, height=180, fg_color="#fafafa", text_color="#212121")
+    drafts_box.pack(fill="both", expand=True, padx=18, pady=(4, 12))
+
+    def render_drafts(drafts=None):
+        if drafts is not None:
+            state["drafts"] = drafts
+        drafts_box.configure(state="normal")
+        drafts_box.delete("1.0", "end")
+        if not state["drafts"]:
+            drafts_box.insert("1.0", "Henüz email sekansı oluşturulmadı.")
+        else:
+            lines = []
+            for draft in state["drafts"]:
+                lines.append(f"Email {draft.get('step_number')} | {draft.get('status')} | {draft.get('language')}")
+                lines.append(f"Konu: {draft.get('subject') or '-'}")
+                lines.append(str(draft.get("body") or "-"))
+                lines.append("")
+            drafts_box.insert("1.0", "\n".join(lines).strip())
+        drafts_box.configure(state="disabled")
+
+    render_drafts()
+
     actions = ctk.CTkFrame(root, fg_color="transparent")
     actions.grid(row=2, column=0, columnspan=2, sticky="e", pady=(16, 0))
+
+    def refresh_detail(show_message=False):
+        token = get_app_token()
+        if not token:
+            messagebox.showerror("Lead Otomasyonu", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+
+        def worker():
+            try:
+                detail = get_ai_lead_detail(token, lead.get("id"))
+                state["detail"] = detail
+                lead.update(detail)
+                win.after(0, lambda: render_drafts(detail.get("email_drafts") or []))
+                if show_message:
+                    win.after(0, lambda: messagebox.showinfo("Email Sekansı", "Taslaklar güncellendi.", parent=win))
+                if on_update:
+                    win.after(0, on_update)
+            except Exception as exc:
+                win.after(0, lambda err=str(exc): messagebox.showerror("Email Sekansı", f"Taslaklar alınamadı: {err}", parent=win))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def create_sequence():
+        token = get_app_token()
+        if not token:
+            messagebox.showerror("Email Sekansı", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+
+        def worker():
+            try:
+                result = generate_ai_email_sequence(token, lead.get("id"))
+                drafts = result.get("drafts") or []
+                lead["draft_count"] = len(drafts)
+                lead["ai_status"] = "Draft Generated"
+                lead["approval_status"] = "Awaiting Approval"
+                lead["last_action"] = "3 adımlı email sekansı taslakları oluşturuldu."
+                win.after(0, lambda: render_drafts(drafts))
+                if on_update:
+                    win.after(0, on_update)
+                win.after(0, lambda: messagebox.showinfo("Email Sekansı", f"{len(drafts)} email taslağı oluşturuldu. Gönderim yapılmadı; onay bekliyor.", parent=win))
+            except ApiClientError as exc:
+                win.after(0, lambda err=str(exc): messagebox.showerror("Email Sekansı", err, parent=win))
+            except Exception as exc:
+                win.after(0, lambda err=str(exc): messagebox.showerror("Email Sekansı", f"Sekans oluşturulamadı: {err}", parent=win))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def approve_drafts():
+        token = get_app_token()
+        drafts = state.get("drafts") or []
+        if not token:
+            messagebox.showerror("Email Sekansı", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+        if not drafts:
+            messagebox.showwarning("Email Sekansı", "Onaylanacak email taslağı yok.", parent=win)
+            return
+
+        def worker():
+            try:
+                approved = 0
+                for draft in drafts:
+                    if draft.get("status") != "Approved":
+                        approve_ai_email_draft(token, draft.get("id"))
+                        approved += 1
+                lead["approval_status"] = "Approved"
+                lead["ai_status"] = "Approved"
+                lead["last_action"] = f"{approved} email taslağı onaylandı."
+                win.after(0, lambda: refresh_detail(show_message=False))
+                win.after(0, lambda: messagebox.showinfo("Email Sekansı", f"{approved} email taslağı onaylandı.", parent=win))
+            except Exception as exc:
+                win.after(0, lambda err=str(exc): messagebox.showerror("Email Sekansı", f"Onay başarısız: {err}", parent=win))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def mark_review():
         lead["approval_status"] = "Review Needed"
@@ -102,10 +203,14 @@ def lead_detay_ekrani(parent, lead, on_update=None):
             on_update()
         messagebox.showinfo("Lead Otomasyonu", "Lead hariç tutuldu.", parent=win)
 
-    _action_button(actions, "Review'a Al", mark_review, "#b45309").pack(side="left", padx=(0, 8))
+    _action_button(actions, "Sekans Oluştur", create_sequence, "#0f766e").pack(side="left", padx=(0, 8))
+    _action_button(actions, "Taslakları Yenile", lambda: refresh_detail(show_message=True), "#2563eb").pack(side="left", padx=8)
+    _action_button(actions, "Taslakları Onayla", approve_drafts, "#15803d").pack(side="left", padx=8)
+    _action_button(actions, "Review'a Al", mark_review, "#b45309").pack(side="left", padx=8)
     _action_button(actions, "Exclude Et", exclude, "#dc2626").pack(side="left", padx=8)
-    _action_button(actions, "Onayla", approve, "#15803d").pack(side="left", padx=8)
+    _action_button(actions, "Onayla", approve, "#16a34a").pack(side="left", padx=8)
     _action_button(actions, "Kapat", win.destroy, "#475569").pack(side="left", padx=(8, 0))
+    refresh_detail(show_message=False)
 
 
 def _panel(parent):

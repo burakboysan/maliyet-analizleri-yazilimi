@@ -412,6 +412,14 @@ def generate_ai_email_draft(token, lead_id, step_number=1):
     )
 
 
+def generate_ai_email_sequence(token, lead_id):
+    return request_json(
+        "POST",
+        f"/desktop/ai-leads/{int(lead_id)}/sequence-drafts",
+        headers=auth_headers(token),
+    ) or {}
+
+
 def approve_ai_email_draft(token, draft_id):
     return request_json("POST", f"/desktop/ai-leads/email-drafts/{int(draft_id)}/approve", headers=auth_headers(token))
 
