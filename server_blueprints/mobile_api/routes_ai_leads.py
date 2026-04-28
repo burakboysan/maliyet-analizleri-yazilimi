@@ -2005,8 +2005,46 @@ def _split_name(full_name: str | None) -> tuple[str, str]:
     return parts[0], " ".join(parts[1:])
 
 
+def _organization_website(organization: dict[str, Any], person: dict[str, Any] | None = None) -> str:
+    person = person or {}
+    return _normalize(
+        organization.get("website_url")
+        or organization.get("website")
+        or organization.get("primary_domain")
+        or organization.get("domain")
+        or person.get("organization_website_url")
+        or person.get("organization_website")
+        or person.get("organization_primary_domain")
+    )
+
+
+def _enrich_apollo_organization(organization: dict[str, Any], person: dict[str, Any] | None = None) -> dict[str, Any]:
+    person = person or {}
+    org_id = _normalize(organization.get("id") or person.get("organization_id"))
+    website = _organization_website(organization, person)
+    domain = _company_domain(website)
+    query = {}
+    if org_id:
+        query["id"] = org_id
+    elif domain:
+        query["domain"] = domain
+    else:
+        return organization
+    try:
+        response = _apollo_get("/organizations/enrich", query=query)
+    except Exception:
+        return organization
+    enriched = response.get("organization") or response.get("account") or {}
+    if not enriched:
+        return organization
+    return {**organization, **enriched}
+
+
 def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current_user: UserTable) -> dict[str, Any]:
     organization = person.get("organization") or {}
+    if not _organization_website(organization, person):
+        organization = _enrich_apollo_organization(organization, person)
+        person["organization"] = organization
     company_name = _normalize(organization.get("name") or person.get("organization_name"))
     if not company_name:
         company_name = _normalize(person.get("employment_history", [{}])[0].get("organization_name") if person.get("employment_history") else "")
@@ -2022,7 +2060,7 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
         or person.get("country")
         or person.get("person_country")
     )
-    website = _normalize(organization.get("website_url") or organization.get("primary_domain") or person.get("organization_website_url"))
+    website = _organization_website(organization, person)
     title = _normalize(person.get("title"))
     first_name = _normalize(person.get("first_name"))
     last_name = _normalize(person.get("last_name"))
@@ -2600,7 +2638,27 @@ def deep_research_ai_lead(
     segmentation = _latest_segmentation(db, lead_id) or {}
     website = _normalize(lead.get("website"))
     if not website:
-        raise HTTPException(status_code=400, detail="Araştırma için lead website bilgisi gerekli.")
+        raw = {}
+        try:
+            raw = json.loads(lead.get("apollo_raw_json") or "{}")
+        except Exception:
+            raw = {}
+        organization = raw.get("organization") or {}
+        enriched = _enrich_apollo_organization(organization, raw)
+        website = _organization_website(enriched, raw)
+        if website:
+            db.execute(
+                text("UPDATE ai_leads SET website = :website, apollo_raw_json = :apollo_raw_json WHERE id = :lead_id"),
+                {
+                    "lead_id": lead_id,
+                    "website": website,
+                    "apollo_raw_json": json.dumps({**raw, "organization": enriched}, ensure_ascii=False),
+                },
+            )
+            db.commit()
+            lead["website"] = website
+    if not website:
+        raise HTTPException(status_code=400, detail="Araştırma için lead website bilgisi gerekli; Apollo organization enrichment de website döndürmedi.")
 
     pages = _website_research_pages(website)
     if not pages:
