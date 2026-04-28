@@ -9,6 +9,7 @@ import customtkinter as ctk
 
 from core.document_service import (
     ALLOWED_DOCUMENT_TYPES,
+    DOCUMENT_LANGUAGE_OPTIONS,
     DOCUMENT_SERIES_OPTIONS,
     DocumentServiceError,
     delete_document,
@@ -26,6 +27,7 @@ DOCUMENT_TYPE_OPTIONS = [
     ("teknik_foy", "Teknik Bilgi Föyü"),
     ("kullanim_kilavuzu", "Kullanım Kılavuzu"),
 ]
+DOCUMENT_LANGUAGE_FILTER_OPTIONS = [("all", "Tüm Diller")] + list(DOCUMENT_LANGUAGE_OPTIONS.items())
 
 
 def dokumanlar_ekrani(kullanici_rolu, parent=None):
@@ -108,20 +110,29 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
 
     filtre_var = ctk.StringVar(value="Tümü")
     seri_filtre_var = ctk.StringVar(value="Tüm Seriler")
+    dil_filtre_var = ctk.StringVar(value="Tüm Diller")
 
     filtre_combo = ctk.CTkComboBox(
         list_header,
         values=["Tümü", "Broşür", "Teknik Bilgi Föyü", "Kullanım Kılavuzu"],
         variable=filtre_var,
-        width=180,
+        width=170,
     )
     filtre_combo.pack(side="right")
+
+    dil_filtre_combo = ctk.CTkComboBox(
+        list_header,
+        values=[label for _, label in DOCUMENT_LANGUAGE_FILTER_OPTIONS],
+        variable=dil_filtre_var,
+        width=140,
+    )
+    dil_filtre_combo.pack(side="right", padx=(0, 10))
 
     seri_filtre_combo = ctk.CTkComboBox(
         list_header,
         values=["Tüm Seriler"] + [label for _, label in DOCUMENT_SERIES_OPTIONS],
         variable=seri_filtre_var,
-        width=180,
+        width=170,
     )
     seri_filtre_combo.pack(side="right", padx=(0, 10))
 
@@ -135,7 +146,7 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
 
     tree = ttk.Treeview(
         table_frame,
-        columns=("series_key", "title", "type", "description", "updated_at"),
+        columns=("series_key", "title", "type", "language", "description", "updated_at"),
         show="headings",
         yscrollcommand=tree_scroll_y.set,
         xscrollcommand=tree_scroll_x.set,
@@ -149,13 +160,15 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
     tree.heading("series_key", text="Seri")
     tree.heading("title", text="Başlık")
     tree.heading("type", text="Tip")
+    tree.heading("language", text="Dil")
     tree.heading("description", text="Açıklama")
     tree.heading("updated_at", text="Güncelleme")
 
-    tree.column("series_key", width=160, minwidth=140, anchor="w")
-    tree.column("title", width=260, minwidth=200, anchor="w")
-    tree.column("type", width=170, minwidth=150, anchor="w")
-    tree.column("description", width=420, minwidth=250, anchor="w")
+    tree.column("series_key", width=140, minwidth=120, anchor="w")
+    tree.column("title", width=240, minwidth=180, anchor="w")
+    tree.column("type", width=160, minwidth=140, anchor="w")
+    tree.column("language", width=110, minwidth=90, anchor="w")
+    tree.column("description", width=380, minwidth=240, anchor="w")
     tree.column("updated_at", width=160, minwidth=140, anchor="w")
 
     right_card = ctk.CTkFrame(body_frame, fg_color="#ffffff", corner_radius=16)
@@ -174,6 +187,7 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
     title_var = ctk.StringVar()
     description_var = ctk.StringVar()
     type_var = ctk.StringVar(value="Broşür")
+    language_var = ctk.StringVar(value=DOCUMENT_LANGUAGE_OPTIONS["tr"])
     series_var = ctk.StringVar(value=DOCUMENT_SERIES_OPTIONS[0][1])
     file_name_var = ctk.StringVar(value="Henüz dosya seçilmedi")
 
@@ -203,6 +217,15 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
     )
     type_combo.pack(fill="x", pady=(6, 12))
 
+    ctk.CTkLabel(form_frame, text="Doküman Dili", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
+    language_combo = ctk.CTkComboBox(
+        form_frame,
+        values=[label for _, label in DOCUMENT_LANGUAGE_OPTIONS.items()],
+        variable=language_var,
+        height=38,
+    )
+    language_combo.pack(fill="x", pady=(6, 12))
+
     ctk.CTkLabel(form_frame, text="Seçilen Dosya", font=ctk.CTkFont(size=13, weight="bold")).pack(anchor="w")
     file_label = ctk.CTkLabel(
         form_frame,
@@ -221,6 +244,12 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
             if label == type_var.get():
                 return key
         return "brosur"
+
+    def selected_language_key():
+        for key, label in DOCUMENT_LANGUAGE_OPTIONS.items():
+            if label == language_var.get():
+                return key
+        return "tr"
 
     def selected_series_key():
         for key, label in DOCUMENT_SERIES_OPTIONS:
@@ -246,6 +275,15 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
                 return key
         return None
 
+    def current_language_filter_key():
+        selected = dil_filtre_var.get()
+        if selected == "Tüm Diller":
+            return None
+        for key, label in DOCUMENT_LANGUAGE_OPTIONS.items():
+            if label == selected:
+                return key
+        return None
+
     def display_series_label(series_key):
         normalized_series_key = str(series_key or "").strip().upper()
         for key, label in DOCUMENT_SERIES_OPTIONS:
@@ -267,6 +305,7 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
                     display_series_label(doc.get("series_key")),
                     doc.get("title", ""),
                     ALLOWED_DOCUMENT_TYPES.get(doc.get("document_type", ""), doc.get("document_type", "")),
+                    DOCUMENT_LANGUAGE_OPTIONS.get(doc.get("language", "tr"), doc.get("language", "tr")),
                     doc.get("description", "") or "",
                     (doc.get("updated_at") or doc.get("created_at") or "")[:19].replace("T", " "),
                 ),
@@ -282,7 +321,11 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
 
         def worker():
             try:
-                documents = list_documents(current_series_filter_key(), current_filter_key())
+                documents = list_documents(
+                    current_series_filter_key(),
+                    current_filter_key(),
+                    current_language_filter_key(),
+                )
                 pencere.after(0, lambda: fill_tree(documents))
                 pencere.after(0, lambda: set_status(f"{len(documents)} doküman listelendi"))
             except DocumentServiceError as exc:
@@ -337,6 +380,7 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
                     series_key=series_key,
                     title=title,
                     document_type=selected_type_key(),
+                    language=selected_language_key(),
                     description=description_var.get().strip(),
                     file_path=state["selected_file"],
                 )
@@ -346,6 +390,7 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
                     title_var.set("")
                     description_var.set("")
                     type_var.set("Broşür")
+                    language_var.set(DOCUMENT_LANGUAGE_OPTIONS["tr"])
                     series_var.set(DOCUMENT_SERIES_OPTIONS[0][1])
                     state["selected_file"] = None
                     file_name_var.set("Henüz dosya seçilmedi")
@@ -503,6 +548,7 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
         title_entry.configure(state="disabled")
         description_entry.configure(state="disabled")
         type_combo.configure(state="disabled")
+        language_combo.configure(state="disabled")
         series_combo.configure(state="disabled")
 
     info_card = ctk.CTkFrame(right_card, fg_color="#f8f9fa", corner_radius=12)
@@ -517,7 +563,7 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
 
     info_text = (
         "PDF yükleme yalnızca Owner veya Master Admin kullanıcıları için aktiftir.\n"
-        "Yüklenen dosyalar merkezi doküman havuzuna eklenir."
+        "Yüklenen dosyalar seçilen dil etiketiyle merkezi doküman havuzuna eklenir."
     )
     ctk.CTkLabel(
         info_card,
@@ -578,6 +624,7 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
     ).pack(side="right")
 
     filtre_combo.configure(command=lambda _value: load_documents_async())
+    dil_filtre_combo.configure(command=lambda _value: load_documents_async())
     seri_filtre_combo.configure(command=lambda _value: load_documents_async())
     tree.bind("<Double-1>", lambda _event: open_selected_document())
 

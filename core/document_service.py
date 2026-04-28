@@ -1,4 +1,4 @@
-"""Dokuman servis endpoint'leri ile haberlesir."""
+"""Doküman servis endpoint'leri ile haberleşir."""
 
 import json
 import mimetypes
@@ -21,10 +21,14 @@ ALLOWED_DOCUMENT_TYPES = {
     "teknik_foy": "Teknik Bilgi Föyü",
     "kullanim_kilavuzu": "Kullanım Kılavuzu",
 }
+DOCUMENT_LANGUAGE_OPTIONS = {
+    "tr": "Türkçe",
+    "en": "İngilizce",
+}
 
 
 class DocumentServiceError(Exception):
-    """Dokuman servisi hatalari icin ozel exception."""
+    """Doküman servisi hataları için özel exception."""
 
 
 def _get_runtime_base_dir():
@@ -101,20 +105,20 @@ def _build_http_error_message(exc):
         detail = None
 
     if exc.code == 401:
-        return detail or "Yetkilendirme gerekli. Master Admin oturumunu yeniden acin."
+        return detail or "Yetkilendirme gerekli. Master Admin oturumunu yeniden açın."
     if exc.code == 403:
-        return detail or "Bu islem icin Master Admin yetkisi gerekli."
+        return detail or "Bu işlem için Master Admin yetkisi gerekli."
     if exc.code == 404:
-        return detail or "Dokuman servisi bulunamadi."
+        return detail or "Doküman servisi bulunamadı."
     if exc.code == 413:
-        return detail or "Secilen dosya cok buyuk."
+        return detail or "Seçilen dosya çok büyük."
     if exc.code == 422:
         if isinstance(detail, list):
             parts = []
             for item in detail:
                 if isinstance(item, dict):
                     loc = item.get("loc") or []
-                    msg = item.get("msg") or "Dogrulama hatasi"
+                    msg = item.get("msg") or "Doğrulama hatası"
                     loc_text = " -> ".join(str(part) for part in loc if part != "body")
                     if loc_text:
                         parts.append(f"{loc_text}: {msg}")
@@ -124,8 +128,8 @@ def _build_http_error_message(exc):
                     parts.append(str(item))
             if parts:
                 return " | ".join(parts)
-        return detail or "Gonderilen alanlar sunucu dogrulamasindan gecemedi."
-    return detail or f"HTTP {exc.code} hatasi olustu."
+        return detail or "Gönderilen alanlar sunucu doğrulamasından geçemedi."
+    return detail or f"HTTP {exc.code} hatası oluştu."
 
 
 def _request_json(method, path, payload=None, headers=None, timeout=DEFAULT_TIMEOUT_SECONDS):
@@ -145,7 +149,7 @@ def _request_json(method, path, payload=None, headers=None, timeout=DEFAULT_TIME
     except error.HTTPError as exc:
         raise DocumentServiceError(_build_http_error_message(exc)) from exc
     except error.URLError as exc:
-        raise DocumentServiceError(f"Sunucuya baglanilamadi: {exc.reason}") from exc
+        raise DocumentServiceError(f"Sunucuya bağlanılamadı: {exc.reason}") from exc
     except Exception as exc:
         raise DocumentServiceError(str(exc)) from exc
 
@@ -200,7 +204,7 @@ def _safe_ascii_filename(file_path):
 
 def get_admin_token():
     if not has_master_admin_capabilities(get_role()):
-        raise DocumentServiceError("Dokuman yukleme yalnizca Owner veya Master Admin kullanicilar icin aciktir.")
+        raise DocumentServiceError("Doküman yükleme yalnızca Owner veya Master Admin kullanıcıları için açıktır.")
 
     cached_token = get_cached_admin_token()
     if cached_token:
@@ -209,41 +213,43 @@ def get_admin_token():
     username = get_username()
     password = get_password()
     if not username or not password:
-        raise DocumentServiceError("Oturum bilgisi bulunamadi. Lutfen yeniden giris yapin.")
+        raise DocumentServiceError("Oturum bilgisi bulunamadı. Lütfen yeniden giriş yapın.")
 
     payload = {
         "kullanici_adi": username,
         "sifre": password,
     }
     _write_debug_log(
-        f"Admin token icin oturum kullanicisi hazirlandi. username={username!r}, role={get_role()!r}, "
+        f"Admin token için oturum kullanıcısı hazırlandı. username={username!r}, role={get_role()!r}, "
         f"log_path={get_document_upload_log_path()!r}"
     )
-    _write_debug_log("Admin token istegi baslatildi.")
+    _write_debug_log("Admin token isteği başlatıldı.")
     try:
         response = _request_json("POST", "/admin/auth/login", payload=payload)
         token = (response or {}).get("access_token")
         if not token:
-            _write_debug_log(f"Admin token alinamadi: access_token bos dondu. response={response!r}")
-            raise DocumentServiceError("Admin token alinamadi.")
+            _write_debug_log(f"Admin token alınamadı: access_token boş döndü. response={response!r}")
+            raise DocumentServiceError("Admin token alınamadı.")
         set_session(admin_token=token, sifre="")
-        _write_debug_log("Admin token basariyla alindi.")
+        _write_debug_log("Admin token başarıyla alındı.")
         return token
     except DocumentServiceError as exc:
-        _write_debug_log(f"Admin token hatasi: {exc}")
+        _write_debug_log(f"Admin token hatası: {exc}")
         raise
     except Exception as exc:
         _write_debug_log(f"Admin token beklenmeyen hata: {exc}\n{traceback.format_exc()}")
         raise
 
 
-def list_documents(series_key=None, document_type=None):
+def list_documents(series_key=None, document_type=None, language=None):
     path = "/documents"
     query_params = {}
     if series_key:
         query_params["series_key"] = str(series_key).strip().upper()
     if document_type:
         query_params["type"] = document_type
+    if language:
+        query_params["language"] = str(language).strip().lower()
     if query_params:
         query = parse.urlencode(query_params)
         path = f"{path}?{query}"
@@ -259,11 +265,11 @@ def delete_document(document_id):
     headers = {
         "Authorization": f"Bearer {token}",
     }
-    _write_debug_log(f"Delete basladi. document_id={document_id}")
+    _write_debug_log(f"Delete başladı. document_id={document_id}")
     req = request.Request(_build_url(f"/documents/{int(document_id)}"), headers=headers, method="DELETE")
     try:
         with request.urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS):
-            _write_debug_log(f"Delete basarili. document_id={document_id}")
+            _write_debug_log(f"Delete başarılı. document_id={document_id}")
             return True
     except error.HTTPError as exc:
         message = _build_http_error_message(exc)
@@ -271,22 +277,24 @@ def delete_document(document_id):
         raise DocumentServiceError(message) from exc
     except error.URLError as exc:
         _write_debug_log(f"Delete URLError: {exc.reason}")
-        raise DocumentServiceError(f"Sunucuya baglanilamadi: {exc.reason}") from exc
+        raise DocumentServiceError(f"Sunucuya bağlanılamadı: {exc.reason}") from exc
     except Exception as exc:
         _write_debug_log(f"Delete beklenmeyen hata: {exc}\n{traceback.format_exc()}")
         raise DocumentServiceError(str(exc)) from exc
 
 
-def upload_document(series_key, title, document_type, description, file_path):
+def upload_document(series_key, title, document_type, description, file_path, language="tr"):
     if document_type not in ALLOWED_DOCUMENT_TYPES:
-        raise DocumentServiceError("Gecersiz dokuman tipi secildi.")
+        raise DocumentServiceError("Geçersiz doküman tipi seçildi.")
+    if language not in DOCUMENT_LANGUAGE_OPTIONS:
+        raise DocumentServiceError("Geçersiz doküman dili seçildi.")
     normalized_series_key = str(series_key or "").strip().upper()
     if not normalized_series_key:
-        raise DocumentServiceError("Lutfen bir seri secin.")
+        raise DocumentServiceError("Lütfen bir seri seçin.")
 
     _write_debug_log(
-        f"Upload basladi. file_path={file_path!r}, series_key={normalized_series_key!r}, "
-        f"document_type={document_type!r}, title={title!r}"
+        f"Upload başladı. file_path={file_path!r}, series_key={normalized_series_key!r}, "
+        f"document_type={document_type!r}, language={language!r}, title={title!r}"
     )
     token = get_admin_token()
 
@@ -294,13 +302,14 @@ def upload_document(series_key, title, document_type, description, file_path):
         file_bytes = file_handle.read()
 
     if len(file_bytes) > 20 * 1024 * 1024:
-        raise DocumentServiceError("PDF dosyasi 20 MB sinirini asiyor.")
+        raise DocumentServiceError("PDF dosyası 20 MB sınırını aşıyor.")
 
     mime_type = mimetypes.guess_type(file_path)[0] or "application/pdf"
     fields = {
         "series_key": normalized_series_key,
         "title": title.strip(),
         "document_type": document_type,
+        "language": language,
         "description": (description or "").strip(),
         "sort_order": "0",
     }
@@ -327,14 +336,14 @@ def upload_document(series_key, title, document_type, description, file_path):
     try:
         with request.urlopen(req, timeout=DEFAULT_TIMEOUT_SECONDS) as response:
             payload = _decode_response(response)
-            _write_debug_log("Upload basarili tamamlandi.")
+            _write_debug_log("Upload başarılı tamamlandı.")
             return payload
     except error.HTTPError as exc:
         _write_debug_log(f"HTTPError: {exc.code} - {_build_http_error_message(exc)}")
         raise DocumentServiceError(_build_http_error_message(exc)) from exc
     except error.URLError as exc:
         _write_debug_log(f"URLError: {exc.reason}")
-        raise DocumentServiceError(f"Sunucuya baglanilamadi: {exc.reason}") from exc
+        raise DocumentServiceError(f"Sunucuya bağlanılamadı: {exc.reason}") from exc
     except Exception as exc:
         _write_debug_log(f"Beklenmeyen hata: {exc}\n{traceback.format_exc()}")
         raise DocumentServiceError(str(exc)) from exc
