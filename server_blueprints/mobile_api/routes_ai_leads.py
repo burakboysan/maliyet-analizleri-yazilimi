@@ -1527,6 +1527,7 @@ def _build_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pag
         else "Belirgin risk sinyali yakalanmadı; yine de rakip/son kullanıcı ayrımı manuel kontrol edilebilir."
     )
     return {
+        "detected_company_name": company_name,
         "company_overview": overview,
         "products_services": products,
         "partner_fit_reason": partner_reason,
@@ -1572,6 +1573,7 @@ def _lead_research_schema() -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
+            "detected_company_name": {"type": "string"},
             "company_overview": {"type": "string"},
             "products_services": {"type": "string"},
             "partner_fit_reason": {"type": "string"},
@@ -1583,6 +1585,7 @@ def _lead_research_schema() -> dict[str, Any]:
             "confidence_score": {"type": "number"},
         },
         "required": [
+            "detected_company_name",
             "company_overview",
             "products_services",
             "partner_fit_reason",
@@ -1620,6 +1623,7 @@ def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pa
     prompt = (
         "Analyze this company as a potential Bomaksan industrial air filtration partner. "
         "Use only the provided website text and lead context. If evidence is weak, say so. "
+        "First identify the real company/legal or brand name from the website evidence; do not use page titles like gallery, products, blog, or top lists as company names. "
         "Focus on what the company does, what products or services it sells, why it may fit the selected partner segment, "
         "which Bomaksan product/service category matches, distributor/integrator/HVAC/welding/filtration/CNC/dust collection signals, "
         "served industries, email personalization angle, and risks such as direct competitor, end-user-only, residential HVAC, or consumer focus.\n\n"
@@ -1671,6 +1675,7 @@ def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pa
 
     source_links = [page.get("url") for page in pages if page.get("url")]
     return {
+        "detected_company_name": _normalize(parsed.get("detected_company_name")),
         "company_overview": _normalize(parsed.get("company_overview")),
         "products_services": _normalize(parsed.get("products_services")),
         "partner_fit_reason": _normalize(parsed.get("partner_fit_reason")),
@@ -2645,7 +2650,7 @@ def _build_serpapi_domain_result(result: dict[str, Any], domain: str, country: s
     link = _normalize(result.get("link"))
     serp_text = f"{result.get('title') or ''} {result.get('snippet') or ''} {link}"
     website = f"https://{domain}"
-    homepage_html = _fetch_public_page(website)
+    homepage_html = _fetch_public_html(website)
     if country and not _website_country_matches(country, domain, homepage_html, serp_text):
         return None
     company_name = _company_name_from_website_html(homepage_html, domain) or _company_name_from_serp_result(result, domain)
@@ -2680,7 +2685,7 @@ def _serpapi_country_query_params(country: str) -> dict[str, str]:
     return params
 
 
-def _fetch_public_page(url: str, timeout: int = 6) -> str:
+def _fetch_public_html(url: str, timeout: int = 6) -> str:
     if not url:
         return ""
     if not url.lower().startswith(("http://", "https://")):
@@ -2753,6 +2758,38 @@ def _company_name_from_website_html(html: str, domain: str) -> str:
         if name:
             return name
     return ""
+
+
+def _best_company_name_for_research(lead: dict[str, Any], research: dict[str, Any]) -> str:
+    website = _normalize(lead.get("website"))
+    domain = _company_domain(website)
+    candidates = [
+        _normalize(research.get("detected_company_name")),
+        _company_name_from_website_html(_fetch_public_html(website, timeout=5), domain) if website else "",
+        _company_name_from_domain(domain) if domain else "",
+    ]
+    for candidate in candidates:
+        clean = _clean_company_name_candidate(candidate, domain) if domain else _normalize(candidate)
+        if clean:
+            return clean
+    return ""
+
+
+def _should_update_company_name(current_name: str, new_name: str, website: str) -> bool:
+    current = _normalize(current_name)
+    new = _normalize(new_name)
+    domain = _company_domain(website)
+    if not current or not new or current == new:
+        return False
+    current_folded = current.casefold()
+    if any(fragment in current_folded for fragment in SERPAPI_BLOCKED_TITLE_FRAGMENTS):
+        return True
+    if any(word in current_folded for word in ["top ", "gallery", "video", "products", "solutions", "history", "about us"]):
+        return True
+    if domain and current_folded in {"home", "homepage", "products", "solutions", "the right solution"}:
+        return True
+    domain_name = _company_name_from_domain(domain)
+    return bool(domain_name and current.casefold() == domain_name.casefold() and new.casefold() != domain_name.casefold())
 
 
 def _clean_company_name_candidate(candidate: str, domain: str) -> str:
@@ -3867,12 +3904,28 @@ def deep_research_ai_lead(
 
     pages = _website_research_pages(website)
     if not pages:
-        raise HTTPException(status_code=404, detail="Firma web sitesinden araştırma verisi alınamadı.")
+        fallback_text = " ".join(
+            item
+            for item in [
+                lead.get("company_name"),
+                lead.get("company_description"),
+                lead.get("detected_activity"),
+                lead.get("apollo_search_keyword"),
+                lead.get("apollo_fit_filter_reason"),
+            ]
+            if _normalize(item)
+        )
+        if fallback_text:
+            pages = [{"url": website, "text": fallback_text}]
+        else:
+            raise HTTPException(status_code=404, detail="Firma web sitesinden araştırma verisi alınamadı.")
     try:
         research = _openai_lead_research(lead, segmentation, pages) or _build_lead_research(lead, segmentation, pages)
     except HTTPException:
         research = _build_lead_research(lead, segmentation, pages)
         research["risk_notes"] = f"{research.get('risk_notes') or ''} OpenAI analizi tamamlanamadı; kural tabanlı araştırma kullanıldı.".strip()
+    updated_company_name = _best_company_name_for_research(lead, research)
+    company_name_updated = _should_update_company_name(lead.get("company_name"), updated_company_name, website)
     db.execute(
         text(
             """
@@ -3909,10 +3962,17 @@ def deep_research_ai_lead(
         text("UPDATE ai_leads SET status = 'Review Needed' WHERE id = :lead_id AND status IN ('New', 'Segmented', 'Awaiting Approval')"),
         {"lead_id": lead_id},
     )
+    if company_name_updated:
+        db.execute(
+            text("UPDATE ai_leads SET company_name = :company_name WHERE id = :lead_id"),
+            {"lead_id": lead_id, "company_name": updated_company_name},
+        )
+        _log_action(db, lead_id, "company_name_refined", f"AI araştırma firma adını güncelledi: {updated_company_name}", current_user.id)
     _log_action(db, lead_id, "deep_research", "AI firma araştırması tamamlandı.", current_user.id)
     db.commit()
     latest = _latest_research(db, lead_id)
-    return {"research": latest, "lead": _lead_response(db, row)}
+    fresh_row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    return {"research": latest, "lead": _lead_response(db, fresh_row)}
 
 
 @router.post("/ai-leads/{lead_id}/analyze")

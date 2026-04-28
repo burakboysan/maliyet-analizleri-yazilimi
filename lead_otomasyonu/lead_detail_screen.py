@@ -376,6 +376,9 @@ def lead_detay_ekrani(parent, lead, on_update=None):
             try:
                 result = deep_research_ai_lead(token, lead.get("id"))
                 research = result.get("research") or {}
+                refreshed_lead = result.get("lead") or {}
+                if refreshed_lead:
+                    state["detail"].update(refreshed_lead)
                 state["detail"]["research"] = [research]
                 state["detail"]["research_status"] = research.get("status") or "Completed"
                 state["detail"]["research_summary"] = research.get("company_overview") or ""
