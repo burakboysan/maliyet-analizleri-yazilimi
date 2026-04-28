@@ -87,7 +87,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         ("contact_title", "Unvan"),
     ]:
         info_vars[key] = _kv_var(email_panel, label)
-    info_vars["contact_email"] = _clickable_kv_var(email_panel, "Email", lambda: compose_email())
+    info_vars["contact_email"] = _clickable_kv_var(email_panel, "Email", lambda: compose_email(), button_text="Mail")
     info_vars["email_status"] = _kv_var(email_panel, "Email Durumu")
     textboxes["email_explanation"] = _readonly_box(email_panel, height=130)
 
@@ -425,34 +425,64 @@ def _kv_var(parent, label):
     row = ctk.CTkFrame(parent, fg_color="transparent")
     row.pack(fill="x", padx=18, pady=4)
     ctk.CTkLabel(row, text=f"{label}:", width=130, anchor="w", text_color="#64748b").pack(side="left")
-    ctk.CTkLabel(
+    value_entry = ctk.CTkEntry(
         row,
         textvariable=var,
-        anchor="w",
         text_color="#111827",
-        wraplength=360,
-        justify="left",
-    ).pack(side="left", fill="x", expand=True)
+        fg_color="#ffffff",
+        border_width=0,
+        height=26,
+    )
+    value_entry.pack(side="left", fill="x", expand=True)
+    value_entry.configure(state="readonly")
+    _bind_select_all(value_entry)
     return var
 
 
-def _clickable_kv_var(parent, label, command):
+def _clickable_kv_var(parent, label, command, button_text="Aç"):
     var = ctk.StringVar(value="-")
     row = ctk.CTkFrame(parent, fg_color="transparent")
     row.pack(fill="x", padx=18, pady=4)
     ctk.CTkLabel(row, text=f"{label}:", width=130, anchor="w", text_color="#64748b").pack(side="left")
-    value_label = ctk.CTkLabel(
+    value_entry = ctk.CTkEntry(
         row,
         textvariable=var,
-        anchor="w",
         text_color="#2563eb",
-        wraplength=360,
-        justify="left",
-        cursor="hand2",
+        fg_color="#ffffff",
+        border_width=0,
+        height=26,
     )
-    value_label.pack(side="left", fill="x", expand=True)
-    value_label.bind("<Button-1>", lambda _event: command())
+    value_entry.pack(side="left", fill="x", expand=True)
+    value_entry.configure(state="readonly")
+    _bind_select_all(value_entry)
+    _inline_action_button(row, button_text, command).pack(side="left", padx=(8, 0))
     return var
+
+
+def _bind_select_all(widget):
+    def select_all(_event):
+        widget.select_range(0, "end")
+        widget.icursor("end")
+        return "break"
+
+    widget.bind("<Control-a>", select_all)
+    widget.bind("<Control-A>", select_all)
+
+
+def _inline_action_button(parent, text, command):
+    return ctk.CTkButton(
+        parent,
+        text=text,
+        command=command,
+        fg_color="#ffffff",
+        hover_color="#f8fafc",
+        text_color="#2563eb",
+        border_width=1,
+        border_color="#2563eb",
+        width=54,
+        height=26,
+        corner_radius=7,
+    )
 
 
 def _readonly_box(parent, height=120):
