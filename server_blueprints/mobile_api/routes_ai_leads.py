@@ -262,6 +262,132 @@ PRODUCT_FALLBACK_KEYWORDS = {
 }
 
 
+COUNTRY_LOCALIZATION_GROUPS = {
+    "germany": ["de"],
+    "austria": ["de"],
+    "switzerland": ["de", "fr", "it"],
+    "france": ["fr"],
+    "belgium": ["fr", "nl"],
+    "luxembourg": ["fr", "de"],
+    "italy": ["it"],
+    "spain": ["es"],
+    "portugal": ["pt"],
+    "netherlands": ["nl"],
+    "the netherlands": ["nl"],
+    "turkey": ["tr"],
+    "türkiye": ["tr"],
+    "united arab emirates": ["ar"],
+    "uae": ["ar"],
+    "saudi arabia": ["ar"],
+    "qatar": ["ar"],
+    "kuwait": ["ar"],
+    "egypt": ["ar"],
+    "morocco": ["fr", "ar"],
+    "tunisia": ["fr", "ar"],
+    "algeria": ["fr", "ar"],
+}
+
+
+LOCALIZED_TITLE_KEYWORDS = {
+    "de": ["Geschäftsführer", "Vertriebsleiter", "Leiter Vertrieb", "Technischer Leiter", "Projektleiter"],
+    "fr": ["Directeur Général", "Directeur Commercial", "Responsable Commercial", "Directeur Technique", "Chef de Projet"],
+    "it": ["Direttore Generale", "Direttore Commerciale", "Responsabile Commerciale", "Direttore Tecnico", "Project Manager"],
+    "es": ["Director General", "Director Comercial", "Responsable Comercial", "Director Técnico", "Jefe de Proyecto"],
+    "pt": ["Diretor Geral", "Diretor Comercial", "Responsável Comercial", "Diretor Técnico", "Gestor de Projeto"],
+    "nl": ["Algemeen Directeur", "Commercieel Directeur", "Sales Manager", "Technisch Directeur", "Projectmanager"],
+    "tr": ["Genel Müdür", "Satış Müdürü", "İş Geliştirme Müdürü", "Teknik Müdür", "Proje Müdürü"],
+    "ar": ["General Manager", "Sales Manager", "Business Development Manager", "Technical Manager", "Project Manager"],
+}
+
+
+LOCALIZED_PRODUCT_KEYWORDS = {
+    "Hall Ventilation": {
+        "de": ["Industriebelüftung", "Hallenlüftung", "Lüftungsanlage", "Industrieabsaugung"],
+        "fr": ["ventilation industrielle", "ventilation d'atelier", "système de ventilation industrielle"],
+        "it": ["ventilazione industriale", "ventilazione capannoni", "impianti di ventilazione industriale"],
+        "es": ["ventilación industrial", "ventilación de naves industriales", "sistema de ventilación industrial"],
+        "pt": ["ventilação industrial", "ventilação de fábrica", "sistema de ventilação industrial"],
+        "nl": ["industriële ventilatie", "halventilatie", "industrieel ventilatiesysteem"],
+        "tr": ["endüstriyel havalandırma", "fabrika havalandırma", "hol havalandırma"],
+        "ar": ["industrial ventilation", "factory ventilation", "ventilation system"],
+    },
+    "Fume Extraction": {
+        "de": ["Schweißrauchabsaugung", "Rauchabsaugung", "Absauganlage Schweißen"],
+        "fr": ["aspiration fumées soudage", "extraction fumées", "aspiration industrielle fumées"],
+        "it": ["aspirazione fumi saldatura", "estrazione fumi", "aspirazione fumi industriali"],
+        "es": ["extracción humos soldadura", "aspiración de humos", "extracción de humos industriales"],
+        "pt": ["extração de fumos de soldadura", "aspiração de fumos", "extração de fumos industriais"],
+        "nl": ["lasrookafzuiging", "rookafzuiging", "industriële afzuiging"],
+        "tr": ["kaynak dumanı emişi", "duman emiş sistemi", "endüstriyel duman emiş"],
+        "ar": ["welding fume extraction", "industrial fume extraction", "fume extraction system"],
+    },
+    "Dust Collection": {
+        "de": ["Staubabsaugung", "Entstaubungsanlage", "Industriefilter", "Staubfilteranlage"],
+        "fr": ["dépoussiérage industriel", "aspiration poussières", "filtration industrielle poussières"],
+        "it": ["depolverazione industriale", "aspirazione polveri", "filtrazione polveri industriali"],
+        "es": ["captación de polvo", "aspiración de polvo industrial", "filtración de polvo industrial"],
+        "pt": ["coleta de pó industrial", "aspiração de pó", "filtragem de pó industrial"],
+        "nl": ["stofafzuiging", "industriële stofafzuiging", "stofcollectie"],
+        "tr": ["toz toplama", "endüstriyel toz emiş", "toz filtrasyon sistemi"],
+        "ar": ["dust collection", "industrial dust extraction", "dust filtration system"],
+    },
+    "Oil Mist Filtration": {
+        "de": ["Ölnebelabscheider", "Ölnebelabsaugung", "Emulsionsnebelabscheider"],
+        "fr": ["filtration brouillard d'huile", "aspiration brouillard d'huile", "séparateur brouillard d'huile"],
+        "it": ["filtrazione nebbie oleose", "aspirazione nebbie oleose", "separatore nebbie oleose"],
+        "es": ["filtración niebla de aceite", "extracción niebla de aceite", "separador niebla de aceite"],
+        "pt": ["filtragem de névoa de óleo", "extração de névoa de óleo", "separador de névoa de óleo"],
+        "nl": ["olienevelfiltratie", "olienevelafzuiging", "olienevelafscheider"],
+        "tr": ["yağ buharı filtrasyonu", "yağ sisi emiş", "yağ buharı filtresi"],
+        "ar": ["oil mist filtration", "oil mist extraction", "oil mist separator"],
+    },
+    "Turnkey Solutions": {
+        "de": ["Anlagenbau", "schlüsselfertige Industrieanlage", "Prozessanlage"],
+        "fr": ["solution clé en main industrielle", "ingénierie industrielle", "installation industrielle clé en main"],
+        "it": ["soluzioni chiavi in mano industriali", "impianti industriali chiavi in mano", "ingegneria industriale"],
+        "es": ["soluciones llave en mano industriales", "ingeniería industrial", "planta industrial llave en mano"],
+        "pt": ["soluções industriais chave na mão", "engenharia industrial", "instalação industrial chave na mão"],
+        "nl": ["turnkey industriële oplossingen", "industriële engineering", "procesinstallatie"],
+        "tr": ["anahtar teslim endüstriyel çözüm", "endüstriyel tesis kurulumu", "proses mühendisliği"],
+        "ar": ["turnkey industrial solutions", "industrial engineering", "process engineering"],
+    },
+}
+
+
+LOCALIZED_CHANNEL_KEYWORDS = {
+    "White Label / Resellers": {
+        "de": ["Händler", "Vertriebspartner", "Distributor", "Wiederverkäufer"],
+        "fr": ["distributeur", "revendeur", "partenaire commercial"],
+        "it": ["distributore", "rivenditore", "partner commerciale"],
+        "es": ["distribuidor", "revendedor", "partner comercial"],
+        "pt": ["distribuidor", "revendedor", "parceiro comercial"],
+        "nl": ["distributeur", "wederverkoper", "verkooppartner"],
+        "tr": ["distribütör", "bayi", "satış partneri"],
+        "ar": ["distributor", "reseller", "sales partner"],
+    },
+    "Clean Air Solution Partner": {
+        "de": ["Industrie Lüftungstechnik", "Raumlufttechnik", "Luftfiltertechnik"],
+        "fr": ["traitement de l'air industriel", "filtration de l'air", "ventilation industrielle"],
+        "it": ["trattamento aria industriale", "filtrazione aria", "ventilazione industriale"],
+        "es": ["tratamiento de aire industrial", "filtración de aire", "ventilación industrial"],
+        "pt": ["tratamento de ar industrial", "filtragem de ar", "ventilação industrial"],
+        "nl": ["industriële luchtbehandeling", "luchtfiltratie", "industriële ventilatie"],
+        "tr": ["endüstriyel hava filtrasyonu", "temiz hava çözümleri", "havalandırma firması"],
+        "ar": ["industrial air filtration", "clean air solutions", "industrial ventilation"],
+    },
+    "System Integration Solution Partner": {
+        "de": ["Systemintegrator", "Automatisierungsintegrator", "Anlagenintegrator"],
+        "fr": ["intégrateur système", "intégrateur automatisme", "intégrateur industriel"],
+        "it": ["integratore di sistemi", "integratore automazione", "integratore industriale"],
+        "es": ["integrador de sistemas", "integrador de automatización", "integrador industrial"],
+        "pt": ["integrador de sistemas", "integrador de automação", "integrador industrial"],
+        "nl": ["systeemintegrator", "automatiseringsintegrator", "industriële integrator"],
+        "tr": ["sistem entegratörü", "otomasyon entegratörü", "endüstriyel entegratör"],
+        "ar": ["system integrator", "automation integrator", "industrial integrator"],
+    },
+}
+
+
 class AiLeadContactRequest(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
@@ -1507,15 +1633,37 @@ def _insert_email_draft(
     }
 
 
+def _country_localization_groups(country: str) -> list[str]:
+    normalized = _casefold(country)
+    return COUNTRY_LOCALIZATION_GROUPS.get(normalized, [])
+
+
+def _localized_person_titles(country: str) -> list[str]:
+    titles = []
+    for group in _country_localization_groups(country):
+        titles.extend(LOCALIZED_TITLE_KEYWORDS.get(group, []))
+    return _dedupe_strings(titles)
+
+
+def _localized_search_keywords(product_category: str, sales_channel: str, country: str) -> list[str]:
+    keywords = []
+    for group in _country_localization_groups(country):
+        keywords.extend(LOCALIZED_PRODUCT_KEYWORDS.get(product_category, {}).get(group, []))
+        keywords.extend(LOCALIZED_CHANNEL_KEYWORDS.get(sales_channel, {}).get(group, []))
+    return _dedupe_strings(keywords)
+
+
 def _segment_search_attempts(recipe: dict[str, Any], country: str, limit: int) -> list[dict[str, Any]]:
     sales_channel = str(recipe.get("sales_channel") or "")
     product_category = str(recipe.get("product_category") or "")
-    company_keywords = _json_list(recipe.get("company_keywords"))
+    localized_keywords = _localized_search_keywords(product_category, sales_channel, country)
+    company_keywords = _dedupe_strings(_json_list(recipe.get("company_keywords")) + localized_keywords)
     positive_signals = _json_list(recipe.get("positive_signals"))
-    person_titles = _json_list(recipe.get("person_titles")) or DEFAULT_TITLES
+    person_titles = _dedupe_strings((_json_list(recipe.get("person_titles")) or DEFAULT_TITLES) + _localized_person_titles(country))
     fallback_terms = _dedupe_strings(
         PRODUCT_FALLBACK_KEYWORDS.get(product_category, [])
         + positive_signals
+        + localized_keywords
     )
 
     attempts = []
@@ -2481,8 +2629,9 @@ def search_apollo_ai_leads(
     organization_locations = list(payload.organization_locations or [])
     if payload.country and payload.country not in organization_locations:
         organization_locations.append(payload.country)
+    person_titles = _dedupe_strings(list(payload.person_titles or []) + _localized_person_titles(payload.country or ""))
     search_payload = {
-        "person_titles[]": payload.person_titles,
+        "person_titles[]": person_titles,
         "organization_locations[]": organization_locations,
         "q_keywords": " ".join(payload.keywords or []),
         "page": max(int(payload.page or 1), 1),
