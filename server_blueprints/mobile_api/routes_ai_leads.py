@@ -398,6 +398,32 @@ def _priority_for_segment(product_category: str, sales_channel: str) -> str:
     return "Medium"
 
 
+HIGH_PRIORITY_APOLLO_KEYWORDS = [
+    "fume extraction",
+    "welding fume",
+    "welding smoke",
+    "extraction arm",
+    "dust collection",
+    "dust collector",
+    "dust extraction",
+    "dust control",
+    "industrial filtration",
+    "baghouse",
+    "cartridge filter",
+    "oil mist",
+    "mist collector",
+    "cnc mist",
+    "machine tool oil mist",
+]
+
+
+def _priority_for_apollo_search(keyword: Any) -> str:
+    haystack = _casefold(keyword)
+    if any(signal in haystack for signal in HIGH_PRIORITY_APOLLO_KEYWORDS):
+        return "High"
+    return "Medium"
+
+
 def _guess_sales_channel(text_value: str) -> str:
     haystack = _casefold(text_value)
     if any(word in haystack for word in ["integrator", "integration", "epc", "engineering", "automation", "turnkey"]):
@@ -920,6 +946,8 @@ def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
     priority_value = segmentation.get("priority") or ("Excluded" if lead.get("exclusion_status") == "Excluded" else "")
     if lead.get("status") == "Review Needed":
         priority_value = "Low"
+    elif lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"):
+        priority_value = _priority_for_apollo_search(lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"))
     return {
         **lead,
         "sales_channel": segmentation.get("sales_channel") or "",
@@ -2277,10 +2305,7 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
                 "sales_channel": forced_segment.get("sales_channel") or analysis["sales_channel"],
                 "product_category": forced_segment.get("product_category") or analysis["product_category"],
                 "segment_name": forced_segment.get("segment_name") or analysis["segment_name"],
-                "priority": _priority_for_segment(
-                    forced_segment.get("product_category") or analysis["product_category"],
-                    forced_segment.get("sales_channel") or analysis["sales_channel"],
-                ),
+                "priority": _priority_for_apollo_search(search_meta.get("keyword") or search_meta.get("attempt")),
                 "suggested_sequence": forced_segment.get("suggested_sequence") or analysis["suggested_sequence"],
                 "partner_type": forced_segment.get("sales_channel") or analysis["partner_type"],
                 "short_reasoning": f"Segment Search recipe matched: {forced_segment.get('segment_name')}",
