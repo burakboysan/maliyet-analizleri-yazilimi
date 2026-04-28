@@ -607,7 +607,8 @@ def _render_requests(parent, rows, selectable, selected_pending, show_user=False
             row=0, column=col, sticky="w", padx=8, pady=8
         )
     for index, item in enumerate(rows):
-        bg = "#fff7ed" if selectable and selected_pending.get("item", {}).get("id") == item.get("id") else ("#ffffff" if index % 2 == 0 else SURFACE_BG)
+        selected_item = selected_pending.get("item") or {}
+        bg = "#fff7ed" if selectable and selected_item.get("id") == item.get("id") else ("#ffffff" if index % 2 == 0 else SURFACE_BG)
         row = ctk.CTkFrame(parent, fg_color=bg, corner_radius=6, border_width=1, border_color=SOFT_BORDER_COLOR)
         row.grid(row=index + 1, column=0, sticky="ew", pady=(0, 6))
         if selectable:
