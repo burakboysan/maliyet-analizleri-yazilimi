@@ -1514,8 +1514,7 @@ def _segment_search_attempts(recipe: dict[str, Any], country: str, limit: int) -
     positive_signals = _json_list(recipe.get("positive_signals"))
     person_titles = _json_list(recipe.get("person_titles")) or DEFAULT_TITLES
     fallback_terms = _dedupe_strings(
-        CHANNEL_FALLBACK_KEYWORDS.get(sales_channel, [])
-        + PRODUCT_FALLBACK_KEYWORDS.get(product_category, [])
+        PRODUCT_FALLBACK_KEYWORDS.get(product_category, [])
         + positive_signals
     )
 
