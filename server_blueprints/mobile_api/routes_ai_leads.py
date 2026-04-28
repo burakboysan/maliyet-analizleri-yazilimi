@@ -1569,6 +1569,23 @@ def _hunter_api_key() -> str:
     return _normalize(os.getenv("HUNTER_API_KEY")) or _read_env_file_value("HUNTER_API_KEY")
 
 
+def _hunter_error_message(raw_detail: str) -> str:
+    try:
+        payload = json.loads(raw_detail)
+    except Exception:
+        payload = {}
+    errors = payload.get("errors") if isinstance(payload, dict) else None
+    if isinstance(errors, list) and errors:
+        first_error = errors[0] or {}
+        code = _normalize(first_error.get("code") or first_error.get("id"))
+        details = _normalize(first_error.get("details") or first_error.get("message"))
+        if code == "401" or "authentication" in code.casefold():
+            return "Hunter API key geçersiz görünüyor. Hunter hesabı bu key'i tanımadı; yeni key üretip tekrar tanımlayın."
+        if details:
+            return f"Hunter API hatası: {details}"
+    return f"Hunter API hatası: {raw_detail[:500]}"
+
+
 def _hunter_request(path: str, query: dict[str, Any] | None = None, payload: dict[str, Any] | None = None, method: str = "GET") -> dict[str, Any]:
     api_key = _hunter_api_key()
     if not api_key:
@@ -1587,7 +1604,7 @@ def _hunter_request(path: str, query: dict[str, Any] | None = None, payload: dic
             return json.loads(response.read().decode("utf-8"))
     except error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="ignore")
-        raise HTTPException(status_code=502, detail=f"Hunter API hatası: {detail[:500]}") from exc
+        raise HTTPException(status_code=502, detail=_hunter_error_message(detail)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Hunter API servisine ulaşılamadı: {exc}") from exc
 
@@ -3887,6 +3904,76 @@ def search_serpapi_domains(
         "created": len(created),
         "skipped_duplicates": skipped_duplicates,
         "rows": created,
+    }
+
+
+@router.get("/ai-leads/providers/status")
+def get_ai_lead_provider_status(
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    del current_user
+    apollo_key = ""
+    serpapi_key = ""
+    try:
+        apollo_key = _apollo_api_key()
+    except HTTPException:
+        apollo_key = ""
+    try:
+        serpapi_key = _serpapi_api_key()
+    except HTTPException:
+        serpapi_key = ""
+
+    hunter_key = _hunter_api_key()
+    hunter_status: dict[str, Any] = {
+        "configured": bool(hunter_key),
+        "status": "not_configured",
+        "message": "HUNTER_API_KEY sunucuda tanımlı değil.",
+    }
+    if hunter_key:
+        hunter_status.update(
+            {
+                "status": "checking",
+                "message": "Hunter API key tanımlı; hesap doğrulaması yapılıyor.",
+                "key_hint": f"...{hunter_key[-4:]}",
+            }
+        )
+        try:
+            account = _hunter_request("/account")
+            data = account.get("data") or {}
+            requests_info = data.get("requests") or {}
+            credits = requests_info.get("credits") or {}
+            hunter_status.update(
+                {
+                    "status": "ok",
+                    "message": "Hunter API key geçerli.",
+                    "account_email": data.get("email") or "",
+                    "plan_name": data.get("plan_name") or "",
+                    "credits_used": credits.get("used"),
+                    "credits_available": credits.get("available"),
+                }
+            )
+        except HTTPException as exc:
+            hunter_status.update(
+                {
+                    "status": "error",
+                    "message": str(exc.detail),
+                }
+            )
+
+    return {
+        "apollo": {
+            "configured": bool(apollo_key),
+            "status": "configured" if apollo_key else "not_configured",
+            "message": "APOLLO_API_KEY tanımlı." if apollo_key else "APOLLO_API_KEY sunucuda tanımlı değil.",
+            "key_hint": f"...{apollo_key[-4:]}" if apollo_key else "",
+        },
+        "serpapi": {
+            "configured": bool(serpapi_key),
+            "status": "configured" if serpapi_key else "not_configured",
+            "message": "SERPAPI_API_KEY tanımlı." if serpapi_key else "SERPAPI_API_KEY sunucuda tanımlı değil.",
+            "key_hint": f"...{serpapi_key[-4:]}" if serpapi_key else "",
+        },
+        "hunter": hunter_status,
     }
 
 

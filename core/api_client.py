@@ -451,6 +451,10 @@ def search_hunter_companies(token, payload):
     return request_json("POST", "/desktop/ai-leads/hunter/company-search", payload=payload or {}, headers=auth_headers(token), timeout=90) or {}
 
 
+def get_ai_lead_provider_status(token):
+    return request_json("GET", "/desktop/ai-leads/providers/status", headers=auth_headers(token), timeout=45) or {}
+
+
 def get_ai_lead_detail(token, lead_id):
     return request_json("GET", f"/desktop/ai-leads/{int(lead_id)}", headers=auth_headers(token)) or {}
 

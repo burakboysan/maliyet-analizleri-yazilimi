@@ -5,7 +5,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, enrich_ai_lead_from_hunter, generate_ai_email_sequence, list_ai_leads, search_apollo_ai_leads, search_hunter_companies, search_serpapi_domains
+from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, enrich_ai_lead_from_hunter, generate_ai_email_sequence, get_ai_lead_provider_status, list_ai_leads, search_apollo_ai_leads, search_hunter_companies, search_serpapi_domains
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
@@ -690,6 +690,45 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     def open_segment_settings():
         segment_ayarlari_ekrani(win)
 
+    def show_provider_status():
+        token = get_app_token()
+        if not token:
+            messagebox.showerror("Entegrasyon Durumu", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+        status_var.set("Entegrasyon durumları kontrol ediliyor...")
+
+        def format_provider(label, data):
+            status = data.get("status") or "-"
+            message = data.get("message") or ""
+            key_hint = data.get("key_hint") or ""
+            extra = []
+            if data.get("account_email"):
+                extra.append(f"Hesap: {data.get('account_email')}")
+            if data.get("plan_name"):
+                extra.append(f"Plan: {data.get('plan_name')}")
+            if data.get("credits_available") is not None:
+                extra.append(f"Kalan kredi: {data.get('credits_available')}")
+            suffix = f" ({key_hint})" if key_hint else ""
+            extra_text = f"\n  " + "\n  ".join(extra) if extra else ""
+            return f"{label}: {status}{suffix}\n  {message}{extra_text}"
+
+        def worker():
+            try:
+                result = get_ai_lead_provider_status(token)
+                lines = [
+                    format_provider("Apollo", result.get("apollo") or {}),
+                    format_provider("SerpAPI", result.get("serpapi") or {}),
+                    format_provider("Hunter", result.get("hunter") or {}),
+                ]
+                message = "\n\n".join(lines)
+                win.after(0, lambda: status_var.set("Entegrasyon durumu kontrol edildi."))
+                win.after(0, lambda msg=message: messagebox.showinfo("Entegrasyon Durumu", msg, parent=win))
+            except Exception as exc:
+                win.after(0, lambda: status_var.set("Entegrasyon durumu alınamadı."))
+                win.after(0, lambda err=str(exc): messagebox.showerror("Entegrasyon Durumu", f"Kontrol başarısız: {err}", parent=win))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def enrich_selected():
         token = get_app_token()
         leads = selected_leads()
@@ -968,6 +1007,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     ctk.CTkButton(bottom_actions, text="SerpAPI Firma Bul", width=165, command=segment_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Hunter Firma Bul", width=155, command=hunter_company_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Apollo Search", width=130, command=apollo_search, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
+    ctk.CTkButton(bottom_actions, text="Entegrasyon Durumu", width=165, command=show_provider_status, fg_color="#ffffff", text_color="#334155", border_width=1, border_color="#94a3b8").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Sil", width=90, command=delete_selected_lead, fg_color="#ffffff", text_color="#dc2626", border_width=1, border_color="#dc2626").pack(side="left", padx=(8, 0))
 
     search_var.trace_add("write", apply_filters)
