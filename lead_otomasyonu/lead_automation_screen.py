@@ -666,6 +666,9 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 try:
                     result = deep_research_ai_lead(token, lead.get("id"))
                     research = result.get("research") or {}
+                    refreshed_lead = result.get("lead") or {}
+                    if refreshed_lead:
+                        lead.update(refreshed_lead)
                     lead["research_status"] = research.get("status") or "Completed"
                     lead["research_summary"] = research.get("company_overview") or ""
                     lead["last_action"] = "AI firma araştırması tamamlandı."

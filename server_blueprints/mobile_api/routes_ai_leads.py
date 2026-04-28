@@ -2786,6 +2786,11 @@ def _should_update_company_name(current_name: str, new_name: str, website: str) 
     domain = _company_domain(website)
     if not current or not new or current == new:
         return False
+    new_folded = new.casefold()
+    if any(fragment in new_folded for fragment in SERPAPI_BLOCKED_TITLE_FRAGMENTS):
+        return False
+    if any(word in new_folded for word in ["top ", "gallery", "video", "products", "solutions", "history", "about us", "directory"]):
+        return False
     current_folded = current.casefold()
     if any(fragment in current_folded for fragment in SERPAPI_BLOCKED_TITLE_FRAGMENTS):
         return True
@@ -2794,7 +2799,9 @@ def _should_update_company_name(current_name: str, new_name: str, website: str) 
     if domain and current_folded in {"home", "homepage", "products", "solutions", "the right solution"}:
         return True
     domain_name = _company_name_from_domain(domain)
-    return bool(domain_name and current.casefold() == domain_name.casefold() and new.casefold() != domain_name.casefold())
+    if domain_name and current.casefold() == domain_name.casefold() and new.casefold() != domain_name.casefold():
+        return True
+    return True
 
 
 def _clean_company_name_candidate(candidate: str, domain: str) -> str:
