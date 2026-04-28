@@ -474,24 +474,37 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
         vars_ = {
             "country": ctk.StringVar(value=TARGET_COUNTRIES[0] if TARGET_COUNTRIES else "Germany"),
-            "keywords": ctk.StringVar(value="dust collection distributor, industrial filtration company, fume extraction supplier"),
             "pages": ctk.StringVar(value="1"),
+            "search_mode": ctk.StringVar(value="Geniş Arama"),
         }
+        keyword_tags = [
+            "dust collection distributor",
+            "industrial filtration company",
+            "fume extraction supplier",
+        ]
         _form_country_selector(form, "Ülke", vars_["country"], TARGET_COUNTRIES, 0, dialog)
-        _form_entry(form, "Anahtar Kelimeler", vars_["keywords"], 1)
+        keyword_entry = _keyword_tag_editor(form, "Anahtar Kelimeler", keyword_tags, 1)
         _form_entry(form, "Arama Sayfası", vars_["pages"], 2)
+
+        ctk.CTkLabel(form, text="Arama Esnekliği", text_color="#475569").grid(row=3, column=0, sticky="w", padx=16, pady=8)
+        ctk.CTkSegmentedButton(
+            form,
+            values=["Geniş Arama", "Dar Arama"],
+            variable=vars_["search_mode"],
+        ).grid(row=3, column=1, sticky="ew", padx=16, pady=8)
 
         note = ctk.CTkLabel(
             form,
-            text="Bu ekran sadece SerpAPI ile firma/domain adayı bulur. Ürün x satış kanalı etiketi otomatik atanmaz. Uygun domainleri detay ekranından manuel etiketleyip, Apollo karar verici/email aramasını ayrıca Email Enrich ile çalıştırın.",
+            text="Geniş arama keyword kelimelerini esnek eşleştirir. Dar arama keywordü tırnak içinde exact phrase olarak arar. Bu ekran sadece SerpAPI ile firma/domain adayı bulur; Apollo karar verici/email araması ayrıca Email Enrich ile çalışır.",
             text_color="#64748b",
             wraplength=500,
             justify="left",
         )
-        note.grid(row=3, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 4))
+        note.grid(row=4, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 4))
 
         def run_segment_search():
-            keywords = [item.strip() for item in vars_["keywords"].get().split(",") if item.strip()]
+            _add_keyword_tags_from_entry(keyword_entry, keyword_tags)
+            keywords = list(keyword_tags)
             if not keywords:
                 messagebox.showwarning("Eksik Bilgi", "Lütfen en az bir keyword girin.", parent=dialog)
                 return
@@ -505,6 +518,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 "country": vars_["country"].get().strip(),
                 "keywords": keywords,
                 "pages": pages,
+                "search_mode": "exact" if vars_["search_mode"].get() == "Dar Arama" else "broad",
             }
 
             def worker():
@@ -527,7 +541,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             command=run_segment_search,
             fg_color="#d32f2f",
             hover_color="#b91c1c",
-        ).grid(row=4, column=1, sticky="e", padx=16, pady=18)
+        ).grid(row=5, column=1, sticky="e", padx=16, pady=18)
 
     def open_segment_settings():
         segment_ayarlari_ekrani(win)
@@ -713,6 +727,73 @@ def _form_entry(parent, label, variable, row):
     ctk.CTkLabel(parent, text=label, text_color="#475569").grid(row=row, column=0, sticky="w", padx=16, pady=8)
     ctk.CTkEntry(parent, textvariable=variable).grid(row=row, column=1, sticky="ew", padx=16, pady=8)
     parent.grid_columnconfigure(1, weight=1)
+
+
+def _add_keyword_tags_from_entry(entry, tags):
+    raw_value = entry.get().replace("\n", ",")
+    new_tags = [item.strip() for item in raw_value.split(",") if item.strip()]
+    for tag in new_tags:
+        if tag.casefold() not in {existing.casefold() for existing in tags}:
+            tags.append(tag)
+    entry.delete(0, "end")
+
+
+def _keyword_tag_editor(parent, label, tags, row):
+    ctk.CTkLabel(parent, text=label, text_color="#475569").grid(row=row, column=0, sticky="nw", padx=16, pady=8)
+    wrapper = ctk.CTkFrame(parent, fg_color="#f8fafc", corner_radius=8)
+    wrapper.grid(row=row, column=1, sticky="ew", padx=16, pady=8)
+    wrapper.grid_columnconfigure(0, weight=1)
+
+    tag_frame = ctk.CTkFrame(wrapper, fg_color="transparent")
+    tag_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=8, pady=(8, 4))
+
+    entry = ctk.CTkEntry(wrapper, placeholder_text="Keyword yazıp Enter'a basın. Virgüllü girişler ayrı etikete dönüşür.")
+    entry.grid(row=1, column=0, sticky="ew", padx=(8, 6), pady=(4, 8))
+    parent.grid_columnconfigure(1, weight=1)
+
+    def render_tags():
+        for child in tag_frame.winfo_children():
+            child.destroy()
+        if not tags:
+            ctk.CTkLabel(tag_frame, text="Henüz keyword yok.", text_color="#94a3b8").grid(row=0, column=0, sticky="w", padx=4, pady=4)
+            return
+        column_count = 2
+        for index, tag in enumerate(tags):
+            tag_button = ctk.CTkButton(
+                tag_frame,
+                text=f"{tag}  x",
+                command=lambda value=tag: remove_tag(value),
+                fg_color="#e0f2fe",
+                hover_color="#bae6fd",
+                text_color="#075985",
+                height=28,
+                corner_radius=14,
+            )
+            tag_button.grid(row=index // column_count, column=index % column_count, sticky="w", padx=4, pady=4)
+
+    def add_tags(_event=None):
+        _add_keyword_tags_from_entry(entry, tags)
+        render_tags()
+        return "break"
+
+    def remove_tag(value):
+        tags[:] = [tag for tag in tags if tag != value]
+        render_tags()
+
+    ctk.CTkButton(
+        wrapper,
+        text="Ekle",
+        command=add_tags,
+        fg_color="#ffffff",
+        hover_color="#f1f5f9",
+        text_color="#2563eb",
+        border_width=1,
+        border_color="#2563eb",
+        width=70,
+    ).grid(row=1, column=1, sticky="e", padx=(0, 8), pady=(4, 8))
+    entry.bind("<Return>", add_tags)
+    render_tags()
+    return entry
 
 
 def _form_combo(parent, label, variable, values, row):

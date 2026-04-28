@@ -505,6 +505,7 @@ class SerpApiSearchRequest(BaseModel):
     country: Optional[str] = None
     keywords: List[str] = []
     pages: int = 1
+    search_mode: str = "broad"
 
 
 class AiSearchRecipeUpdateRequest(BaseModel):
@@ -2530,14 +2531,17 @@ def _serpapi_find_domains(recipe: dict[str, Any], country: str, limit: int) -> l
     return domains
 
 
-def _serpapi_find_domains_by_keywords(keywords: list[str], country: str, pages: int) -> list[dict[str, str]]:
+def _serpapi_find_domains_by_keywords(keywords: list[str], country: str, pages: int, search_mode: str = "broad") -> list[dict[str, str]]:
     domains = []
     seen_domains = set()
     gl = _serpapi_country_code(country)
     country_part = country or ""
     page_count = min(max(int(pages or 1), 1), 10)
+    exact_match = _casefold(search_mode) in {"exact", "narrow", "dar"}
     queries = [
-        f"{keyword} {country_part} company -jobs -linkedin -facebook -youtube"
+        f'"{keyword.replace(chr(34), "").strip()}" {country_part} company -jobs -linkedin -facebook -youtube'
+        if exact_match
+        else f"{keyword} {country_part} company -jobs -linkedin -facebook -youtube"
         for keyword in _dedupe_strings(keywords)
         if _normalize(keyword)
     ]
@@ -3285,8 +3289,9 @@ def search_serpapi_domains(
     if not keywords:
         raise HTTPException(status_code=400, detail="En az bir SerpAPI keyword girilmelidir.")
     pages = min(max(int(payload.pages or 1), 1), 10)
+    search_mode = "exact" if _casefold(payload.search_mode) in {"exact", "narrow", "dar"} else "broad"
     country = _normalize(payload.country)
-    domains = _serpapi_find_domains_by_keywords(keywords, country, pages)
+    domains = _serpapi_find_domains_by_keywords(keywords, country, pages, search_mode)
     created = []
     skipped_duplicates = 0
     for domain_result in domains:
@@ -3300,6 +3305,7 @@ def search_serpapi_domains(
     return {
         "country": country,
         "pages": pages,
+        "search_mode": search_mode,
         "found_domains": len(domains),
         "created": len(created),
         "skipped_duplicates": skipped_duplicates,
