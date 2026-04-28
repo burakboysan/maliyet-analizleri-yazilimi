@@ -502,6 +502,27 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         )
         note.grid(row=4, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 4))
 
+        progress = ctk.CTkProgressBar(form, mode="indeterminate")
+        progress.grid(row=5, column=0, columnspan=2, sticky="ew", padx=16, pady=(12, 2))
+        progress.set(0)
+        progress.grid_remove()
+        status_label = ctk.CTkLabel(form, text="", text_color="#64748b")
+        status_label.grid(row=6, column=0, columnspan=2, sticky="w", padx=16, pady=(2, 4))
+        search_state = {"running": False, "message_index": 0}
+        progress_messages = [
+            "Sihir konuşuyor, keywordler yola çıktı...",
+            "İlgili firmalar bulunuyor...",
+            "Domainler ayıklanıyor, alakasız kalabalık dışarıda kalıyor...",
+            "Bulunan adaylar dashboard'a hazırlanıyor...",
+        ]
+
+        def tick_progress():
+            if not search_state["running"]:
+                return
+            status_label.configure(text=progress_messages[search_state["message_index"] % len(progress_messages)])
+            search_state["message_index"] += 1
+            dialog.after(1400, tick_progress)
+
         def run_segment_search():
             _add_keyword_tags_from_entry(keyword_entry, keyword_tags)
             keywords = list(keyword_tags)
@@ -520,6 +541,20 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 "pages": pages,
                 "search_mode": "exact" if vars_["search_mode"].get() == "Dar Arama" else "broad",
             }
+            search_state["running"] = True
+            search_state["message_index"] = 0
+            progress.grid()
+            progress.start()
+            status_label.configure(text=progress_messages[0])
+            search_button.configure(state="disabled", text="Aranıyor...")
+            tick_progress()
+
+            def finish_search():
+                search_state["running"] = False
+                progress.stop()
+                progress.grid_remove()
+                status_label.configure(text="")
+                search_button.configure(state="normal", text="SerpAPI Firma Bul")
 
             def worker():
                 try:
@@ -529,21 +564,24 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                     domains = int(result.get("found_domains") or 0)
                     warning_count = int(result.get("warning_count") or 0)
                     warning_note = f"\n\n{warning_count} SerpAPI sorgusu hata verdi ve atlandı." if warning_count else ""
+                    win.after(0, finish_search)
                     win.after(0, lambda: messagebox.showinfo("SerpAPI Firma Bul", f"{domains} firma/domain adayı bulundu. {created} aday eklendi. {skipped} tekrar kayıt atlandı.{warning_note}", parent=win))
                     win.after(0, load_from_api)
                     win.after(0, dialog.destroy)
                 except Exception as exc:
+                    win.after(0, finish_search)
                     win.after(0, lambda err=str(exc): messagebox.showerror("SerpAPI Firma Bul", f"Arama başarısız: {err}", parent=dialog))
 
             threading.Thread(target=worker, daemon=True).start()
 
-        ctk.CTkButton(
+        search_button = ctk.CTkButton(
             form,
             text="SerpAPI Firma Bul",
             command=run_segment_search,
             fg_color="#d32f2f",
             hover_color="#b91c1c",
-        ).grid(row=5, column=1, sticky="e", padx=16, pady=18)
+        )
+        search_button.grid(row=7, column=1, sticky="e", padx=16, pady=18)
 
     def open_segment_settings():
         segment_ayarlari_ekrani(win)

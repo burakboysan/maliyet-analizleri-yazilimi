@@ -692,7 +692,7 @@ def _ensure_tables(db: Session) -> None:
             country VARCHAR(100),
             region VARCHAR(50),
             local_language VARCHAR(100),
-            source ENUM('Apollo', 'Manual', 'CSV') DEFAULT 'Manual',
+            source ENUM('Apollo', 'Manual', 'CSV', 'SerpAPI') DEFAULT 'Manual',
             source_reference VARCHAR(255),
             apollo_person_id VARCHAR(100),
             apollo_organization_id VARCHAR(100),
@@ -900,6 +900,7 @@ def _ensure_tables(db: Session) -> None:
     _ensure_column(db, "ai_lead_research", "model_used", "VARCHAR(100)")
     _ensure_column(db, "ai_search_recipes", "target_definition", "TEXT")
     _ensure_column(db, "ai_search_recipes", "targeting_notes", "TEXT")
+    _ensure_ai_leads_source_enum(db)
     db.commit()
     _seed_search_recipes(db)
 
@@ -972,6 +973,22 @@ def _ensure_column(db: Session, table_name: str, column_name: str, column_defini
     ).scalar()
     if not exists:
         db.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}"))
+
+
+def _ensure_ai_leads_source_enum(db: Session) -> None:
+    column_type = db.execute(
+        text(
+            """
+            SELECT COLUMN_TYPE
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'ai_leads'
+              AND COLUMN_NAME = 'source'
+            """
+        )
+    ).scalar()
+    if column_type and "SerpAPI" not in str(column_type):
+        db.execute(text("ALTER TABLE ai_leads MODIFY source ENUM('Apollo', 'Manual', 'CSV', 'SerpAPI') DEFAULT 'Manual'"))
 
 
 def _log_action(db: Session, lead_id: int | None, action_type: str, output_summary: str, user_id: int | None = None) -> None:
