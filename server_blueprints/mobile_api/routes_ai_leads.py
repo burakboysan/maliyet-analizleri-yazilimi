@@ -552,6 +552,7 @@ class AiLeadImportRequest(BaseModel):
 class AiSegmentUpdateRequest(BaseModel):
     sales_channel: str
     product_category: str
+    country: Optional[str] = None
     priority: Optional[str] = None
     ai_score: Optional[int] = None
     short_reasoning: Optional[str] = None
@@ -1226,10 +1227,11 @@ def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
     ).scalar() or 0
     sequence_stage = _email_sequence_stage(lead, contact, draft_count)
     priority_value = segmentation.get("priority") or ("Excluded" if lead.get("exclusion_status") == "Excluded" else "")
-    if lead.get("status") == "Review Needed":
-        priority_value = "Low"
-    elif lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"):
-        priority_value = _priority_for_apollo_search(lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"))
+    if not segmentation.get("priority"):
+        if lead.get("status") == "Review Needed":
+            priority_value = "Low"
+        elif lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"):
+            priority_value = _priority_for_apollo_search(lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"))
     return {
         **lead,
         "sales_channel": segmentation.get("sales_channel") or "",
@@ -4104,7 +4106,20 @@ def update_ai_lead_segment(
         "suggested_sequence": _sequence_code(payload.sales_channel),
     }
     _save_segmentation(db, lead_id, analysis)
-    db.execute(text("UPDATE ai_leads SET status = 'Segmented', exclusion_status = 'Active', exclusion_reason = NULL WHERE id = :id"), {"id": lead_id})
+    db.execute(
+        text(
+            """
+            UPDATE ai_leads
+            SET status = 'Segmented',
+                exclusion_status = 'Active',
+                exclusion_reason = NULL,
+                country = COALESCE(:country, country),
+                local_language = CASE WHEN :country IS NULL THEN local_language ELSE NULL END
+            WHERE id = :id
+            """
+        ),
+        {"id": lead_id, "country": payload.country.strip() if payload.country else None},
+    )
     _log_action(db, lead_id, "segment_override", analysis["short_reasoning"], current_user.id)
     db.commit()
     return analysis

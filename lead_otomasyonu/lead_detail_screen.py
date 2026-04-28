@@ -7,7 +7,7 @@ import customtkinter as ctk
 
 from core.api_client import ApiClientError, deep_research_ai_lead, generate_ai_email_sequence, get_ai_lead_detail, update_ai_lead_segment, update_ai_lead_status
 from core.session import get_app_token
-from lead_otomasyonu.strategy_constants import PRODUCT_CATEGORIES, SALES_CHANNELS, STATUS_OPTIONS, priority_for_segment
+from lead_otomasyonu.strategy_constants import PRODUCT_CATEGORIES, PRIORITY_OPTIONS, SALES_CHANNELS, STATUS_OPTIONS, priority_for_segment
 
 
 def lead_detay_ekrani(parent, lead, on_update=None):
@@ -29,8 +29,12 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     company_name_var = ctk.StringVar(value=lead.get("company_name") or "Lead Detay")
     status_var = ctk.StringVar(value=lead.get("ai_status") or lead.get("status") or "New")
     status_note_var = ctk.StringVar()
+    country_var = ctk.StringVar(value=lead.get("country") or "")
     segment_sales_channel_var = ctk.StringVar(value=lead.get("sales_channel") or SALES_CHANNELS[0])
     segment_product_var = ctk.StringVar(value=lead.get("product_category") or PRODUCT_CATEGORIES[0])
+    segment_priority_var = ctk.StringVar(
+        value=lead.get("priority") or priority_for_segment(lead.get("product_category"), lead.get("sales_channel"))
+    )
     info_vars = {}
     textboxes = {}
 
@@ -71,10 +75,10 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     _section_title(company_panel, "Firma Bilgileri")
     for key, label in [
         ("company_name", "Firma"),
-        ("country", "Ülke"),
         ("source", "Kaynak"),
     ]:
         info_vars[key] = _kv_var(company_panel, label)
+    _editable_kv_var(company_panel, "Ülke", country_var, "Lead ülkesini manuel düzeltebilirsiniz.")
     info_vars["website"] = _clickable_kv_var(company_panel, "Web", lambda: open_website())
     info_vars["detected_activity"] = _kv_var(company_panel, "Aktivite")
 
@@ -131,6 +135,8 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     ctk.CTkComboBox(segment_editor, values=SALES_CHANNELS, variable=segment_sales_channel_var, width=240).grid(row=1, column=1, sticky="ew", padx=12, pady=6)
     ctk.CTkLabel(segment_editor, text="Ürün / Hizmet", text_color="#64748b").grid(row=2, column=0, sticky="w", padx=12, pady=6)
     ctk.CTkComboBox(segment_editor, values=PRODUCT_CATEGORIES, variable=segment_product_var, width=240).grid(row=2, column=1, sticky="ew", padx=12, pady=6)
+    ctk.CTkLabel(segment_editor, text="Öncelik", text_color="#64748b").grid(row=3, column=0, sticky="w", padx=12, pady=6)
+    ctk.CTkComboBox(segment_editor, values=PRIORITY_OPTIONS, variable=segment_priority_var, width=240).grid(row=3, column=1, sticky="ew", padx=12, pady=(6, 12))
     segment_editor.grid_columnconfigure(1, weight=1)
     textboxes["segmentation_source"] = _readonly_box(segmentation_panel, height=120)
 
@@ -447,11 +453,14 @@ def lead_detay_ekrani(parent, lead, on_update=None):
                 var.set(sequence_eligibility_text())
             else:
                 var.set(str(detail().get(key) if detail().get(key) not in (None, "") else "-"))
+        country_var.set(str(detail().get("country") or ""))
         status_var.set(detail().get("ai_status") or detail().get("status") or status_var.get())
         if detail().get("sales_channel") in SALES_CHANNELS:
             segment_sales_channel_var.set(detail().get("sales_channel"))
         if detail().get("product_category") in PRODUCT_CATEGORIES:
             segment_product_var.set(detail().get("product_category"))
+        if detail().get("priority") in PRIORITY_OPTIONS:
+            segment_priority_var.set(detail().get("priority"))
         update_textbox("email_explanation", email_explanation_text())
         render_contact_cards()
         update_textbox("segmentation_source", segmentation_source_text())
@@ -572,7 +581,8 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         payload = {
             "sales_channel": sales_channel,
             "product_category": product_category,
-            "priority": priority_for_segment(product_category, sales_channel),
+            "priority": segment_priority_var.get().strip() or priority_for_segment(product_category, sales_channel),
+            "country": country_var.get().strip(),
         }
 
         def worker():
@@ -584,7 +594,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
                 win.after(0, render_all)
                 if on_update:
                     win.after(0, on_update)
-                win.after(0, lambda: messagebox.showinfo("Segment", "Ürün x satış kanalı etiketi kaydedildi.", parent=win))
+                win.after(0, lambda: messagebox.showinfo("Segment", "Ülke, ürün x satış kanalı ve öncelik kaydedildi.", parent=win))
             except Exception as exc:
                 win.after(0, lambda err=str(exc): messagebox.showerror("Segment", f"Segment kaydedilemedi: {err}", parent=win))
 
@@ -674,6 +684,23 @@ def _kv_var(parent, label):
     value_entry.configure(state="readonly")
     _bind_select_all(value_entry)
     return var
+
+
+def _editable_kv_var(parent, label, variable, placeholder_text=""):
+    row = ctk.CTkFrame(parent, fg_color="transparent")
+    row.pack(fill="x", padx=18, pady=4)
+    ctk.CTkLabel(row, text=f"{label}:", width=130, anchor="w", text_color="#64748b").pack(side="left")
+    value_entry = ctk.CTkEntry(
+        row,
+        textvariable=variable,
+        text_color="#111827",
+        fg_color="#ffffff",
+        border_color="#cbd5e1",
+        height=32,
+        placeholder_text=placeholder_text,
+    )
+    value_entry.pack(side="left", fill="x", expand=True)
+    return variable
 
 
 def _clickable_kv_var(parent, label, command, button_text="Aç"):
