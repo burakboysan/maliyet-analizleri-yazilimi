@@ -2770,6 +2770,102 @@ def _find_existing_apollo_lead(db: Session, person: dict[str, Any], company_name
     return None
 
 
+def _find_existing_lead_by_domain(db: Session, domain: str) -> int | None:
+    domain = _normalize(domain).casefold()
+    if not domain:
+        return None
+    row = db.execute(
+        text(
+            """
+            SELECT id
+            FROM ai_leads
+            WHERE LOWER(REPLACE(REPLACE(REPLACE(website, 'https://', ''), 'http://', ''), 'www.', '')) LIKE :domain_like
+            LIMIT 1
+            """
+        ),
+        {"domain_like": f"{domain}%"},
+    ).first()
+    return int(row[0]) if row else None
+
+
+def _create_lead_from_serp_domain(
+    db: Session,
+    domain_result: dict[str, str],
+    recipe: dict[str, Any],
+    country: str,
+    run_id: int,
+    current_user: UserTable,
+) -> dict[str, Any]:
+    domain = _normalize(domain_result.get("domain"))
+    if not domain:
+        raise ValueError("domain_missing")
+    if _find_existing_lead_by_domain(db, domain):
+        raise ValueError("duplicate")
+
+    company_name = _normalize(domain_result.get("company_name")) or domain
+    snippet = _normalize(domain_result.get("snippet"))
+    website = domain_result.get("website") or f"https://{domain}"
+    analysis = {
+        "country": country,
+        "local_language": _language_for_country(country),
+        "is_excluded": False,
+        "exclusion_reason": "",
+        "sales_channel": recipe["sales_channel"],
+        "product_category": recipe["product_category"],
+        "segment_name": recipe["segment_name"],
+        "priority": recipe["priority"],
+        "ai_score": 0,
+        "partner_type": recipe["sales_channel"],
+        "end_user_fit_signals": "",
+        "key_match_signals": snippet,
+        "risks_or_uncertainties": "SerpAPI domain adayı; Apollo ve/veya AI araştırma öncesi manuel kontrol önerilir.",
+        "personalization_angle": "",
+        "short_reasoning": "SerpAPI firma/domain keşfi ile bulundu. Apollo karar verici araması ayrı çalıştırılmalıdır.",
+        "suggested_sequence": _sequence_code(recipe["sales_channel"]),
+    }
+    result = db.execute(
+        text(
+            """
+            INSERT INTO ai_leads (
+                company_name, website, country, region, local_language, source, source_reference,
+                apollo_search_run_id, apollo_search_recipe, apollo_search_attempt, apollo_search_keyword,
+                apollo_search_country, apollo_fit_filter_status, apollo_fit_filter_reason,
+                company_description, detected_activity, status, exclusion_status, exclusion_reason, created_by_user_id
+            )
+            VALUES (
+                :company_name, :website, :country, :region, :local_language, 'SerpAPI', :source_reference,
+                :apollo_search_run_id, :apollo_search_recipe, :apollo_search_attempt, :apollo_search_keyword,
+                :apollo_search_country, :apollo_fit_filter_status, :apollo_fit_filter_reason,
+                :company_description, :detected_activity, 'Awaiting Approval', 'Active', '', :user_id
+            )
+            """
+        ),
+        {
+            "company_name": company_name,
+            "website": website,
+            "country": country,
+            "region": "EMEA",
+            "local_language": _language_for_country(country),
+            "source_reference": domain_result.get("serp_link") or domain,
+            "apollo_search_run_id": run_id,
+            "apollo_search_recipe": recipe["segment_name"],
+            "apollo_search_attempt": f"serpapi:{domain}",
+            "apollo_search_keyword": domain_result.get("serp_query"),
+            "apollo_search_country": country,
+            "apollo_fit_filter_status": "SerpAPI Candidate",
+            "apollo_fit_filter_reason": "Firma/domain SerpAPI ile bulundu; Apollo karar verici araması henüz çalıştırılmadı.",
+            "company_description": snippet,
+            "detected_activity": snippet,
+            "user_id": current_user.id,
+        },
+    )
+    lead_id = int(result.lastrowid)
+    _save_segmentation(db, lead_id, analysis)
+    _log_action(db, lead_id, "serpapi_domain_discovery", f"SerpAPI ile domain adayı bulundu: {domain}", current_user.id)
+    row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    return _lead_response(db, row)
+
+
 def _apollo_people_for_serp_domain(domain_result: dict[str, str], recipe: dict[str, Any], country: str, per_domain: int) -> list[dict[str, Any]]:
     domain = _normalize(domain_result.get("domain"))
     if not domain:
@@ -2931,63 +3027,17 @@ def search_apollo_by_segment(
     found_contacts = 0
     selected_attempt = None
     try:
-        people = []
-        seen_people = set()
-        seen_companies = set()
-        serp_domains = _serpapi_find_domains(recipe, country, max(limit * 3, limit))
+        serp_domains = _serpapi_find_domains(recipe, country, limit)
         selected_attempt = "serpapi_domain_discovery"
         for domain_result in serp_domains:
-            domain = _normalize(domain_result.get("domain"))
-            attempt_people = _apollo_people_for_serp_domain(domain_result, recipe, country, per_domain=3)
-            if payload.enrich and any(person.get("id") or person.get("first_name") or person.get("name") for person in attempt_people):
-                attempt_people = _bulk_enrich_people(attempt_people, domain)
-            for person in attempt_people:
-                organization = person.get("organization") or {}
-                serp_organization = {
-                    "name": domain_result.get("company_name") or domain,
-                    "website_url": domain_result.get("website") or f"https://{domain}",
-                    "primary_domain": domain,
-                    "country": country,
-                    "short_description": domain_result.get("snippet") or "",
-                }
-                person["organization"] = {**serp_organization, **organization}
-                person_key = _apollo_person_key(person)
-                company_key = _apollo_company_key(person)
-                if person_key in seen_people or company_key in seen_companies:
-                    continue
-                person["__search_metadata"] = {
-                    "run_id": run_id,
-                    "recipe": recipe["segment_name"],
-                    "attempt": f"serpapi:{domain}",
-                    "keyword": domain_result.get("serp_query"),
-                    "country": country,
-                }
-                seen_people.add(person_key)
-                seen_companies.add(company_key)
-                people.append(person)
-                if len(people) >= limit:
-                    break
-            found_contacts = len(people)
-            if len(people) >= limit:
-                break
-        for person in people:
-            person["__forced_segment"] = {
-                "sales_channel": recipe["sales_channel"],
-                "product_category": recipe["product_category"],
-                "segment_name": recipe["segment_name"],
-                "priority": recipe["priority"],
-                "suggested_sequence": _sequence_code(recipe["sales_channel"]),
-            }
-            person["__fit_filter"] = _apollo_fit_filter(person, recipe)
             try:
-                lead = _create_lead_from_apollo_person(db, person, current_user)
+                lead = _create_lead_from_serp_domain(db, domain_result, recipe, country, run_id, current_user)
                 created.append(lead)
-                if str(lead.get("email_status") or "").casefold() == "verified":
-                    verified_emails += 1
             except ValueError as exc:
                 if str(exc) == "duplicate":
                     skipped_duplicates += 1
                 continue
+        found_contacts = len(serp_domains)
         db.execute(
             text(
                 """
@@ -3052,6 +3102,39 @@ def enrich_ai_lead_from_apollo(
     full_name = _contact_name(contact)
     domain = _company_domain(lead.get("website"))
     apollo_person_id = _normalize(contact.get("apollo_person_id") or lead.get("apollo_person_id"))
+    person = {}
+    if domain and not apollo_person_id and not full_name:
+        segmentation = _latest_segmentation(db, lead_id) or {}
+        titles = _dedupe_strings(DEFAULT_TITLES + _localized_person_titles(lead.get("country") or ""))
+        people_query = {
+            "person_titles[]": titles,
+            "q_organization_domains_list[]": [domain],
+            "organization_locations[]": [lead.get("country")] if lead.get("country") else [],
+            "page": 1,
+            "per_page": 5,
+        }
+        people_response = _apollo_post("/mixed_people/api_search", payload={}, query=people_query)
+        people = people_response.get("people") or people_response.get("contacts") or []
+        if not people:
+            raise HTTPException(status_code=404, detail="Apollo domain aramasında karar verici bulunamadı.")
+        people = _bulk_enrich_people(people, domain)
+        person = people[0] or {}
+        organization = person.get("organization") or {}
+        person["organization"] = {
+            "name": lead.get("company_name"),
+            "website_url": lead.get("website"),
+            "primary_domain": domain,
+            "country": lead.get("country"),
+            "short_description": lead.get("detected_activity") or lead.get("company_description") or "",
+            **organization,
+        }
+        person["__forced_segment"] = {
+            "sales_channel": segmentation.get("sales_channel"),
+            "product_category": segmentation.get("product_category"),
+            "segment_name": segmentation.get("segment_name"),
+            "priority": segmentation.get("priority"),
+            "suggested_sequence": segmentation.get("suggested_sequence"),
+        }
     query = {
         "id": apollo_person_id or None,
         "name": full_name or None,
@@ -3063,8 +3146,8 @@ def enrich_ai_lead_from_apollo(
         "reveal_personal_emails": "false",
         "reveal_phone_number": "false",
     }
-    apollo_response = _apollo_post("/people/match", query=query)
-    person = apollo_response.get("person") or {}
+    apollo_response = {"person": person} if person else _apollo_post("/people/match", query=query)
+    person = person or apollo_response.get("person") or {}
     if not person and apollo_person_id:
         fallback_query = dict(query)
         fallback_query.pop("id", None)

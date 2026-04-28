@@ -472,7 +472,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             segment_values = HIGH_PRIORITY_SEGMENT_NAMES
 
         dialog = ctk.CTkToplevel(win)
-        dialog.title("Segmentten Lead Bul")
+        dialog.title("SerpAPI Firma Bul")
         dialog.geometry("600x500")
         dialog.configure(fg_color="#f5f5f5")
         dialog.transient(win)
@@ -485,21 +485,19 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             "segment_name": ctk.StringVar(value=segment_values[0] if segment_values else ""),
             "country": ctk.StringVar(value=TARGET_COUNTRIES[0] if TARGET_COUNTRIES else "Germany"),
             "limit": ctk.StringVar(value="25"),
-            "enrich": ctk.StringVar(value="Evet"),
         }
         _form_combo(form, "Segment", vars_["segment_name"], segment_values, 0)
         _form_country_selector(form, "Ülke", vars_["country"], TARGET_COUNTRIES, 1, dialog)
-        _form_entry(form, "Lead Limiti", vars_["limit"], 2)
-        _form_combo(form, "Email Enrichment", vars_["enrich"], ["Evet", "Hayır"], 3)
+        _form_entry(form, "Firma Limiti", vars_["limit"], 2)
 
         note = ctk.CTkLabel(
             form,
-            text="Bu ekran manuel keyword veya unvan istemez. Seçilen segment için önce SerpAPI ile firma/domain adayları bulunur, sonra Apollo ile karar verici ve email datası aranır. Sonuçlar Onay Bekliyor durumunda dashboard'a eklenir.",
+            text="Bu ekran sadece SerpAPI ile firma/domain adayı bulur. Anlamsız adayları silebilir veya bekletebilirsiniz. Uygun domainler için Apollo karar verici/email aramasını ayrıca Email Enrich ile çalıştırın.",
             text_color="#64748b",
             wraplength=500,
             justify="left",
         )
-        note.grid(row=4, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 4))
+        note.grid(row=3, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 4))
 
         def run_segment_search():
             segment_name = vars_["segment_name"].get().strip()
@@ -516,7 +514,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 "segment_name": segment_name,
                 "country": vars_["country"].get().strip(),
                 "limit": limit,
-                "enrich": vars_["enrich"].get() == "Evet",
+                "enrich": False,
             }
 
             def worker():
@@ -525,21 +523,21 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                     created = int(result.get("created") or 0)
                     skipped = int(result.get("skipped_duplicates") or 0)
                     domains = int(result.get("found_domains") or 0)
-                    win.after(0, lambda: messagebox.showinfo("Segmentten Lead Bul", f"{domains} firma/domain adayı bulundu. {created} lead eklendi. {skipped} tekrar kayıt atlandı.", parent=win))
+                    win.after(0, lambda: messagebox.showinfo("SerpAPI Firma Bul", f"{domains} firma/domain adayı bulundu. {created} aday eklendi. {skipped} tekrar kayıt atlandı.", parent=win))
                     win.after(0, load_from_api)
                     win.after(0, dialog.destroy)
                 except Exception as exc:
-                    win.after(0, lambda err=str(exc): messagebox.showerror("Segmentten Lead Bul", f"Arama başarısız: {err}", parent=dialog))
+                    win.after(0, lambda err=str(exc): messagebox.showerror("SerpAPI Firma Bul", f"Arama başarısız: {err}", parent=dialog))
 
             threading.Thread(target=worker, daemon=True).start()
 
         ctk.CTkButton(
             form,
-            text="Segmentten Lead Bul",
+            text="SerpAPI Firma Bul",
             command=run_segment_search,
             fg_color="#d32f2f",
             hover_color="#b91c1c",
-        ).grid(row=5, column=1, sticky="e", padx=16, pady=18)
+        ).grid(row=4, column=1, sticky="e", padx=16, pady=18)
 
     def open_segment_settings():
         segment_ayarlari_ekrani(win)
@@ -696,7 +694,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     bottom_actions = ctk.CTkFrame(root, fg_color="transparent")
     bottom_actions.grid(row=4, column=0, sticky="e", pady=(14, 0))
     ctk.CTkButton(bottom_actions, text="Lead Ekle", width=125, command=add_manual_lead, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
-    ctk.CTkButton(bottom_actions, text="Segmentten Lead Bul", width=165, command=segment_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
+    ctk.CTkButton(bottom_actions, text="SerpAPI Firma Bul", width=165, command=segment_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Apollo Search", width=130, command=apollo_search, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Sil", width=90, command=delete_selected_lead, fg_color="#ffffff", text_color="#dc2626", border_width=1, border_color="#dc2626").pack(side="left", padx=(8, 0))
 

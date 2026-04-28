@@ -114,7 +114,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
 
     apollo_source_panel = _panel(right)
     apollo_source_panel.pack(fill="x", pady=(0, 12))
-    _section_title(apollo_source_panel, "Apollo Arama Kaynağı")
+    _section_title(apollo_source_panel, "Arama Kaynağı")
     textboxes["apollo_source"] = _readonly_box(apollo_source_panel, height=170)
 
     personalization_panel = _panel(right)
@@ -214,7 +214,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
                 "apollo_fit_filter_status",
             ]
         ):
-            return "Bu lead eski kayıt olabilir veya manuel eklenmiş olabilir; Apollo arama kaynağı metadata'sı yok."
+            return "Bu lead eski kayıt olabilir veya manuel eklenmiş olabilir; arama kaynağı metadata'sı yok."
         lines = [
             f"Run ID: {detail().get('apollo_search_run_id') or '-'}",
             f"Reçete: {detail().get('apollo_search_recipe') or '-'}",
