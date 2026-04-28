@@ -319,7 +319,16 @@ SERPAPI_BLOCKED_DOMAINS = {
     "bomaksan.com",
     "bomaksan.com.tr",
     "castingarea.com",
+    "companiesfromeurope.com",
+    "europages.co.uk",
+    "europages.com",
+    "europages.dk",
+    "europages.fr",
+    "europages.it",
+    "europages.pt",
+    "europages.ro",
     "facebook.com",
+    "kompass.com",
     "instagram.com",
     "linkedin.com",
     "m.facebook.com",
@@ -363,6 +372,53 @@ SERPAPI_BLOCKED_PATH_FRAGMENTS = [
     "/video",
     ".pdf",
 ]
+
+
+SERPAPI_LANGUAGE_CODES = {
+    "albania": "sq",
+    "austria": "de",
+    "belgium": "fr",
+    "bulgaria": "bg",
+    "croatia": "hr",
+    "czech republic": "cs",
+    "denmark": "da",
+    "egypt": "ar",
+    "finland": "fi",
+    "france": "fr",
+    "germany": "de",
+    "greece": "el",
+    "hungary": "hu",
+    "italy": "it",
+    "morocco": "fr",
+    "netherlands": "nl",
+    "norway": "no",
+    "portugal": "pt",
+    "romania": "ro",
+    "saudi arabia": "ar",
+    "slovakia": "sk",
+    "slovenia": "sl",
+    "spain": "es",
+    "sweden": "sv",
+    "switzerland": "de",
+    "tunisia": "fr",
+    "turkey": "tr",
+    "türkiye": "tr",
+    "united arab emirates": "ar",
+}
+
+
+SERPAPI_COUNTRY_SIGNALS = {
+    "romania": [".ro", "romania", "romanian", "românia", "romana", "română", "bucuresti", "bucharest"],
+    "germany": [".de", "germany", "deutschland", "german"],
+    "france": [".fr", "france", "français", "french"],
+    "italy": [".it", "italy", "italia", "italian"],
+    "spain": [".es", "spain", "españa", "spanish"],
+    "portugal": [".pt", "portugal", "portuguese"],
+    "netherlands": [".nl", "netherlands", "nederland", "dutch"],
+    "belgium": [".be", "belgium", "belgique", "belgië"],
+    "turkey": [".tr", "turkey", "türkiye", "turkish"],
+    "türkiye": [".tr", "turkey", "türkiye", "turkish"],
+}
 
 
 LOCALIZED_TITLE_KEYWORDS = {
@@ -2582,18 +2638,143 @@ def _company_name_from_serp_result(result: dict[str, Any], domain: str) -> str:
     if not title:
         return domain_name
     cleaned = title.split("|")[0].split(" - ")[0].split(" – ")[0].strip()
-    cleaned_casefold = cleaned.casefold()
-    if any(fragment in cleaned_casefold for fragment in SERPAPI_BLOCKED_TITLE_FRAGMENTS):
-        return domain_name
-    if len(cleaned) < 3 or len(cleaned) > 60:
-        return domain_name
-    if any(word in cleaned_casefold for word in ["manufacturer", "supplier", "top ", "gallery", "history", "video"]):
-        return domain_name
-    return cleaned
+    return _clean_company_name_candidate(cleaned, domain) or domain_name
+
+
+def _build_serpapi_domain_result(result: dict[str, Any], domain: str, country: str, search_query: str, page_index: int | None = None) -> dict[str, str] | None:
+    link = _normalize(result.get("link"))
+    serp_text = f"{result.get('title') or ''} {result.get('snippet') or ''} {link}"
+    website = f"https://{domain}"
+    homepage_html = _fetch_public_page(website)
+    if country and not _website_country_matches(country, domain, homepage_html, serp_text):
+        return None
+    company_name = _company_name_from_website_html(homepage_html, domain) or _company_name_from_serp_result(result, domain)
+    row = {
+        "domain": domain,
+        "website": website,
+        "company_name": company_name,
+        "snippet": _normalize(result.get("snippet")),
+        "serp_query": search_query,
+        "serp_link": link,
+    }
+    if page_index is not None:
+        row["serp_page"] = str(page_index + 1)
+    return row
 
 
 def _serpapi_country_code(country: str) -> str:
     return SERPAPI_COUNTRY_CODES.get(_casefold(country), "")
+
+
+def _serpapi_language_code(country: str) -> str:
+    return SERPAPI_LANGUAGE_CODES.get(_casefold(country), "en")
+
+
+def _serpapi_country_query_params(country: str) -> dict[str, str]:
+    gl = _serpapi_country_code(country)
+    hl = _serpapi_language_code(country)
+    params = {"hl": hl}
+    if gl:
+        params["gl"] = gl
+        params["cr"] = f"country{gl.upper()}"
+    return params
+
+
+def _fetch_public_page(url: str, timeout: int = 6) -> str:
+    if not url:
+        return ""
+    if not url.lower().startswith(("http://", "https://")):
+        url = f"https://{url}"
+    req = request.Request(
+        url,
+        method="GET",
+        headers={
+            "Accept": "text/html,application/xhtml+xml",
+            "User-Agent": "BomaksanLeadAutomation/1.0",
+        },
+    )
+    try:
+        with request.urlopen(req, timeout=timeout) as response:
+            content_type = response.headers.get("Content-Type", "")
+            if "html" not in content_type.casefold():
+                return ""
+            return response.read(250000).decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _extract_meta_content(html: str, key: str) -> str:
+    patterns = [
+        rf'<meta[^>]+property=["\']{re.escape(key)}["\'][^>]+content=["\']([^"\']+)["\']',
+        rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']{re.escape(key)}["\']',
+        rf'<meta[^>]+name=["\']{re.escape(key)}["\'][^>]+content=["\']([^"\']+)["\']',
+        rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']{re.escape(key)}["\']',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html, flags=re.IGNORECASE)
+        if match:
+            return _normalize(unescape(match.group(1)))
+    return ""
+
+
+def _extract_title(html: str) -> str:
+    match = re.search(r"<title[^>]*>(.*?)</title>", html, flags=re.IGNORECASE | re.DOTALL)
+    if not match:
+        return ""
+    return _normalize(unescape(re.sub(r"<[^>]+>", " ", match.group(1))))
+
+
+def _website_country_matches(country: str, domain: str, html: str, serp_text: str = "") -> bool:
+    signals = SERPAPI_COUNTRY_SIGNALS.get(_casefold(country), [])
+    if not signals:
+        return True
+    haystack = f"{domain} {serp_text} {html[:50000]}".casefold()
+    if any(signal.casefold() in haystack for signal in signals):
+        return True
+    lang = _extract_html_lang(html)
+    expected_lang = _serpapi_language_code(country)
+    return bool(expected_lang and lang.startswith(expected_lang))
+
+
+def _extract_html_lang(html: str) -> str:
+    match = re.search(r"<html[^>]+lang=[\"']?([a-zA-Z-]+)", html, flags=re.IGNORECASE)
+    return _normalize(match.group(1)).casefold() if match else ""
+
+
+def _company_name_from_website_html(html: str, domain: str) -> str:
+    candidates = [
+        _extract_meta_content(html, "og:site_name"),
+        _extract_meta_content(html, "application-name"),
+        _extract_meta_content(html, "og:title"),
+        _extract_title(html),
+    ]
+    for candidate in candidates:
+        name = _clean_company_name_candidate(candidate, domain)
+        if name:
+            return name
+    return ""
+
+
+def _clean_company_name_candidate(candidate: str, domain: str) -> str:
+    value = _normalize(candidate)
+    if not value:
+        return ""
+    for separator in ["|", " - ", " – ", " — ", " :: "]:
+        value = value.split(separator)[0].strip()
+    value = re.sub(r"\b(home|homepage|about us|products|solutions|contact|welcome)\b", "", value, flags=re.IGNORECASE).strip(" -|")
+    folded = value.casefold()
+    if len(value) < 3 or len(value) > 70:
+        return ""
+    if any(fragment in folded for fragment in SERPAPI_BLOCKED_TITLE_FRAGMENTS):
+        return ""
+    if any(word in folded for word in ["top ", "manufacturer", "supplier list", "video", "gallery", "directory"]):
+        return ""
+    domain_root = _company_name_from_domain(domain).casefold()
+    if not domain_root:
+        return ""
+    if domain_root.replace(" ", "") not in folded.replace(" ", "") and len(value.split()) > 5:
+        return ""
+    return value
 
 
 def _serpapi_segment_queries(recipe: dict[str, Any], country: str) -> list[str]:
@@ -2614,9 +2795,9 @@ def _serpapi_segment_queries(recipe: dict[str, Any], country: str) -> list[str]:
 def _serpapi_find_domains(recipe: dict[str, Any], country: str, limit: int) -> list[dict[str, str]]:
     domains = []
     seen_domains = set()
-    gl = _serpapi_country_code(country)
+    search_params = _serpapi_country_query_params(country)
     for search_query in _serpapi_segment_queries(recipe, country):
-        response = _serpapi_get({"q": search_query, "gl": gl, "hl": "en"})
+        response = _serpapi_get({"q": search_query, **search_params})
         for result in response.get("organic_results") or []:
             link = _normalize(result.get("link"))
             domain = _domain_from_url(link)
@@ -2624,17 +2805,11 @@ def _serpapi_find_domains(recipe: dict[str, Any], country: str, limit: int) -> l
                 continue
             if not _serpapi_result_is_company_candidate(result, domain):
                 continue
+            domain_row = _build_serpapi_domain_result(result, domain, country, search_query)
+            if not domain_row:
+                continue
             seen_domains.add(domain)
-            domains.append(
-                {
-                    "domain": domain,
-                    "website": f"https://{domain}",
-                    "company_name": _company_name_from_serp_result(result, domain),
-                    "snippet": _normalize(result.get("snippet")),
-                    "serp_query": search_query,
-                    "serp_link": link,
-                }
-            )
+            domains.append(domain_row)
             if len(domains) >= limit:
                 return domains
     return domains
@@ -2649,7 +2824,7 @@ def _serpapi_find_domains_by_keywords(
 ) -> list[dict[str, str]]:
     domains = []
     seen_domains = set()
-    gl = _serpapi_country_code(country)
+    search_params = _serpapi_country_query_params(country)
     country_part = country or ""
     page_count = min(max(int(pages or 1), 1), 10)
     exact_match = _casefold(search_mode) in {"exact", "narrow", "dar"}
@@ -2663,7 +2838,7 @@ def _serpapi_find_domains_by_keywords(
     for search_query in queries:
         for page_index in range(page_count):
             try:
-                response = _serpapi_get({"q": search_query, "gl": gl, "hl": "en", "start": page_index * 10})
+                response = _serpapi_get({"q": search_query, **search_params, "start": page_index * 10})
             except HTTPException as exc:
                 if warnings is not None:
                     warnings.append(f"{search_query} | sayfa {page_index + 1}: {exc.detail}")
@@ -2675,18 +2850,11 @@ def _serpapi_find_domains_by_keywords(
                     continue
                 if not _serpapi_result_is_company_candidate(result, domain):
                     continue
+                domain_row = _build_serpapi_domain_result(result, domain, country, search_query, page_index)
+                if not domain_row:
+                    continue
                 seen_domains.add(domain)
-                domains.append(
-                    {
-                        "domain": domain,
-                        "website": f"https://{domain}",
-                        "company_name": _company_name_from_serp_result(result, domain),
-                        "snippet": _normalize(result.get("snippet")),
-                        "serp_query": search_query,
-                        "serp_link": link,
-                        "serp_page": str(page_index + 1),
-                    }
-                )
+                domains.append(domain_row)
     return domains
 
 
