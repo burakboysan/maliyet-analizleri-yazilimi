@@ -119,6 +119,15 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     filter_actions = ctk.CTkFrame(filters, fg_color="transparent")
     filter_actions.grid(row=1, column=4, columnspan=2, sticky="w", padx=(10, 8), pady=(0, 14))
+    bulk_research_frame = ctk.CTkFrame(filters, fg_color="transparent")
+    bulk_research_frame.grid(row=2, column=0, columnspan=7, sticky="ew", padx=16, pady=(0, 12))
+    bulk_research_frame.grid_columnconfigure(0, weight=1)
+    bulk_research_progress = ctk.CTkProgressBar(bulk_research_frame, mode="determinate")
+    bulk_research_progress.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+    bulk_research_progress.set(0)
+    bulk_research_status_var = ctk.StringVar(value="")
+    ctk.CTkLabel(bulk_research_frame, textvariable=bulk_research_status_var, text_color="#64748b", width=260, anchor="w").grid(row=0, column=1, sticky="e")
+    bulk_research_frame.grid_remove()
 
     table_card = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
     table_card.grid(row=3, column=0, sticky="nsew")
@@ -657,12 +666,31 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         if not leads:
             messagebox.showwarning("AI Araştır", "Lütfen araştırılacak leadleri seçin.", parent=win)
             return
+        total = len(leads)
+        bulk_research_progress.set(0)
+        bulk_research_status_var.set(f"AI araştırma başlıyor: 0/{total}")
+        bulk_research_frame.grid()
+        ai_research_button.configure(state="disabled", text="Araştırılıyor...")
+
+        def update_research_progress(done, lead_name=""):
+            progress = done / total if total else 0
+            bulk_research_progress.set(progress)
+            name_suffix = f" | {lead_name}" if lead_name else ""
+            bulk_research_status_var.set(f"AI araştırıyor: {done}/{total}{name_suffix}")
+
+        def finish_research_progress():
+            ai_research_button.configure(state="normal", text="AI Araştır")
+            bulk_research_frame.grid_remove()
+            bulk_research_status_var.set("")
+            bulk_research_progress.set(0)
 
         def worker():
             completed = 0
             failed = 0
             last_error = ""
-            for lead in leads:
+            for index, lead in enumerate(leads, start=1):
+                lead_name = str(lead.get("company_name") or "Lead")
+                win.after(0, lambda done=index - 1, name=lead_name: update_research_progress(done, name))
                 try:
                     result = deep_research_ai_lead(token, lead.get("id"))
                     research = result.get("research") or {}
@@ -676,7 +704,9 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 except Exception as exc:
                     failed += 1
                     last_error = str(exc)
+                win.after(0, lambda done=index, name=lead_name: update_research_progress(done, name))
             win.after(0, apply_filters)
+            win.after(0, finish_research_progress)
             message = f"{completed} lead için AI araştırma tamamlandı."
             if failed:
                 message += f" {failed} lead araştırılamadı."
@@ -730,7 +760,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     ctk.CTkButton(actions, text="Segment Ayarları", width=145, command=open_segment_settings, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
 
     ctk.CTkButton(filter_actions, text="Email Enrich", width=120, command=enrich_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left", padx=(0, 8))
-    ctk.CTkButton(filter_actions, text="AI Araştır", width=120, command=research_selected, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=(0, 8))
+    ai_research_button = ctk.CTkButton(filter_actions, text="AI Araştır", width=120, command=research_selected, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed")
+    ai_research_button.pack(side="left", padx=(0, 8))
     ctk.CTkButton(filter_actions, text="Sekans Oluştur", width=145, command=create_sequence_for_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left")
 
     bottom_actions = ctk.CTkFrame(root, fg_color="transparent")
