@@ -114,6 +114,8 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
     dashboard_state = {"data": {}}
     status_text = ctk.StringVar(value="İzin bilgileri yükleniyor...")
     workday_text = ctk.StringVar(value="Tarih aralığı seçin.")
+    my_requests_title = ctk.StringVar(value="Taleplerim")
+    manager_requests_title = ctk.StringVar(value="Bana Gelen Talepler")
     selected_my_request = {"item": None}
     selected_pending = {"item": None}
 
@@ -219,32 +221,18 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
     submit_button = ctk.CTkButton(actions, text="Talebi Gönder", height=38, fg_color=ACCENT_COLOR, hover_color=ACCENT_HOVER_COLOR)
     submit_button.grid(row=0, column=1, sticky="ew", padx=(6, 0))
 
-    my_panel = _panel(root)
-    my_panel.grid(row=2, column=1, sticky="nsew", padx=(8, 0))
-    my_panel.grid_columnconfigure(0, weight=1)
-    my_panel.grid_rowconfigure(1, weight=1)
-    ctk.CTkLabel(my_panel, text="Taleplerim", font=ctk.CTkFont(size=18, weight="bold"), text_color=TEXT_COLOR).grid(
-        row=0, column=0, sticky="w", padx=18, pady=(18, 10)
-    )
-    my_rows = ctk.CTkScrollableFrame(my_panel, fg_color="transparent")
-    my_rows.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
-    my_actions = ctk.CTkFrame(my_panel, fg_color="transparent")
-    my_actions.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
-    my_actions.grid_columnconfigure(0, weight=1)
-    cancel_button = ctk.CTkButton(my_actions, text="Talebi İptal Et", height=38, fg_color=DANGER, hover_color=DANGER_HOVER)
-    cancel_button.grid(row=0, column=0, sticky="ew")
-
     manager_panel = _panel(root)
-    manager_panel.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+    manager_panel.grid(row=2, column=1, sticky="nsew", padx=(8, 0))
     manager_panel.grid_columnconfigure(0, weight=1)
+    manager_panel.grid_rowconfigure(1, weight=1)
     ctk.CTkLabel(
         manager_panel,
-        text="Yönetici Taleplerim",
+        textvariable=manager_requests_title,
         font=ctk.CTkFont(size=18, weight="bold"),
         text_color=TEXT_COLOR,
     ).grid(row=0, column=0, sticky="w", padx=18, pady=(18, 10))
-    pending_rows = ctk.CTkScrollableFrame(manager_panel, fg_color="transparent", height=170)
-    pending_rows.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 12))
+    pending_rows = ctk.CTkScrollableFrame(manager_panel, fg_color="transparent")
+    pending_rows.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 12))
 
     manager_actions = ctk.CTkFrame(manager_panel, fg_color="transparent")
     manager_actions.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
@@ -266,6 +254,20 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
     reject_button.grid(row=0, column=3, sticky="ew", padx=(6, 0))
     finalize_button = ctk.CTkButton(manager_actions, text="Kullanımı Kesinleştir", height=38, fg_color=ACCENT_COLOR, hover_color=ACCENT_HOVER_COLOR)
     finalize_button.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(8, 0))
+
+    my_panel = _panel(root)
+    my_panel.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(14, 0))
+    my_panel.grid_columnconfigure(0, weight=1)
+    ctk.CTkLabel(my_panel, textvariable=my_requests_title, font=ctk.CTkFont(size=18, weight="bold"), text_color=TEXT_COLOR).grid(
+        row=0, column=0, sticky="w", padx=18, pady=(18, 10)
+    )
+    my_rows = ctk.CTkScrollableFrame(my_panel, fg_color="transparent", height=180)
+    my_rows.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 14))
+    my_actions = ctk.CTkFrame(my_panel, fg_color="transparent")
+    my_actions.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
+    my_actions.grid_columnconfigure(0, weight=1)
+    cancel_button = ctk.CTkButton(my_actions, text="Talebi İptal Et", height=38, fg_color=DANGER, hover_color=DANGER_HOVER)
+    cancel_button.grid(row=0, column=0, sticky="ew")
 
     def get_dates():
         return _get_date_value(start_input), _get_date_value(end_input)
@@ -334,10 +336,16 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
                     summary_vars["reserved"].set(_format_day(balance.get("reserved_days")))
                     summary_vars["used"].set(_format_day(balance.get("used_days")))
                     summary_vars["pending"].set(_format_day(balance.get("pending_approval_days")))
-                    _render_requests(my_rows, data.get("my_requests") or [], selectable=True, selected_pending=selected_my_request)
-                    manager_requests = data.get("manager_requests") or data.get("pending_manager_requests") or []
+                    my_requests = data.get("my_requests") or []
+                    manager_requests = _merge_requests(
+                        data.get("manager_requests") or [],
+                        data.get("pending_manager_requests") or [],
+                    )
+                    my_requests_title.set(f"Taleplerim ({len(my_requests)})")
+                    manager_requests_title.set(f"Bana Gelen Talepler ({len(manager_requests)})")
+                    _render_requests(my_rows, my_requests, selectable=True, selected_pending=selected_my_request)
                     _render_requests(pending_rows, manager_requests, selectable=True, selected_pending=selected_pending, show_user=True)
-                    status_text.set("İzin bilgileri güncel.")
+                    status_text.set(f"İzin bilgileri güncel. Taleplerim: {len(my_requests)} | Bana gelen: {len(manager_requests)}")
 
                 ui_after(0, apply)
             except Exception as exc:
@@ -551,6 +559,20 @@ def _display_status(value):
         "TAMAMLANDI": "Tamamlandı",
         "IPTAL_EDILDI": "İptal Edildi",
     }.get(str(value or ""), str(value or "-"))
+
+
+def _merge_requests(*request_groups):
+    merged = []
+    seen_ids = set()
+    for request_group in request_groups:
+        for item in request_group or []:
+            item_id = item.get("id") if isinstance(item, dict) else None
+            if item_id in seen_ids:
+                continue
+            if item_id is not None:
+                seen_ids.add(item_id)
+            merged.append(item)
+    return merged
 
 
 def _metric_card(parent, column, label, variable, color):
