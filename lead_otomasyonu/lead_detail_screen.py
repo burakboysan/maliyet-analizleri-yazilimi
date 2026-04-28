@@ -100,6 +100,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         else:
             lines = [
                 f"Durum: {research.get('status') or '-'}",
+                f"Model: {research.get('model_used') or '-'} | Güven: {research.get('confidence_score') or 0}",
                 "",
                 f"Firma: {research.get('company_overview') or '-'}",
                 f"Ürün / Çözüm: {research.get('products_services') or '-'}",

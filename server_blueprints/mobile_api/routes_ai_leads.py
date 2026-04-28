@@ -622,6 +622,8 @@ def _ensure_tables(db: Session) -> None:
             served_industries TEXT,
             personalization_angle TEXT,
             risk_notes TEXT,
+            confidence_score DECIMAL(5,2) DEFAULT 0,
+            model_used VARCHAR(100),
             source_links JSON,
             raw_summary_json JSON,
             created_by_user_id INT,
@@ -683,6 +685,8 @@ def _ensure_tables(db: Session) -> None:
     _ensure_column(db, "ai_lead_contacts", "apollo_raw_json", "JSON")
     _ensure_column(db, "ai_segmentation_results", "suggested_sequence", "VARCHAR(100)")
     _ensure_column(db, "ai_lead_research", "raw_summary_json", "JSON")
+    _ensure_column(db, "ai_lead_research", "confidence_score", "DECIMAL(5,2) DEFAULT 0")
+    _ensure_column(db, "ai_lead_research", "model_used", "VARCHAR(100)")
     _ensure_column(db, "ai_search_recipes", "target_definition", "TEXT")
     _ensure_column(db, "ai_search_recipes", "targeting_notes", "TEXT")
     db.commit()
@@ -1158,7 +1162,154 @@ def _build_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pag
         "served_industries": ", ".join(industries) or "Web sitesinden net sektör listesi yakalanamadı.",
         "personalization_angle": personalization,
         "risk_notes": risk_notes,
+        "confidence_score": 0.45 if detected_signals else 0.25,
+        "model_used": "rule_based_research",
         "source_links": [page.get("url") for page in pages if page.get("url")],
+    }
+
+
+def _openai_api_key() -> str:
+    return _normalize(os.getenv("OPENAI_API_KEY")) or _read_env_file_value("OPENAI_API_KEY")
+
+
+def _openai_research_model() -> str:
+    return _normalize(os.getenv("OPENAI_RESEARCH_MODEL")) or _read_env_file_value("OPENAI_RESEARCH_MODEL") or "gpt-4o-mini"
+
+
+def _extract_response_text(payload: Any) -> str:
+    if isinstance(payload, dict):
+        if isinstance(payload.get("text"), str):
+            return payload["text"]
+        if isinstance(payload.get("output_text"), str):
+            return payload["output_text"]
+        for key in ("output", "content"):
+            value = payload.get(key)
+            result = _extract_response_text(value)
+            if result:
+                return result
+    if isinstance(payload, list):
+        for item in payload:
+            result = _extract_response_text(item)
+            if result:
+                return result
+    return ""
+
+
+def _lead_research_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "company_overview": {"type": "string"},
+            "products_services": {"type": "string"},
+            "partner_fit_reason": {"type": "string"},
+            "bomaksan_match": {"type": "string"},
+            "detected_signals": {"type": "array", "items": {"type": "string"}},
+            "served_industries": {"type": "array", "items": {"type": "string"}},
+            "personalization_angle": {"type": "string"},
+            "risk_notes": {"type": "string"},
+            "confidence_score": {"type": "number"},
+        },
+        "required": [
+            "company_overview",
+            "products_services",
+            "partner_fit_reason",
+            "bomaksan_match",
+            "detected_signals",
+            "served_industries",
+            "personalization_angle",
+            "risk_notes",
+            "confidence_score",
+        ],
+        "additionalProperties": False,
+    }
+
+
+def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pages: list[dict[str, str]]) -> dict[str, Any]:
+    api_key = _openai_api_key()
+    if not api_key:
+        return {}
+    model = _openai_research_model()
+    source_text = "\n\n".join(
+        f"SOURCE: {page.get('url')}\n{(page.get('text') or '')[:5000]}"
+        for page in pages
+        if page.get("text")
+    )[:18000]
+    context = {
+        "company_name": lead.get("company_name"),
+        "website": lead.get("website"),
+        "country": lead.get("country"),
+        "detected_activity": lead.get("detected_activity"),
+        "sales_channel": segmentation.get("sales_channel"),
+        "product_category": segmentation.get("product_category"),
+        "segment_name": segmentation.get("segment_name"),
+        "priority": segmentation.get("priority"),
+    }
+    prompt = (
+        "Analyze this company as a potential Bomaksan industrial air filtration partner. "
+        "Use only the provided website text and lead context. If evidence is weak, say so. "
+        "Focus on what the company does, what products or services it sells, why it may fit the selected partner segment, "
+        "which Bomaksan product/service category matches, distributor/integrator/HVAC/welding/filtration/CNC/dust collection signals, "
+        "served industries, email personalization angle, and risks such as direct competitor, end-user-only, residential HVAC, or consumer focus.\n\n"
+        f"LEAD_CONTEXT_JSON:\n{json.dumps(context, ensure_ascii=False)}\n\n"
+        f"WEBSITE_TEXT:\n{source_text}"
+    )
+    body = {
+        "model": model,
+        "input": [
+            {
+                "role": "system",
+                "content": "You are an industrial B2B partner research analyst. Return concise, evidence-aware JSON.",
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "text": {
+            "format": {
+                "type": "json_schema",
+                "name": "bomaksan_lead_research",
+                "strict": True,
+                "schema": _lead_research_schema(),
+            }
+        },
+    }
+    req = request.Request(
+        "https://api.openai.com/v1/responses",
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=35) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="ignore")
+        raise HTTPException(status_code=502, detail=f"OpenAI araştırma hatası: {detail[:500]}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"OpenAI araştırma servisine ulaşılamadı: {exc}") from exc
+
+    parsed_text = _extract_response_text(payload)
+    try:
+        parsed = json.loads(parsed_text)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="OpenAI araştırma çıktısı JSON olarak okunamadı.") from exc
+
+    source_links = [page.get("url") for page in pages if page.get("url")]
+    return {
+        "company_overview": _normalize(parsed.get("company_overview")),
+        "products_services": _normalize(parsed.get("products_services")),
+        "partner_fit_reason": _normalize(parsed.get("partner_fit_reason")),
+        "bomaksan_match": _normalize(parsed.get("bomaksan_match")),
+        "detected_signals": ", ".join(_payload_list(parsed.get("detected_signals"))),
+        "served_industries": ", ".join(_payload_list(parsed.get("served_industries"))),
+        "personalization_angle": _normalize(parsed.get("personalization_angle")),
+        "risk_notes": _normalize(parsed.get("risk_notes")),
+        "confidence_score": max(0, min(float(parsed.get("confidence_score") or 0), 1)),
+        "model_used": model,
+        "source_links": source_links,
+        "openai_raw_response_id": payload.get("id"),
     }
 
 
@@ -2454,19 +2605,23 @@ def deep_research_ai_lead(
     pages = _website_research_pages(website)
     if not pages:
         raise HTTPException(status_code=404, detail="Firma web sitesinden araştırma verisi alınamadı.")
-    research = _build_lead_research(lead, segmentation, pages)
+    try:
+        research = _openai_lead_research(lead, segmentation, pages) or _build_lead_research(lead, segmentation, pages)
+    except HTTPException:
+        research = _build_lead_research(lead, segmentation, pages)
+        research["risk_notes"] = f"{research.get('risk_notes') or ''} OpenAI analizi tamamlanamadı; kural tabanlı araştırma kullanıldı.".strip()
     db.execute(
         text(
             """
             INSERT INTO ai_lead_research (
                 lead_id, status, company_overview, products_services, partner_fit_reason,
                 bomaksan_match, detected_signals, served_industries, personalization_angle,
-                risk_notes, source_links, raw_summary_json, created_by_user_id
+                risk_notes, confidence_score, model_used, source_links, raw_summary_json, created_by_user_id
             )
             VALUES (
                 :lead_id, 'Completed', :company_overview, :products_services, :partner_fit_reason,
                 :bomaksan_match, :detected_signals, :served_industries, :personalization_angle,
-                :risk_notes, :source_links, :raw_summary_json, :user_id
+                :risk_notes, :confidence_score, :model_used, :source_links, :raw_summary_json, :user_id
             )
             """
         ),
@@ -2480,6 +2635,8 @@ def deep_research_ai_lead(
             "served_industries": research["served_industries"],
             "personalization_angle": research["personalization_angle"],
             "risk_notes": research["risk_notes"],
+            "confidence_score": float(research.get("confidence_score") or 0),
+            "model_used": research.get("model_used") or "rule_based_research",
             "source_links": json.dumps(research["source_links"], ensure_ascii=False),
             "raw_summary_json": json.dumps(research, ensure_ascii=False),
             "user_id": current_user.id,
