@@ -5,14 +5,13 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, generate_ai_email_sequence, list_ai_leads, list_ai_search_recipes, search_apollo_ai_leads, search_apollo_segment_leads
+from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, generate_ai_email_sequence, list_ai_leads, search_apollo_ai_leads, search_serpapi_domains
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
 from lead_otomasyonu.segment_settings_screen import segment_ayarlari_ekrani
 from lead_otomasyonu.strategy_constants import (
     MOCK_LEADS,
-    HIGH_PRIORITY_SEGMENT_NAMES,
     PRIORITY_OPTIONS,
     PRODUCT_CATEGORIES,
     SALES_CHANNELS,
@@ -461,16 +460,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     def segment_search():
         token = get_app_token()
         if not token:
-            messagebox.showerror("Segmentten Lead Bul", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            messagebox.showerror("SerpAPI Firma Bul", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
             return
-        try:
-            recipes = list_ai_search_recipes(token)
-            segment_values = [item.get("segment_name") for item in recipes if item.get("is_active") and item.get("segment_name")]
-        except Exception:
-            segment_values = HIGH_PRIORITY_SEGMENT_NAMES
-        if not segment_values:
-            segment_values = HIGH_PRIORITY_SEGMENT_NAMES
-
         dialog = ctk.CTkToplevel(win)
         dialog.title("SerpAPI Firma Bul")
         dialog.geometry("600x500")
@@ -482,17 +473,17 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         form.pack(fill="both", expand=True, padx=18, pady=18)
 
         vars_ = {
-            "segment_name": ctk.StringVar(value=segment_values[0] if segment_values else ""),
             "country": ctk.StringVar(value=TARGET_COUNTRIES[0] if TARGET_COUNTRIES else "Germany"),
+            "keywords": ctk.StringVar(value="dust collection distributor, industrial filtration company, fume extraction supplier"),
             "limit": ctk.StringVar(value="25"),
         }
-        _form_combo(form, "Segment", vars_["segment_name"], segment_values, 0)
-        _form_country_selector(form, "Ülke", vars_["country"], TARGET_COUNTRIES, 1, dialog)
+        _form_country_selector(form, "Ülke", vars_["country"], TARGET_COUNTRIES, 0, dialog)
+        _form_entry(form, "Anahtar Kelimeler", vars_["keywords"], 1)
         _form_entry(form, "Firma Limiti", vars_["limit"], 2)
 
         note = ctk.CTkLabel(
             form,
-            text="Bu ekran sadece SerpAPI ile firma/domain adayı bulur. Anlamsız adayları silebilir veya bekletebilirsiniz. Uygun domainler için Apollo karar verici/email aramasını ayrıca Email Enrich ile çalıştırın.",
+            text="Bu ekran sadece SerpAPI ile firma/domain adayı bulur. Ürün x satış kanalı etiketi otomatik atanmaz. Uygun domainleri detay ekranından manuel etiketleyip, Apollo karar verici/email aramasını ayrıca Email Enrich ile çalıştırın.",
             text_color="#64748b",
             wraplength=500,
             justify="left",
@@ -500,26 +491,25 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         note.grid(row=3, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 4))
 
         def run_segment_search():
-            segment_name = vars_["segment_name"].get().strip()
-            if not segment_name:
-                messagebox.showwarning("Eksik Bilgi", "Lütfen bir segment seçin.", parent=dialog)
+            keywords = [item.strip() for item in vars_["keywords"].get().split(",") if item.strip()]
+            if not keywords:
+                messagebox.showwarning("Eksik Bilgi", "Lütfen en az bir keyword girin.", parent=dialog)
                 return
             try:
                 limit = max(1, min(int(vars_["limit"].get() or 25), 100))
             except Exception:
-                messagebox.showwarning("Eksik Bilgi", "Lead limiti sayı olmalı.", parent=dialog)
+                messagebox.showwarning("Eksik Bilgi", "Firma limiti sayı olmalı.", parent=dialog)
                 return
 
             payload = {
-                "segment_name": segment_name,
                 "country": vars_["country"].get().strip(),
+                "keywords": keywords,
                 "limit": limit,
-                "enrich": False,
             }
 
             def worker():
                 try:
-                    result = search_apollo_segment_leads(token, payload)
+                    result = search_serpapi_domains(token, payload)
                     created = int(result.get("created") or 0)
                     skipped = int(result.get("skipped_duplicates") or 0)
                     domains = int(result.get("found_domains") or 0)

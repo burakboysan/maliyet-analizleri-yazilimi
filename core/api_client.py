@@ -376,6 +376,10 @@ def search_apollo_segment_leads(token, payload):
     return request_json("POST", "/desktop/ai-leads/apollo/segment-search", payload=payload, headers=auth_headers(token)) or {}
 
 
+def search_serpapi_domains(token, payload):
+    return request_json("POST", "/desktop/ai-leads/serpapi/search", payload=payload, headers=auth_headers(token)) or {}
+
+
 def list_ai_search_recipes(token):
     response = request_json("GET", "/desktop/ai-leads/search-recipes", headers=auth_headers(token))
     return response or []

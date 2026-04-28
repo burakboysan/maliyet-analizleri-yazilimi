@@ -501,6 +501,12 @@ class ApolloSegmentSearchRequest(BaseModel):
     page: int = 1
 
 
+class SerpApiSearchRequest(BaseModel):
+    country: Optional[str] = None
+    keywords: List[str] = []
+    limit: int = 25
+
+
 class AiSearchRecipeUpdateRequest(BaseModel):
     segment_name: Optional[str] = None
     sales_channel: Optional[str] = None
@@ -2521,6 +2527,39 @@ def _serpapi_find_domains(recipe: dict[str, Any], country: str, limit: int) -> l
     return domains
 
 
+def _serpapi_find_domains_by_keywords(keywords: list[str], country: str, limit: int) -> list[dict[str, str]]:
+    domains = []
+    seen_domains = set()
+    gl = _serpapi_country_code(country)
+    country_part = country or ""
+    queries = [
+        f"{keyword} {country_part} company -jobs -linkedin -facebook -youtube"
+        for keyword in _dedupe_strings(keywords)
+        if _normalize(keyword)
+    ]
+    for search_query in queries:
+        response = _serpapi_get({"q": search_query, "gl": gl, "hl": "en"})
+        for result in response.get("organic_results") or []:
+            link = _normalize(result.get("link"))
+            domain = _domain_from_url(link)
+            if not _is_searchable_company_domain(domain) or domain in seen_domains:
+                continue
+            seen_domains.add(domain)
+            domains.append(
+                {
+                    "domain": domain,
+                    "website": f"https://{domain}",
+                    "company_name": _normalize(result.get("title")).split("|")[0].split("-")[0].strip() or domain,
+                    "snippet": _normalize(result.get("snippet")),
+                    "serp_query": search_query,
+                    "serp_link": link,
+                }
+            )
+            if len(domains) >= limit:
+                return domains
+    return domains
+
+
 def _split_name(full_name: str | None) -> tuple[str, str]:
     parts = _normalize(full_name).split()
     if not parts:
@@ -2866,6 +2905,61 @@ def _create_lead_from_serp_domain(
     return _lead_response(db, row)
 
 
+def _create_unassigned_lead_from_serp_domain(
+    db: Session,
+    domain_result: dict[str, str],
+    country: str,
+    current_user: UserTable,
+) -> dict[str, Any]:
+    domain = _normalize(domain_result.get("domain"))
+    if not domain:
+        raise ValueError("domain_missing")
+    if _find_existing_lead_by_domain(db, domain):
+        raise ValueError("duplicate")
+
+    company_name = _normalize(domain_result.get("company_name")) or domain
+    snippet = _normalize(domain_result.get("snippet"))
+    website = domain_result.get("website") or f"https://{domain}"
+    result = db.execute(
+        text(
+            """
+            INSERT INTO ai_leads (
+                company_name, website, country, region, local_language, source, source_reference,
+                apollo_search_attempt, apollo_search_keyword, apollo_search_country,
+                apollo_fit_filter_status, apollo_fit_filter_reason,
+                company_description, detected_activity, status, exclusion_status, exclusion_reason, created_by_user_id
+            )
+            VALUES (
+                :company_name, :website, :country, :region, :local_language, 'SerpAPI', :source_reference,
+                :apollo_search_attempt, :apollo_search_keyword, :apollo_search_country,
+                :apollo_fit_filter_status, :apollo_fit_filter_reason,
+                :company_description, :detected_activity, 'Awaiting Approval', 'Active', '', :user_id
+            )
+            """
+        ),
+        {
+            "company_name": company_name,
+            "website": website,
+            "country": country,
+            "region": "EMEA",
+            "local_language": _language_for_country(country),
+            "source_reference": domain_result.get("serp_link") or domain,
+            "apollo_search_attempt": f"serpapi:{domain}",
+            "apollo_search_keyword": domain_result.get("serp_query"),
+            "apollo_search_country": country,
+            "apollo_fit_filter_status": "SerpAPI Candidate",
+            "apollo_fit_filter_reason": "Firma/domain SerpAPI ile bulundu; ürün x satış kanalı etiketi kullanıcı tarafından manuel atanmalıdır.",
+            "company_description": snippet,
+            "detected_activity": snippet,
+            "user_id": current_user.id,
+        },
+    )
+    lead_id = int(result.lastrowid)
+    _log_action(db, lead_id, "serpapi_domain_discovery", f"SerpAPI ile etiketsiz domain adayı bulundu: {domain}", current_user.id)
+    row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    return _lead_response(db, row)
+
+
 def _apollo_people_for_serp_domain(domain_result: dict[str, str], recipe: dict[str, Any], country: str, per_domain: int) -> list[dict[str, Any]]:
     domain = _normalize(domain_result.get("domain"))
     if not domain:
@@ -3085,6 +3179,38 @@ def search_apollo_by_segment(
         )
         db.commit()
         raise
+
+
+@router.post("/ai-leads/serpapi/search")
+def search_serpapi_domains(
+    payload: SerpApiSearchRequest,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    keywords = _dedupe_strings(payload.keywords or [])
+    if not keywords:
+        raise HTTPException(status_code=400, detail="En az bir SerpAPI keyword girilmelidir.")
+    limit = min(max(int(payload.limit or 25), 1), 100)
+    country = _normalize(payload.country)
+    domains = _serpapi_find_domains_by_keywords(keywords, country, limit)
+    created = []
+    skipped_duplicates = 0
+    for domain_result in domains:
+        try:
+            created.append(_create_unassigned_lead_from_serp_domain(db, domain_result, country, current_user))
+        except ValueError as exc:
+            if str(exc) == "duplicate":
+                skipped_duplicates += 1
+            continue
+    db.commit()
+    return {
+        "country": country,
+        "found_domains": len(domains),
+        "created": len(created),
+        "skipped_duplicates": skipped_duplicates,
+        "rows": created,
+    }
 
 
 @router.post("/ai-leads/{lead_id}/apollo-enrich")

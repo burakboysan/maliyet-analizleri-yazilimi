@@ -5,9 +5,9 @@ import webbrowser
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, deep_research_ai_lead, generate_ai_email_sequence, get_ai_lead_detail, update_ai_lead_status
+from core.api_client import ApiClientError, deep_research_ai_lead, generate_ai_email_sequence, get_ai_lead_detail, update_ai_lead_segment, update_ai_lead_status
 from core.session import get_app_token
-from lead_otomasyonu.strategy_constants import STATUS_OPTIONS
+from lead_otomasyonu.strategy_constants import PRODUCT_CATEGORIES, SALES_CHANNELS, STATUS_OPTIONS, priority_for_segment
 
 
 def lead_detay_ekrani(parent, lead, on_update=None):
@@ -29,6 +29,8 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     company_name_var = ctk.StringVar(value=lead.get("company_name") or "Lead Detay")
     status_var = ctk.StringVar(value=lead.get("ai_status") or lead.get("status") or "New")
     status_note_var = ctk.StringVar()
+    segment_sales_channel_var = ctk.StringVar(value=lead.get("sales_channel") or SALES_CHANNELS[0])
+    segment_product_var = ctk.StringVar(value=lead.get("product_category") or PRODUCT_CATEGORIES[0])
     info_vars = {}
     textboxes = {}
 
@@ -110,6 +112,14 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         ("suggested_sequence", "Sekans"),
     ]:
         info_vars[key] = _kv_var(segmentation_panel, label)
+    segment_editor = ctk.CTkFrame(segmentation_panel, fg_color="#f8fafc", corner_radius=8)
+    segment_editor.pack(fill="x", padx=18, pady=(10, 8))
+    ctk.CTkLabel(segment_editor, text="Manuel Etiket", text_color="#334155", font=("Segoe UI", 11, "bold")).grid(row=0, column=0, columnspan=2, sticky="w", padx=12, pady=(10, 6))
+    ctk.CTkLabel(segment_editor, text="Satış Kanalı", text_color="#64748b").grid(row=1, column=0, sticky="w", padx=12, pady=6)
+    ctk.CTkComboBox(segment_editor, values=SALES_CHANNELS, variable=segment_sales_channel_var, width=240).grid(row=1, column=1, sticky="ew", padx=12, pady=6)
+    ctk.CTkLabel(segment_editor, text="Ürün / Hizmet", text_color="#64748b").grid(row=2, column=0, sticky="w", padx=12, pady=6)
+    ctk.CTkComboBox(segment_editor, values=PRODUCT_CATEGORIES, variable=segment_product_var, width=240).grid(row=2, column=1, sticky="ew", padx=12, pady=6)
+    segment_editor.grid_columnconfigure(1, weight=1)
     textboxes["segmentation_source"] = _readonly_box(segmentation_panel, height=120)
 
     apollo_source_panel = _panel(right)
@@ -295,6 +305,10 @@ def lead_detay_ekrani(parent, lead, on_update=None):
             else:
                 var.set(str(detail().get(key) if detail().get(key) not in (None, "") else "-"))
         status_var.set(detail().get("ai_status") or detail().get("status") or status_var.get())
+        if detail().get("sales_channel") in SALES_CHANNELS:
+            segment_sales_channel_var.set(detail().get("sales_channel"))
+        if detail().get("product_category") in PRODUCT_CATEGORIES:
+            segment_product_var.set(detail().get("product_category"))
         update_textbox("email_explanation", email_explanation_text())
         update_textbox("segmentation_source", segmentation_source_text())
         update_textbox("apollo_source", apollo_source_text())
@@ -376,6 +390,34 @@ def lead_detay_ekrani(parent, lead, on_update=None):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def save_segment():
+        token = get_app_token()
+        if not token:
+            messagebox.showerror("Segment", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+        sales_channel = segment_sales_channel_var.get().strip()
+        product_category = segment_product_var.get().strip()
+        payload = {
+            "sales_channel": sales_channel,
+            "product_category": product_category,
+            "priority": priority_for_segment(product_category, sales_channel),
+        }
+
+        def worker():
+            try:
+                update_ai_lead_segment(token, lead.get("id"), payload)
+                response = get_ai_lead_detail(token, lead.get("id"))
+                state["detail"] = response
+                lead.update(response)
+                win.after(0, render_all)
+                if on_update:
+                    win.after(0, on_update)
+                win.after(0, lambda: messagebox.showinfo("Segment", "Ürün x satış kanalı etiketi kaydedildi.", parent=win))
+            except Exception as exc:
+                win.after(0, lambda err=str(exc): messagebox.showerror("Segment", f"Segment kaydedilemedi: {err}", parent=win))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def save_status():
         token = get_app_token()
         if not token:
@@ -399,6 +441,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     _ghost_button(actions, "Detayı Yenile", lambda: refresh_detail(show_message=True), "#2563eb").pack(side="left", padx=10, pady=12)
     _ghost_button(actions, "AI Araştır", run_research, "#7c3aed").pack(side="left", padx=8, pady=12)
     _primary_button(actions, "Sekans Oluştur", create_sequence, "#0f766e").pack(side="left", padx=8, pady=12)
+    _ghost_button(actions, "Segmenti Kaydet", save_segment, "#7c3aed").pack(side="left", padx=8, pady=12)
     _ghost_button(actions, "Durumu Kaydet", save_status, "#334155").pack(side="right", padx=8, pady=12)
     _ghost_button(actions, "Kapat", win.destroy, "#64748b").pack(side="right", padx=10, pady=12)
 
