@@ -226,6 +226,7 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
                 win.after(0, render)
                 win.after(0, lambda item=updated: (tree.selection_set(str(item.get("id"))), tree.focus(str(item.get("id"))), fill_form(item)))
                 win.after(0, lambda: status_var.set("Segment ayarları kaydedildi."))
+                win.after(0, lambda: messagebox.showinfo("Segment Ayarları", "Segment reçetesi başarıyla kaydedildi.", parent=win))
                 if on_update:
                     win.after(0, on_update)
             except ApiClientError as exc:
