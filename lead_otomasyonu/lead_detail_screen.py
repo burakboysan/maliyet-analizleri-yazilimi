@@ -72,7 +72,6 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     for key, label in [
         ("company_name", "Firma"),
         ("country", "Ülke"),
-        ("local_language", "Dil"),
         ("source", "Kaynak"),
     ]:
         info_vars[key] = _kv_var(company_panel, label)
@@ -404,6 +403,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         _research_row(summary_card, 1, "OpenAI Durumu", status_text)
         _research_row(summary_card, 2, "Model", model or "-")
         _research_row(summary_card, 3, "Güven", research.get("confidence_score") or 0)
+        _research_row(summary_card, 4, "Genel Merkez Ülkesi", raw_summary.get("headquarters_country") or "-")
 
         detail_card = ctk.CTkFrame(research_cards_frame, fg_color="#f8fafc", corner_radius=10)
         detail_card.pack(fill="x", pady=(0, 10))

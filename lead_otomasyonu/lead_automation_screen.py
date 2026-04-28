@@ -136,7 +136,6 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "company_name",
         "contact_email",
         "country",
-        "local_language",
         "sales_channel",
         "product_category",
         "priority",
@@ -158,7 +157,6 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "company_name": "Firma",
         "contact_email": "Email",
         "country": "Ülke",
-        "local_language": "Dil",
         "sales_channel": "Satış Kanalı",
         "product_category": "Ürün / Hizmet",
         "priority": "Öncelik",
@@ -168,7 +166,6 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "company_name": 260,
         "contact_email": 230,
         "country": 120,
-        "local_language": 100,
         "sales_channel": 230,
         "product_category": 170,
         "priority": 110,
@@ -258,7 +255,6 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             "contact_title": ctk.StringVar(),
             "contact_email": ctk.StringVar(),
             "country": ctk.StringVar(),
-            "local_language": ctk.StringVar(value="English"),
             "sales_channel": ctk.StringVar(value="White Label / Resellers"),
             "product_category": ctk.StringVar(value="Dust Collection"),
             "detected_activity": ctk.StringVar(),
@@ -268,10 +264,9 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         _form_entry(form, "Unvan", vars_["contact_title"], 2)
         _form_entry(form, "Email", vars_["contact_email"], 3)
         _form_entry(form, "Ülke", vars_["country"], 4)
-        _form_entry(form, "Dil", vars_["local_language"], 5)
-        _form_combo(form, "Satış Kanalı", vars_["sales_channel"], SALES_CHANNELS, 6)
-        _form_combo(form, "Ürün / Hizmet", vars_["product_category"], PRODUCT_CATEGORIES, 7)
-        _form_entry(form, "Aktivite", vars_["detected_activity"], 8)
+        _form_combo(form, "Satış Kanalı", vars_["sales_channel"], SALES_CHANNELS, 5)
+        _form_combo(form, "Ürün / Hizmet", vars_["product_category"], PRODUCT_CATEGORIES, 6)
+        _form_entry(form, "Aktivite", vars_["detected_activity"], 7)
 
         def save():
             company = vars_["company_name"].get().strip()
@@ -289,7 +284,6 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 "contact_email": vars_["contact_email"].get().strip(),
                 "email_status": "user managed" if vars_["contact_email"].get().strip() else "missing",
                 "country": vars_["country"].get().strip(),
-                "local_language": vars_["local_language"].get().strip(),
                 "source": "Manual",
                 "sales_channel": channel,
                 "product_category": product,

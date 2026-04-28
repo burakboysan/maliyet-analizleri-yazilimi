@@ -1574,6 +1574,7 @@ def _lead_research_schema() -> dict[str, Any]:
         "type": "object",
         "properties": {
             "detected_company_name": {"type": "string"},
+            "headquarters_country": {"type": "string"},
             "company_overview": {"type": "string"},
             "products_services": {"type": "string"},
             "partner_fit_reason": {"type": "string"},
@@ -1586,6 +1587,7 @@ def _lead_research_schema() -> dict[str, Any]:
         },
         "required": [
             "detected_company_name",
+            "headquarters_country",
             "company_overview",
             "products_services",
             "partner_fit_reason",
@@ -1625,6 +1627,7 @@ def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pa
         "Yanıtın JSON alan adları şemadaki gibi kalsın, ancak tüm açıklama içeriklerini Türkçe yaz. "
         "Verilen web sitesi metni ve lead bağlamı dışına çıkma; kanıt zayıfsa bunu Türkçe olarak açıkça belirt. "
         "Önce web sitesi kanıtından gerçek firma/tüzel kişi veya marka adını belirle; gallery, products, blog, top lists gibi sayfa başlıklarını firma adı olarak kullanma. "
+        "Firmanın genel merkez ülkesini web sitesindeki adres, iletişim, about us veya legal footer kanıtından belirle; emin değilsen boş string döndür. "
         "Firmanın ne yaptığını, hangi ürün veya hizmetleri sattığını, seçili partner segmentine neden uyabileceğini, "
         "hangi Bomaksan ürün/hizmet kategorisiyle eşleştiğini, distributor/integrator/HVAC/welding/filtration/CNC/dust collection sinyallerini, "
         "hizmet verdiği sektörleri, email kişiselleştirme açısını ve doğrudan rakip, sadece son kullanıcı, residential HVAC veya tüketici odağı gibi riskleri Türkçe değerlendir.\n\n"
@@ -1677,6 +1680,7 @@ def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pa
     source_links = [page.get("url") for page in pages if page.get("url")]
     return {
         "detected_company_name": _normalize(parsed.get("detected_company_name")),
+        "headquarters_country": _normalize(parsed.get("headquarters_country")),
         "company_overview": _normalize(parsed.get("company_overview")),
         "products_services": _normalize(parsed.get("products_services")),
         "partner_fit_reason": _normalize(parsed.get("partner_fit_reason")),
@@ -3940,6 +3944,7 @@ def deep_research_ai_lead(
         research["openai_status"] = "completed"
     updated_company_name = _best_company_name_for_research(lead, research)
     company_name_updated = _should_update_company_name(lead.get("company_name"), updated_company_name, website)
+    updated_country = _normalize(research.get("headquarters_country"))
     db.execute(
         text(
             """
@@ -3982,6 +3987,12 @@ def deep_research_ai_lead(
             {"lead_id": lead_id, "company_name": updated_company_name},
         )
         _log_action(db, lead_id, "company_name_refined", f"AI araştırma firma adını güncelledi: {updated_company_name}", current_user.id)
+    if updated_country:
+        db.execute(
+            text("UPDATE ai_leads SET country = :country, local_language = NULL WHERE id = :lead_id"),
+            {"lead_id": lead_id, "country": updated_country},
+        )
+        _log_action(db, lead_id, "country_refined", f"AI araştırma genel merkez ülkesini güncelledi: {updated_country}", current_user.id)
     _log_action(db, lead_id, "deep_research", "AI firma araştırması tamamlandı.", current_user.id)
     db.commit()
     latest = _latest_research(db, lead_id)
