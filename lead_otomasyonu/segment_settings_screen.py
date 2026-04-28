@@ -6,7 +6,7 @@ import customtkinter as ctk
 from core.api_client import ApiClientError, create_ai_search_recipe, list_ai_search_recipes, update_ai_search_recipe
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
-from lead_otomasyonu.strategy_constants import PRIORITY_OPTIONS, PRODUCT_CATEGORIES, SALES_CHANNELS, TARGET_COUNTRIES, build_segment_name
+from lead_otomasyonu.strategy_constants import PRIORITY_OPTIONS, PRODUCT_CATEGORIES, SALES_CHANNELS, build_segment_name
 
 
 def segment_ayarlari_ekrani(parent=None, on_update=None):
@@ -61,17 +61,15 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
     tree_wrap.grid_columnconfigure(0, weight=1)
 
     y_scroll = ttk.Scrollbar(tree_wrap, orient="vertical")
-    columns = ("segment_name", "priority", "target_countries", "is_active")
+    columns = ("segment_name", "priority", "is_active")
     tree = ttk.Treeview(tree_wrap, columns=columns, show="headings", yscrollcommand=y_scroll.set, selectmode="browse")
     y_scroll.config(command=tree.yview)
     apply_bomaksan_table_style(tree)
     tree.heading("segment_name", text="Segment")
     tree.heading("priority", text="Öncelik")
-    tree.heading("target_countries", text="Ülke")
     tree.heading("is_active", text="Aktif")
     tree.column("segment_name", width=300, minwidth=220, anchor="w")
     tree.column("priority", width=90, minwidth=80, anchor="w")
-    tree.column("target_countries", width=120, minwidth=90, anchor="w")
     tree.column("is_active", width=60, minwidth=55, anchor="center")
     tree.grid(row=0, column=0, sticky="nsew")
     y_scroll.grid(row=0, column=1, sticky="ns")
@@ -83,7 +81,6 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
     editor.grid_rowconfigure(4, weight=1)
     editor.grid_rowconfigure(6, weight=1)
     editor.grid_rowconfigure(8, weight=1)
-    editor.grid_rowconfigure(10, weight=1)
 
     vars_ = {
         "segment_name": ctk.StringVar(),
@@ -100,17 +97,15 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
     _form_combo(editor, "Öncelik", vars_["priority"], PRIORITY_OPTIONS, 2, 0)
     ctk.CTkCheckBox(editor, text="Aktif", variable=vars_["is_active"], text_color="#334155").grid(row=2, column=2, columnspan=2, sticky="w", padx=14, pady=8)
 
-    textboxes["target_countries"] = _textbox(editor, "Hedef Ülkeler", 3, 0, height=82)
-    textboxes["excluded_countries"] = _textbox(editor, "Hariç Ülkeler", 3, 2, height=82)
-    textboxes["target_definition"] = _textbox(editor, "Hedef Segment Tanımı", 5, 0, height=88)
-    textboxes["targeting_notes"] = _textbox(editor, "Hedefleme Notları", 5, 2, height=88)
-    textboxes["company_keywords"] = _textbox(editor, "Apollo Firma Keywordleri", 7, 0, height=110)
-    textboxes["person_titles"] = _textbox(editor, "Hedef Ünvanlar", 7, 2, height=110)
-    textboxes["positive_signals"] = _textbox(editor, "Pozitif Sinyaller", 9, 0, height=110)
-    textboxes["negative_signals"] = _textbox(editor, "Negatif Sinyaller", 9, 2, height=110)
+    textboxes["target_definition"] = _textbox(editor, "Hedef Segment Tanımı", 3, 0, height=88)
+    textboxes["targeting_notes"] = _textbox(editor, "Hedefleme Notları", 3, 2, height=88)
+    textboxes["company_keywords"] = _textbox(editor, "Apollo Firma Keywordleri", 5, 0, height=120)
+    textboxes["person_titles"] = _textbox(editor, "Hedef Ünvanlar", 5, 2, height=120)
+    textboxes["positive_signals"] = _textbox(editor, "Pozitif Sinyaller", 7, 0, height=120)
+    textboxes["negative_signals"] = _textbox(editor, "Negatif Sinyaller", 7, 2, height=120)
 
     button_bar = ctk.CTkFrame(editor, fg_color="transparent")
-    button_bar.grid(row=11, column=0, columnspan=4, sticky="ew", padx=14, pady=(8, 14))
+    button_bar.grid(row=9, column=0, columnspan=4, sticky="ew", padx=14, pady=(8, 14))
     button_bar.grid_columnconfigure(0, weight=1)
 
     def set_text(key, value):
@@ -161,7 +156,6 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
                 values=(
                     recipe.get("segment_name") or "",
                     recipe.get("priority") or "",
-                    ", ".join((recipe.get("target_countries") or [])[:2]) + ("..." if len(recipe.get("target_countries") or []) > 2 else ""),
                     "Evet" if recipe.get("is_active") else "Hayır",
                 ),
             )
@@ -208,8 +202,6 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
             "sales_channel": sales_channel,
             "product_category": product_category,
             "priority": vars_["priority"].get().strip(),
-            "target_countries": get_lines("target_countries"),
-            "excluded_countries": get_lines("excluded_countries"),
             "target_definition": get_text("target_definition"),
             "targeting_notes": get_text("targeting_notes"),
             "company_keywords": get_lines("company_keywords"),
@@ -263,8 +255,6 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
         vars_["is_active"].set(True)
         vars_["segment_name"].set(build_segment_name("Dust Collection", "White Label / Resellers"))
         defaults = {
-            "target_countries": TARGET_COUNTRIES,
-            "excluded_countries": ["United Kingdom", "Poland"],
             "target_definition": "",
             "targeting_notes": "",
             "company_keywords": [],

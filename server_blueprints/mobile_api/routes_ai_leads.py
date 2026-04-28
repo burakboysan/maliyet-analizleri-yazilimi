@@ -58,22 +58,6 @@ PRODUCT_CATEGORIES = [
 
 EXCLUDED_COUNTRIES = {"united kingdom", "uk", "great britain", "poland"}
 
-DEFAULT_TARGET_COUNTRIES = [
-    "Germany",
-    "France",
-    "Italy",
-    "Spain",
-    "Netherlands",
-    "Belgium",
-    "Austria",
-    "Romania",
-    "Czech Republic",
-    "Hungary",
-    "United Arab Emirates",
-    "Saudi Arabia",
-    "Turkey",
-]
-
 SEQUENCE_BY_CHANNEL = {
     "OEM": "OEM",
     "White Label / Resellers": "WL_RESELLER",
@@ -331,8 +315,6 @@ class AiSearchRecipeUpdateRequest(BaseModel):
     priority: Optional[str] = None
     target_definition: Optional[str] = None
     targeting_notes: Optional[str] = None
-    target_countries: Any = None
-    excluded_countries: Any = None
     company_keywords: Any = None
     person_titles: Any = None
     positive_signals: Any = None
@@ -634,8 +616,6 @@ def _ensure_tables(db: Session) -> None:
             priority VARCHAR(50) NOT NULL,
             target_definition TEXT,
             targeting_notes TEXT,
-            target_countries JSON,
-            excluded_countries JSON,
             company_keywords JSON,
             person_titles JSON,
             positive_signals JSON,
@@ -680,8 +660,6 @@ def _ensure_tables(db: Session) -> None:
     _ensure_column(db, "ai_segmentation_results", "suggested_sequence", "VARCHAR(100)")
     _ensure_column(db, "ai_search_recipes", "target_definition", "TEXT")
     _ensure_column(db, "ai_search_recipes", "targeting_notes", "TEXT")
-    _ensure_column(db, "ai_search_recipes", "target_countries", "JSON")
-    _ensure_column(db, "ai_search_recipes", "excluded_countries", "JSON")
     db.commit()
     _seed_search_recipes(db)
 
@@ -693,12 +671,10 @@ def _seed_search_recipes(db: Session) -> None:
                 """
                 INSERT INTO ai_search_recipes (
                     segment_name, sales_channel, product_category, priority,
-                    target_countries, excluded_countries,
                     company_keywords, person_titles, positive_signals, negative_signals, is_active
                 )
                 VALUES (
                     :segment_name, :sales_channel, :product_category, :priority,
-                    :target_countries, :excluded_countries,
                     :company_keywords, :person_titles, :positive_signals, :negative_signals, TRUE
                 )
                 ON DUPLICATE KEY UPDATE
@@ -707,8 +683,6 @@ def _seed_search_recipes(db: Session) -> None:
             ),
             {
                 **{key: recipe[key] for key in ("segment_name", "sales_channel", "product_category", "priority")},
-                "target_countries": json.dumps(DEFAULT_TARGET_COUNTRIES, ensure_ascii=False),
-                "excluded_countries": json.dumps(["United Kingdom", "Poland"], ensure_ascii=False),
                 "company_keywords": json.dumps(recipe["company_keywords"], ensure_ascii=False),
                 "person_titles": json.dumps(recipe["person_titles"], ensure_ascii=False),
                 "positive_signals": json.dumps(recipe["positive_signals"], ensure_ascii=False),
@@ -1140,7 +1114,9 @@ def _latest_action(db: Session, lead_id: int) -> dict[str, Any] | None:
 
 def _search_recipe_response(row: Any) -> dict[str, Any]:
     recipe = _lead_row_to_dict(row)
-    for key in ("target_countries", "excluded_countries", "company_keywords", "person_titles", "positive_signals", "negative_signals"):
+    recipe.pop("target_countries", None)
+    recipe.pop("excluded_countries", None)
+    for key in ("company_keywords", "person_titles", "positive_signals", "negative_signals"):
         recipe[key] = _json_list(recipe.get(key))
     recipe["is_active"] = bool(recipe.get("is_active"))
     recipe["default_sequence_code"] = _sequence_code(recipe.get("sales_channel"))
@@ -1210,12 +1186,12 @@ def create_ai_search_recipe(
                 """
                 INSERT INTO ai_search_recipes (
                     segment_name, sales_channel, product_category, priority,
-                    target_definition, targeting_notes, target_countries, excluded_countries,
+                    target_definition, targeting_notes,
                     company_keywords, person_titles, positive_signals, negative_signals, is_active
                 )
                 VALUES (
                     :segment_name, :sales_channel, :product_category, :priority,
-                    :target_definition, :targeting_notes, :target_countries, :excluded_countries,
+                    :target_definition, :targeting_notes,
                     :company_keywords, :person_titles, :positive_signals, :negative_signals, :is_active
                 )
                 """
@@ -1227,8 +1203,6 @@ def create_ai_search_recipe(
                 "priority": priority,
                 "target_definition": payload.target_definition or "",
                 "targeting_notes": payload.targeting_notes or "",
-                "target_countries": json.dumps(_payload_list(payload.target_countries) or DEFAULT_TARGET_COUNTRIES, ensure_ascii=False),
-                "excluded_countries": json.dumps(_payload_list(payload.excluded_countries) or ["United Kingdom", "Poland"], ensure_ascii=False),
                 "company_keywords": json.dumps(_payload_list(payload.company_keywords), ensure_ascii=False),
                 "person_titles": json.dumps(_payload_list(payload.person_titles) or DEFAULT_TITLES, ensure_ascii=False),
                 "positive_signals": json.dumps(_payload_list(payload.positive_signals), ensure_ascii=False),
@@ -1289,8 +1263,6 @@ def update_ai_search_recipe(
                     priority = :priority,
                     target_definition = :target_definition,
                     targeting_notes = :targeting_notes,
-                    target_countries = :target_countries,
-                    excluded_countries = :excluded_countries,
                     company_keywords = :company_keywords,
                     person_titles = :person_titles,
                     positive_signals = :positive_signals,
@@ -1307,8 +1279,6 @@ def update_ai_search_recipe(
                 "priority": priority,
                 "target_definition": payload.target_definition if payload.target_definition is not None else current.get("target_definition"),
                 "targeting_notes": payload.targeting_notes if payload.targeting_notes is not None else current.get("targeting_notes"),
-                "target_countries": json_field("target_countries", DEFAULT_TARGET_COUNTRIES),
-                "excluded_countries": json_field("excluded_countries", ["United Kingdom", "Poland"]),
                 "company_keywords": json_field("company_keywords"),
                 "person_titles": json_field("person_titles"),
                 "positive_signals": json_field("positive_signals"),
@@ -1952,11 +1922,7 @@ def search_apollo_by_segment(
     recipe = _lead_row_to_dict(recipe_row)
     recipe_id = int(recipe["id"])
     limit = min(max(int(payload.limit or 25), 1), 100)
-    target_countries = _json_list(recipe.get("target_countries")) or DEFAULT_TARGET_COUNTRIES
-    excluded_countries = {_casefold(item) for item in (_json_list(recipe.get("excluded_countries")) or ["United Kingdom", "Poland"])}
-    country = _normalize(payload.country) or (target_countries[0] if target_countries else "")
-    if _casefold(country) in excluded_countries:
-        raise HTTPException(status_code=400, detail="Bu ülke ilgili segment reçetesinde hariç tutulmuş.")
+    country = _normalize(payload.country)
 
     run_result = db.execute(
         text(

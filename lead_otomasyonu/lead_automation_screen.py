@@ -486,10 +486,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         try:
             recipes = list_ai_search_recipes(token)
             segment_values = [item.get("segment_name") for item in recipes if item.get("is_active") and item.get("segment_name")]
-            recipe_by_segment = {item.get("segment_name"): item for item in recipes if item.get("segment_name")}
         except Exception:
             segment_values = HIGH_PRIORITY_SEGMENT_NAMES
-            recipe_by_segment = {}
         if not segment_values:
             segment_values = HIGH_PRIORITY_SEGMENT_NAMES
 
@@ -503,27 +501,16 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         form = ctk.CTkFrame(dialog, fg_color="#ffffff", corner_radius=14)
         form.pack(fill="both", expand=True, padx=18, pady=18)
 
-        initial_recipe = recipe_by_segment.get(segment_values[0]) if segment_values else {}
-        initial_countries = (initial_recipe or {}).get("target_countries") or TARGET_COUNTRIES
         vars_ = {
             "segment_name": ctk.StringVar(value=segment_values[0] if segment_values else ""),
-            "country": ctk.StringVar(value=initial_countries[0] if initial_countries else "Germany"),
+            "country": ctk.StringVar(value=TARGET_COUNTRIES[0] if TARGET_COUNTRIES else "Germany"),
             "limit": ctk.StringVar(value="25"),
             "enrich": ctk.StringVar(value="Evet"),
         }
-        segment_combo = _form_combo(form, "Segment", vars_["segment_name"], segment_values, 0)
-        country_combo = _form_combo(form, "Ülke", vars_["country"], initial_countries, 1)
+        _form_combo(form, "Segment", vars_["segment_name"], segment_values, 0)
+        _form_combo(form, "Ülke", vars_["country"], TARGET_COUNTRIES, 1)
         _form_entry(form, "Lead Limiti", vars_["limit"], 2)
         _form_combo(form, "Email Enrichment", vars_["enrich"], ["Evet", "Hayır"], 3)
-
-        def update_country_values(*_args):
-            recipe = recipe_by_segment.get(vars_["segment_name"].get())
-            countries = (recipe or {}).get("target_countries") or TARGET_COUNTRIES
-            country_combo.configure(values=countries)
-            if vars_["country"].get() not in countries and countries:
-                vars_["country"].set(countries[0])
-
-        vars_["segment_name"].trace_add("write", update_country_values)
 
         note = ctk.CTkLabel(
             form,
