@@ -1,5 +1,7 @@
 import threading
 from tkinter import messagebox
+from urllib.parse import quote
+import webbrowser
 
 import customtkinter as ctk
 
@@ -72,10 +74,10 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         ("country", "Ülke"),
         ("local_language", "Dil"),
         ("source", "Kaynak"),
-        ("website", "Web"),
-        ("detected_activity", "Aktivite"),
     ]:
         info_vars[key] = _kv_var(company_panel, label)
+    info_vars["website"] = _clickable_kv_var(company_panel, "Web", lambda: open_website())
+    info_vars["detected_activity"] = _kv_var(company_panel, "Aktivite")
 
     email_panel = _panel(left)
     email_panel.pack(fill="x", pady=(0, 12))
@@ -83,10 +85,10 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     for key, label in [
         ("contact_name", "Kişi"),
         ("contact_title", "Unvan"),
-        ("contact_email", "Email"),
-        ("email_status", "Email Durumu"),
     ]:
         info_vars[key] = _kv_var(email_panel, label)
+    info_vars["contact_email"] = _clickable_kv_var(email_panel, "Email", lambda: compose_email())
+    info_vars["email_status"] = _kv_var(email_panel, "Email Durumu")
     textboxes["email_explanation"] = _readonly_box(email_panel, height=130)
 
     status_panel = _panel(left)
@@ -135,6 +137,20 @@ def lead_detay_ekrani(parent, lead, on_update=None):
 
     def detail():
         return state["detail"]
+
+    def open_website():
+        website = str(detail().get("website") or "").strip()
+        if not website or website == "-":
+            return
+        if not website.lower().startswith(("http://", "https://")):
+            website = f"https://{website}"
+        webbrowser.open(website)
+
+    def compose_email():
+        email = str(detail().get("contact_email") or "").strip()
+        if not email or email == "-":
+            return
+        webbrowser.open(f"mailto:{quote(email)}")
 
     def update_textbox(key, value):
         box = textboxes[key]
@@ -387,6 +403,25 @@ def _kv_var(parent, label):
         wraplength=360,
         justify="left",
     ).pack(side="left", fill="x", expand=True)
+    return var
+
+
+def _clickable_kv_var(parent, label, command):
+    var = ctk.StringVar(value="-")
+    row = ctk.CTkFrame(parent, fg_color="transparent")
+    row.pack(fill="x", padx=18, pady=4)
+    ctk.CTkLabel(row, text=f"{label}:", width=130, anchor="w", text_color="#64748b").pack(side="left")
+    value_label = ctk.CTkLabel(
+        row,
+        textvariable=var,
+        anchor="w",
+        text_color="#2563eb",
+        wraplength=360,
+        justify="left",
+        cursor="hand2",
+    )
+    value_label.pack(side="left", fill="x", expand=True)
+    value_label.bind("<Button-1>", lambda _event: command())
     return var
 
 
