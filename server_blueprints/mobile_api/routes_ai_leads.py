@@ -1521,12 +1521,12 @@ def _segment_search_attempts(recipe: dict[str, Any], country: str, limit: int) -
     )
 
     attempts = []
-    if company_keywords:
+    for index, keyword_batch in enumerate(_apollo_keyword_batches(company_keywords)):
         attempts.append(
             {
-                "name": "focused_recipe",
+                "name": f"focused_recipe:{index + 1}",
                 "person_titles[]": person_titles,
-                "q_keywords": " OR ".join(company_keywords),
+                "q_keywords": " OR ".join(keyword_batch),
                 "organization_locations[]": [country] if country else [],
                 "page": 1,
                 "per_page": limit,
@@ -1544,6 +1544,28 @@ def _segment_search_attempts(recipe: dict[str, Any], country: str, limit: int) -
             }
         )
     return attempts
+
+
+def _apollo_keyword_batches(keywords: list[str], max_chars: int = 120) -> list[list[str]]:
+    batches = []
+    current = []
+    current_len = 0
+    for keyword in _dedupe_strings(keywords):
+        value = _normalize(keyword)
+        if not value:
+            continue
+        separator_len = 4 if current else 0
+        next_len = current_len + separator_len + len(value)
+        if current and next_len > max_chars:
+            batches.append(current)
+            current = [value]
+            current_len = len(value)
+        else:
+            current.append(value)
+            current_len = next_len
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _apollo_person_haystack(person: dict[str, Any]) -> str:
