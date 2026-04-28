@@ -94,7 +94,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     filters = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
     filters.grid(row=2, column=0, sticky="ew", pady=(0, 14))
-    filters.grid_columnconfigure(7, weight=1)
+    filters.grid_columnconfigure(6, weight=1)
 
     search_var = ctk.StringVar()
     channel_var = ctk.StringVar(value="Tüm Kanallar")
@@ -116,6 +116,9 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     _filter_label(filters, "Öncelik", 3)
     priority_combo = ctk.CTkComboBox(filters, values=["Tüm Öncelikler"] + PRIORITY_OPTIONS, variable=priority_var, width=170)
     priority_combo.grid(row=1, column=3, padx=8, pady=(0, 14), sticky="ew")
+
+    filter_actions = ctk.CTkFrame(filters, fg_color="transparent")
+    filter_actions.grid(row=1, column=4, columnspan=2, sticky="w", padx=(10, 8), pady=(0, 14))
 
     table_card = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
     table_card.grid(row=3, column=0, sticky="nsew")
@@ -268,7 +271,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     def add_manual_lead():
         dialog = ctk.CTkToplevel(win)
-        dialog.title("Manuel Lead Ekle")
+        dialog.title("Lead Ekle")
         dialog.geometry("560x660")
         dialog.configure(fg_color="#f5f5f5")
         dialog.transient(win)
@@ -323,7 +326,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 "suggested_sequence": get_sequence_code(channel),
                 "ai_status": "Segmented",
                 "approval_status": "Awaiting Approval",
-                "last_action": "Manuel lead eklendi ve segment önerildi",
+                "last_action": "Lead eklendi ve segment önerildi",
                 "website": "",
                 "detected_activity": vars_["detected_activity"].get().strip(),
                 "short_reasoning": "MVP kural setiyle otomatik segment önerisi oluşturuldu.",
@@ -711,13 +714,16 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     ctk.CTkButton(actions, text="Yenile", width=110, command=load_from_api, fg_color="#ffffff", text_color="#d32f2f", border_width=1, border_color="#d32f2f").pack(side="left", padx=(0, 8))
     ctk.CTkButton(actions, text="CSV Import", width=120, command=import_csv, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Segment Ayarları", width=145, command=open_segment_settings, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
-    ctk.CTkButton(actions, text="Segmentten Lead Bul", width=165, command=segment_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
-    ctk.CTkButton(actions, text="Apollo Search", width=130, command=apollo_search, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
-    ctk.CTkButton(actions, text="Email Enrich", width=120, command=enrich_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left", padx=8)
-    ctk.CTkButton(actions, text="AI Araştır", width=115, command=research_selected, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
-    ctk.CTkButton(actions, text="Sekans Oluştur", width=145, command=create_sequence_for_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left", padx=8)
-    ctk.CTkButton(actions, text="Sil", width=90, command=delete_selected_lead, fg_color="#ffffff", text_color="#dc2626", border_width=1, border_color="#dc2626").pack(side="left", padx=8)
-    ctk.CTkButton(actions, text="Manuel Lead", width=130, command=add_manual_lead, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=(8, 0))
+
+    ctk.CTkButton(filter_actions, text="Email Enrich", width=120, command=enrich_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left", padx=(0, 8))
+    ctk.CTkButton(filter_actions, text="Sekans Oluştur", width=145, command=create_sequence_for_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left")
+
+    bottom_actions = ctk.CTkFrame(root, fg_color="transparent")
+    bottom_actions.grid(row=4, column=0, sticky="e", pady=(14, 0))
+    ctk.CTkButton(bottom_actions, text="Lead Ekle", width=125, command=add_manual_lead, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
+    ctk.CTkButton(bottom_actions, text="Segmentten Lead Bul", width=165, command=segment_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
+    ctk.CTkButton(bottom_actions, text="Apollo Search", width=130, command=apollo_search, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
+    ctk.CTkButton(bottom_actions, text="Sil", width=90, command=delete_selected_lead, fg_color="#ffffff", text_color="#dc2626", border_width=1, border_color="#dc2626").pack(side="left", padx=(8, 0))
 
     search_var.trace_add("write", apply_filters)
     channel_var.trace_add("write", apply_filters)
