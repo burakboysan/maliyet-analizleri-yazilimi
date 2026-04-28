@@ -527,7 +527,9 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                     created = int(result.get("created") or 0)
                     skipped = int(result.get("skipped_duplicates") or 0)
                     domains = int(result.get("found_domains") or 0)
-                    win.after(0, lambda: messagebox.showinfo("SerpAPI Firma Bul", f"{domains} firma/domain adayı bulundu. {created} aday eklendi. {skipped} tekrar kayıt atlandı.", parent=win))
+                    warning_count = int(result.get("warning_count") or 0)
+                    warning_note = f"\n\n{warning_count} SerpAPI sorgusu hata verdi ve atlandı." if warning_count else ""
+                    win.after(0, lambda: messagebox.showinfo("SerpAPI Firma Bul", f"{domains} firma/domain adayı bulundu. {created} aday eklendi. {skipped} tekrar kayıt atlandı.{warning_note}", parent=win))
                     win.after(0, load_from_api)
                     win.after(0, dialog.destroy)
                 except Exception as exc:

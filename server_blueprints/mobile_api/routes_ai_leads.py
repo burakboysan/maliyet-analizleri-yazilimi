@@ -2531,7 +2531,13 @@ def _serpapi_find_domains(recipe: dict[str, Any], country: str, limit: int) -> l
     return domains
 
 
-def _serpapi_find_domains_by_keywords(keywords: list[str], country: str, pages: int, search_mode: str = "broad") -> list[dict[str, str]]:
+def _serpapi_find_domains_by_keywords(
+    keywords: list[str],
+    country: str,
+    pages: int,
+    search_mode: str = "broad",
+    warnings: list[str] | None = None,
+) -> list[dict[str, str]]:
     domains = []
     seen_domains = set()
     gl = _serpapi_country_code(country)
@@ -2547,7 +2553,12 @@ def _serpapi_find_domains_by_keywords(keywords: list[str], country: str, pages: 
     ]
     for search_query in queries:
         for page_index in range(page_count):
-            response = _serpapi_get({"q": search_query, "gl": gl, "hl": "en", "start": page_index * 10})
+            try:
+                response = _serpapi_get({"q": search_query, "gl": gl, "hl": "en", "start": page_index * 10})
+            except HTTPException as exc:
+                if warnings is not None:
+                    warnings.append(f"{search_query} | sayfa {page_index + 1}: {exc.detail}")
+                continue
             for result in response.get("organic_results") or []:
                 link = _normalize(result.get("link"))
                 domain = _domain_from_url(link)
@@ -3291,7 +3302,8 @@ def search_serpapi_domains(
     pages = min(max(int(payload.pages or 1), 1), 10)
     search_mode = "exact" if _casefold(payload.search_mode) in {"exact", "narrow", "dar"} else "broad"
     country = _normalize(payload.country)
-    domains = _serpapi_find_domains_by_keywords(keywords, country, pages, search_mode)
+    warnings = []
+    domains = _serpapi_find_domains_by_keywords(keywords, country, pages, search_mode, warnings)
     created = []
     skipped_duplicates = 0
     for domain_result in domains:
@@ -3306,6 +3318,8 @@ def search_serpapi_domains(
         "country": country,
         "pages": pages,
         "search_mode": search_mode,
+        "warnings": warnings[:10],
+        "warning_count": len(warnings),
         "found_domains": len(domains),
         "created": len(created),
         "skipped_duplicates": skipped_duplicates,
