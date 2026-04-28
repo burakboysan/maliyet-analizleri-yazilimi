@@ -3919,11 +3919,24 @@ def deep_research_ai_lead(
             pages = [{"url": website, "text": fallback_text}]
         else:
             raise HTTPException(status_code=404, detail="Firma web sitesinden araştırma verisi alınamadı.")
+    openai_error = ""
     try:
-        research = _openai_lead_research(lead, segmentation, pages) or _build_lead_research(lead, segmentation, pages)
-    except HTTPException:
+        research = _openai_lead_research(lead, segmentation, pages)
+        if not research:
+            openai_error = "OPENAI_API_KEY canlı sunucuda tanımlı değil; OpenAI analizi çalıştırılamadı."
+            research = _build_lead_research(lead, segmentation, pages)
+    except HTTPException as exc:
+        openai_error = str(exc.detail)
         research = _build_lead_research(lead, segmentation, pages)
-        research["risk_notes"] = f"{research.get('risk_notes') or ''} OpenAI analizi tamamlanamadı; kural tabanlı araştırma kullanıldı.".strip()
+    if openai_error:
+        research["openai_status"] = "fallback"
+        research["openai_error"] = openai_error
+        research["risk_notes"] = (
+            f"{research.get('risk_notes') or ''} "
+            f"OpenAI analizi tamamlanamadı; kural tabanlı araştırma kullanıldı. Sebep: {openai_error}"
+        ).strip()
+    else:
+        research["openai_status"] = "completed"
     updated_company_name = _best_company_name_for_research(lead, research)
     company_name_updated = _should_update_company_name(lead.get("company_name"), updated_company_name, website)
     db.execute(

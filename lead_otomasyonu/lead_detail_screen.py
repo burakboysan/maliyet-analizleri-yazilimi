@@ -82,7 +82,8 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     research_panel = _panel(company_tab)
     research_panel.pack(fill="x", pady=(0, 12))
     _section_title(research_panel, "Firma Araştırması")
-    textboxes["research"] = _readonly_box(research_panel, height=260)
+    research_cards_frame = ctk.CTkFrame(research_panel, fg_color="transparent")
+    research_cards_frame.pack(fill="x", padx=18, pady=(4, 14))
 
     email_panel = _panel(people_tab)
     email_panel.pack(fill="x", pady=(0, 12))
@@ -369,6 +370,57 @@ def lead_detay_ekrani(parent, lead, on_update=None):
             ]
         )
 
+    def render_research_card():
+        for child in research_cards_frame.winfo_children():
+            child.destroy()
+
+        research = current_research()
+        if not research:
+            empty = ctk.CTkFrame(research_cards_frame, fg_color="#f8fafc", corner_radius=10)
+            empty.pack(fill="x")
+            ctk.CTkLabel(
+                empty,
+                text="Henüz firma araştırması yapılmadı. AI Araştır butonu web sitesini ve lead bağlamını analiz eder.",
+                text_color="#64748b",
+                wraplength=820,
+                justify="left",
+            ).pack(anchor="w", padx=14, pady=14)
+            return
+
+        raw_summary = research.get("raw_summary") or {}
+        model = str(research.get("model_used") or "")
+        openai_status = raw_summary.get("openai_status")
+        openai_error = raw_summary.get("openai_error")
+        method = "OpenAI / LLM destekli analiz" if model and model != "rule_based_research" else "Kural bazlı web sinyal analizi"
+        status_text = "Tamamlandı" if openai_status == "completed" else "Kural bazlı fallback kullanıldı"
+        if openai_error:
+            status_text = f"{status_text}. Sebep: {openai_error}"
+        links = research.get("source_links") or []
+
+        summary_card = ctk.CTkFrame(research_cards_frame, fg_color="#f8fafc", corner_radius=10)
+        summary_card.pack(fill="x", pady=(0, 10))
+        summary_card.grid_columnconfigure(1, weight=1)
+        _research_row(summary_card, 0, "Yöntem", method)
+        _research_row(summary_card, 1, "OpenAI Durumu", status_text)
+        _research_row(summary_card, 2, "Model", model or "-")
+        _research_row(summary_card, 3, "Güven", research.get("confidence_score") or 0)
+
+        detail_card = ctk.CTkFrame(research_cards_frame, fg_color="#f8fafc", corner_radius=10)
+        detail_card.pack(fill="x", pady=(0, 10))
+        detail_card.grid_columnconfigure(1, weight=1)
+        _research_row(detail_card, 0, "Firma", research.get("company_overview"))
+        _research_row(detail_card, 1, "Ürün / Çözüm", research.get("products_services"))
+        _research_row(detail_card, 2, "Partner Fit", research.get("partner_fit_reason"))
+        _research_row(detail_card, 3, "Bomaksan Eşleşmesi", research.get("bomaksan_match"))
+        _research_row(detail_card, 4, "Sinyaller", research.get("detected_signals"))
+        _research_row(detail_card, 5, "Sektörler", research.get("served_industries"))
+        _research_row(detail_card, 6, "Risk", research.get("risk_notes"))
+
+        source_card = ctk.CTkFrame(research_cards_frame, fg_color="#f8fafc", corner_radius=10)
+        source_card.pack(fill="x")
+        source_card.grid_columnconfigure(1, weight=1)
+        _research_row(source_card, 0, "Kaynaklar", "\n".join(f"- {link}" for link in links) or "-")
+
     def render_drafts(drafts=None):
         if drafts is not None:
             state["drafts"] = drafts
@@ -403,7 +455,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         update_textbox("segmentation_source", segmentation_source_text())
         update_textbox("apollo_source", apollo_source_text())
         update_textbox("personalization", personalization_text())
-        update_textbox("research", research_text())
+        render_research_card()
         render_drafts(detail().get("email_drafts") or state["drafts"])
 
     def refresh_detail(show_message=False):
@@ -660,6 +712,25 @@ def _contact_card_row(parent, row_index, label, value):
     entry.insert(0, str(value or "-"))
     entry.configure(state="readonly")
     _bind_select_all(entry)
+
+
+def _research_row(parent, row_index, label, value):
+    ctk.CTkLabel(
+        parent,
+        text=f"{label}:",
+        width=150,
+        anchor="nw",
+        text_color="#334155",
+        font=ctk.CTkFont(family="Inter", size=12, weight="bold"),
+    ).grid(row=row_index, column=0, sticky="nw", padx=(14, 10), pady=(8, 8))
+    ctk.CTkLabel(
+        parent,
+        text=str(value if value not in (None, "") else "-"),
+        anchor="nw",
+        justify="left",
+        wraplength=760,
+        text_color="#111827",
+    ).grid(row=row_index, column=1, sticky="ew", padx=(0, 14), pady=(8, 8))
 
 
 def _bind_select_all(widget):
