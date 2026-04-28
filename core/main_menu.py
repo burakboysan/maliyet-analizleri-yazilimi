@@ -2057,9 +2057,19 @@ def ana_menu_ac(kullanici_adi, kullanici_rolu, parent_root=None):
             "icon": "📋",
             "title": "Proje Teklif Yönetimi",
             "description": "Proje tekliflerini oluşturun ve maliyet hesaplamalarını yapın.",
-                            "command": lambda: proje_yonetimi_penceresi(kullanici_rolu=kullanici_rolu),
+            "command": lambda: proje_yonetimi_penceresi(kullanici_rolu=kullanici_rolu),
             "row": 2,
             "column": 0
+        },
+        {
+            "icon": "🗂️",
+            "title": "Proje Yönetim Modülü",
+            "description": "Proje yönetimi süreçlerini takip etmek için hazırlanıyor.",
+            "command": lambda: None,
+            "button_text": "Yakında",
+            "coming_soon": True,
+            "row": 2,
+            "column": 1
         },
         {
             "icon": "📐",
@@ -2176,23 +2186,27 @@ def ana_menu_ac(kullanici_adi, kullanici_rolu, parent_root=None):
     
     pencere.bind("<Configure>", on_resize)
 
-    def create_outline_button(parent, text, command, width=None):
+    def create_outline_button(parent, text, command, width=None, enabled=True):
         button_kwargs = {
             "text": text,
             "font": ctk.CTkFont(family="Inter", size=12, weight="bold"),
-            "fg_color": "white",
-            "hover_color": "#d32f2f",
-            "text_color": "#d32f2f",
-            "border_color": "#d32f2f",
+            "fg_color": "white" if enabled else "#f5f5f5",
+            "hover_color": "#d32f2f" if enabled else "#f5f5f5",
+            "text_color": "#d32f2f" if enabled else "#999999",
+            "border_color": "#d32f2f" if enabled else "#d6d6d6",
             "border_width": 2,
             "command": command,
             "height": 36,
             "corner_radius": 12,
+            "state": "normal" if enabled else "disabled",
         }
         if width is not None:
             button_kwargs["width"] = width
 
         button = ctk.CTkButton(parent, **button_kwargs)
+
+        if not enabled:
+            return button
 
         def _enter(_event):
             button.configure(fg_color="#d32f2f", text_color="white")
@@ -2404,11 +2418,13 @@ def ana_menu_ac(kullanici_adi, kullanici_rolu, parent_root=None):
         else:
             action_frame = ctk.CTkFrame(body_frame, fg_color="transparent")
             action_frame.pack(side="bottom", fill="x", pady=(16, 0))
+            is_enabled = not module.get("coming_soon", False)
             link_button = create_outline_button(
                 action_frame,
-                "Modülü Aç →",
+                module.get("button_text", "Modülü Aç →"),
                 command=module["command"],
                 width=128,
+                enabled=is_enabled,
             )
             link_button.pack(anchor="e")
 
