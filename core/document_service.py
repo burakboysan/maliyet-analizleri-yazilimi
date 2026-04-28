@@ -24,6 +24,10 @@ ALLOWED_DOCUMENT_TYPES = {
 DOCUMENT_LANGUAGE_OPTIONS = {
     "tr": "Türkçe",
     "en": "İngilizce",
+    "de": "Almanca",
+    "fr": "Fransızca",
+    "es": "İspanyolca",
+    "it": "İtalyanca",
 }
 
 

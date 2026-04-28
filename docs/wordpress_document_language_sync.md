@@ -6,19 +6,23 @@ Doküman linkleri web sitesinde otomatik güncellenecekse eşleştirme anahtarı
 
 - `series_key`: Ürün serisi, örnek `VERTY`
 - `document_type`: `brosur`, `teknik_foy`, `kullanim_kilavuzu`
-- `language`: `tr` veya `en`
+- `language`: `tr`, `en`, `de`, `fr`, `es` veya `it`
 - `title`
 - `description`
 - `file_url`
 - `updated_at`
 
-WordPress İngilizce sayfaları yalnızca `language=en`, Türkçe sayfaları yalnızca `language=tr` kayıtlarını çekmelidir.
+WordPress sayfaları kendi diline karşılık gelen kaydı çekmelidir. Örneğin Türkçe sayfalar `language=tr`, İngilizce sayfalar `language=en`, Almanca sayfalar `language=de`, Fransızca sayfalar `language=fr`, İspanyolca sayfalar `language=es`, İtalyanca sayfalar `language=it` kullanmalıdır.
 
 Örnek API çağrıları:
 
 ```text
 GET /documents?series_key=VERTY&type=brosur&language=tr
 GET /documents?series_key=VERTY&type=brosur&language=en
+GET /documents?series_key=VERTY&type=brosur&language=de
+GET /documents?series_key=VERTY&type=brosur&language=fr
+GET /documents?series_key=VERTY&type=brosur&language=es
+GET /documents?series_key=VERTY&type=brosur&language=it
 ```
 
 Upload endpoint'i de aynı alanı kabul etmelidir:
@@ -43,4 +47,4 @@ CREATE INDEX idx_documents_lookup_language
 ON documents (series_key, document_type, language);
 ```
 
-WordPress tarafında kısa kod veya özel endpoint kullanılıyorsa, her sorguda `language` parametresi zorunlu kabul edilmelidir. Böylece İngilizce web sayfasına Türkçe broşür, Türkçe web sayfasına da İngilizce doküman bağlanmaz.
+WordPress tarafında kısa kod veya özel endpoint kullanılıyorsa, her sorguda `language` parametresi zorunlu kabul edilmelidir. Böylece bir dildeki web sayfasına başka dildeki doküman bağlanmaz.

@@ -49,13 +49,21 @@ def patch_documents_route() -> None:
     content = path.read_text(encoding="utf-8")
     original = content
 
+    language_set = 'ALLOWED_DOCUMENT_LANGUAGES = {"tr", "en", "de", "fr", "es", "it"}'
     if "ALLOWED_DOCUMENT_LANGUAGES" not in content:
         content = replace_once(
             content,
             "ALLOWED_DOCUMENT_TYPES = {\"brosur\", \"teknik_foy\", \"kullanim_kilavuzu\"}\n",
             "ALLOWED_DOCUMENT_TYPES = {\"brosur\", \"teknik_foy\", \"kullanim_kilavuzu\"}\n"
-            "ALLOWED_DOCUMENT_LANGUAGES = {\"tr\", \"en\"}\n",
+            f"{language_set}\n",
             "allowed document languages",
+        )
+    elif language_set not in content:
+        content = replace_once(
+            content,
+            'ALLOWED_DOCUMENT_LANGUAGES = {"tr", "en"}',
+            language_set,
+            "allowed document languages update",
         )
 
     if "    language: str = Field(default=\"tr\", min_length=2, max_length=5)\n" not in content:
