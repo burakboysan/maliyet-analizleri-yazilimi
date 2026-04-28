@@ -231,7 +231,7 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
         font=ctk.CTkFont(size=18, weight="bold"),
         text_color=TEXT_COLOR,
     ).grid(row=0, column=0, sticky="w", padx=18, pady=(18, 10))
-    pending_rows = ctk.CTkScrollableFrame(manager_panel, fg_color="transparent")
+    pending_rows = ctk.CTkFrame(manager_panel, fg_color="transparent")
     pending_rows.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 12))
 
     manager_actions = ctk.CTkFrame(manager_panel, fg_color="transparent")
@@ -261,7 +261,7 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
     ctk.CTkLabel(my_panel, textvariable=my_requests_title, font=ctk.CTkFont(size=18, weight="bold"), text_color=TEXT_COLOR).grid(
         row=0, column=0, sticky="w", padx=18, pady=(18, 10)
     )
-    my_rows = ctk.CTkScrollableFrame(my_panel, fg_color="transparent", height=180)
+    my_rows = ctk.CTkFrame(my_panel, fg_color="transparent")
     my_rows.grid(row=1, column=0, sticky="ew", padx=14, pady=(0, 14))
     my_actions = ctk.CTkFrame(my_panel, fg_color="transparent")
     my_actions.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
@@ -590,13 +590,14 @@ def _metric_card(parent, column, label, variable, color):
 def _render_requests(parent, rows, selectable, selected_pending, show_user=False):
     for child in parent.winfo_children():
         child.destroy()
+    parent.grid_columnconfigure(0, weight=1)
     if not rows:
         empty = ctk.CTkFrame(parent, fg_color=PANEL_BG, corner_radius=6, border_width=1, border_color=SOFT_BORDER_COLOR)
-        empty.pack(fill="x", pady=(0, 6))
+        empty.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         ctk.CTkLabel(empty, text="Kayıt bulunmuyor.", text_color=MUTED_TEXT_COLOR).pack(anchor="w", padx=10, pady=10)
         return
     headers = ctk.CTkFrame(parent, fg_color="#f1f5f9", corner_radius=6)
-    headers.pack(fill="x", pady=(0, 6))
+    headers.grid(row=0, column=0, sticky="ew", pady=(0, 6))
     headers_list = ["Tarih", "Gün", "Tip", "Durum"]
     if show_user:
         headers_list.insert(0, "Çalışan")
@@ -608,7 +609,7 @@ def _render_requests(parent, rows, selectable, selected_pending, show_user=False
     for index, item in enumerate(rows):
         bg = "#fff7ed" if selectable and selected_pending.get("item", {}).get("id") == item.get("id") else ("#ffffff" if index % 2 == 0 else SURFACE_BG)
         row = ctk.CTkFrame(parent, fg_color=bg, corner_radius=6, border_width=1, border_color=SOFT_BORDER_COLOR)
-        row.pack(fill="x", pady=(0, 6))
+        row.grid(row=index + 1, column=0, sticky="ew", pady=(0, 6))
         if selectable:
             row.bind("<Button-1>", lambda _event, request=item: selected_pending.update({"item": request}))
         values = [
