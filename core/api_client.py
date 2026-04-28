@@ -456,7 +456,7 @@ def analyze_ai_lead(token, lead_id):
 
 
 def deep_research_ai_lead(token, lead_id):
-    return request_json("POST", f"/desktop/ai-leads/{int(lead_id)}/deep-research", headers=auth_headers(token)) or {}
+    return request_json("POST", f"/desktop/ai-leads/{int(lead_id)}/deep-research", headers=auth_headers(token), timeout=120) or {}
 
 
 def update_ai_lead_segment(token, lead_id, payload):

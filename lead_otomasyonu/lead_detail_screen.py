@@ -150,6 +150,24 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     actions = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
     actions.grid(row=2, column=0, sticky="ew", pady=(12, 0))
     actions.grid_columnconfigure(0, weight=1)
+    action_buttons = ctk.CTkFrame(actions, fg_color="transparent")
+    action_buttons.pack(fill="x")
+    progress_frame = ctk.CTkFrame(actions, fg_color="transparent")
+    progress_frame.pack(fill="x", padx=12, pady=(0, 10))
+    research_progress = ctk.CTkProgressBar(progress_frame, mode="indeterminate")
+    research_progress.pack(fill="x", padx=4, pady=(2, 4))
+    research_progress.set(0)
+    research_status_var = ctk.StringVar(value="")
+    research_status_label = ctk.CTkLabel(progress_frame, textvariable=research_status_var, text_color="#64748b")
+    research_status_label.pack(anchor="w", padx=4)
+    progress_frame.pack_forget()
+    research_state = {"running": False, "message_index": 0}
+    research_messages = [
+        "AI araştırıyor, web sitesi kapıları çalınıyor...",
+        "About us ve ürün sayfaları koklanıyor...",
+        "Firma adı ve faaliyet sinyalleri ayıklanıyor...",
+        "OpenAI notları toparlıyor, birazdan dökülecek...",
+    ]
 
     def detail():
         return state["detail"]
@@ -371,6 +389,28 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         if not token:
             messagebox.showerror("AI Araştır", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
             return
+        research_state["running"] = True
+        research_state["message_index"] = 0
+        progress_frame.pack(fill="x", padx=12, pady=(0, 10))
+        research_progress.start()
+        research_status_var.set(research_messages[0])
+        research_button.configure(state="disabled", text="Araştırılıyor...")
+
+        def tick_research_progress():
+            if not research_state["running"]:
+                return
+            research_status_var.set(research_messages[research_state["message_index"] % len(research_messages)])
+            research_state["message_index"] += 1
+            win.after(1600, tick_research_progress)
+
+        def finish_research_progress():
+            research_state["running"] = False
+            research_progress.stop()
+            progress_frame.pack_forget()
+            research_status_var.set("")
+            research_button.configure(state="normal", text="AI Araştır")
+
+        tick_research_progress()
 
         def worker():
             try:
@@ -384,13 +424,16 @@ def lead_detay_ekrani(parent, lead, on_update=None):
                 state["detail"]["research_summary"] = research.get("company_overview") or ""
                 state["detail"]["last_action"] = "AI firma araştırması tamamlandı."
                 lead.update(state["detail"])
+                win.after(0, finish_research_progress)
                 win.after(0, render_all)
                 if on_update:
                     win.after(0, on_update)
                 win.after(0, lambda: messagebox.showinfo("AI Araştır", "Firma araştırması tamamlandı.", parent=win))
             except ApiClientError as exc:
+                win.after(0, finish_research_progress)
                 win.after(0, lambda err=str(exc): messagebox.showerror("AI Araştır", err, parent=win))
             except Exception as exc:
+                win.after(0, finish_research_progress)
                 win.after(0, lambda err=str(exc): messagebox.showerror("AI Araştır", f"Araştırma tamamlanamadı: {err}", parent=win))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -470,12 +513,13 @@ def lead_detay_ekrani(parent, lead, on_update=None):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    _ghost_button(actions, "Detayı Yenile", lambda: refresh_detail(show_message=True), "#2563eb").pack(side="left", padx=10, pady=12)
-    _ghost_button(actions, "AI Araştır", run_research, "#7c3aed").pack(side="left", padx=8, pady=12)
-    _primary_button(actions, "Sekans Oluştur", create_sequence, "#0f766e").pack(side="left", padx=8, pady=12)
-    _ghost_button(actions, "Segmenti Kaydet", save_segment, "#7c3aed").pack(side="left", padx=8, pady=12)
-    _ghost_button(actions, "Durumu Kaydet", save_status, "#334155").pack(side="right", padx=8, pady=12)
-    _ghost_button(actions, "Kapat", win.destroy, "#64748b").pack(side="right", padx=10, pady=12)
+    _ghost_button(action_buttons, "Detayı Yenile", lambda: refresh_detail(show_message=True), "#2563eb").pack(side="left", padx=10, pady=12)
+    research_button = _ghost_button(action_buttons, "AI Araştır", run_research, "#7c3aed")
+    research_button.pack(side="left", padx=8, pady=12)
+    _primary_button(action_buttons, "Sekans Oluştur", create_sequence, "#0f766e").pack(side="left", padx=8, pady=12)
+    _ghost_button(action_buttons, "Segmenti Kaydet", save_segment, "#7c3aed").pack(side="left", padx=8, pady=12)
+    _ghost_button(action_buttons, "Durumu Kaydet", save_status, "#334155").pack(side="right", padx=8, pady=12)
+    _ghost_button(action_buttons, "Kapat", win.destroy, "#64748b").pack(side="right", padx=10, pady=12)
 
     render_all()
     refresh_detail(show_message=False)
