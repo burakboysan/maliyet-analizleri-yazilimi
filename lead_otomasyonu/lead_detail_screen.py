@@ -576,14 +576,8 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         if not token:
             messagebox.showerror("Segment", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
             return
-        sales_channel = segment_sales_channel_var.get().strip()
-        product_category = segment_product_var.get().strip()
-        payload = {
-            "sales_channel": sales_channel,
-            "product_category": product_category,
-            "priority": segment_priority_var.get().strip() or priority_for_segment(product_category, sales_channel),
-            "country": country_var.get().strip(),
-        }
+
+        payload = current_segment_payload()
 
         def worker():
             try:
@@ -600,14 +594,26 @@ def lead_detay_ekrani(parent, lead, on_update=None):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def current_segment_payload():
+        sales_channel = segment_sales_channel_var.get().strip()
+        product_category = segment_product_var.get().strip()
+        return {
+            "sales_channel": sales_channel,
+            "product_category": product_category,
+            "priority": segment_priority_var.get().strip() or priority_for_segment(product_category, sales_channel),
+            "country": country_var.get().strip(),
+        }
+
     def save_status():
         token = get_app_token()
         if not token:
             messagebox.showerror("Durum", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
             return
+        payload = current_segment_payload()
 
         def worker():
             try:
+                update_ai_lead_segment(token, lead.get("id"), payload)
                 update_ai_lead_status(token, lead.get("id"), status_var.get(), status_note_var.get())
                 response = get_ai_lead_detail(token, lead.get("id"))
                 state["detail"] = response
@@ -615,7 +621,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
                 win.after(0, render_all)
                 if on_update:
                     win.after(0, on_update)
-                win.after(0, lambda: messagebox.showinfo("Durum", "Lead durumu kaydedildi.", parent=win))
+                win.after(0, lambda: messagebox.showinfo("Durum", "Lead durumu, ülke ve öncelik kaydedildi.", parent=win))
             except Exception as exc:
                 win.after(0, lambda err=str(exc): messagebox.showerror("Durum", f"Durum kaydedilemedi: {err}", parent=win))
 
