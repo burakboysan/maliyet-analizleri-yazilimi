@@ -3,16 +3,16 @@ from tkinter import messagebox, ttk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, list_ai_search_recipes, update_ai_search_recipe
+from core.api_client import ApiClientError, create_ai_search_recipe, list_ai_search_recipes, update_ai_search_recipe
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
-from lead_otomasyonu.strategy_constants import PRIORITY_OPTIONS, PRODUCT_CATEGORIES, SALES_CHANNELS, build_segment_name
+from lead_otomasyonu.strategy_constants import PRIORITY_OPTIONS, PRODUCT_CATEGORIES, SALES_CHANNELS, TARGET_COUNTRIES, build_segment_name
 
 
 def segment_ayarlari_ekrani(parent=None, on_update=None):
     win = ctk.CTkToplevel(parent) if parent else ctk.CTkToplevel()
     win.title("Segment Ayarları")
-    win.geometry("1180x760")
+    win.geometry("1240x820")
     win.minsize(1040, 680)
     win.configure(fg_color="#f5f5f5")
     win.transient(parent)
@@ -23,7 +23,7 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
     except Exception:
         pass
 
-    state = {"recipes": [], "selected_id": None}
+    state = {"recipes": [], "selected_id": None, "new_mode": False}
 
     root = ctk.CTkFrame(win, fg_color="transparent")
     root.pack(fill="both", expand=True, padx=18, pady=18)
@@ -61,15 +61,17 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
     tree_wrap.grid_columnconfigure(0, weight=1)
 
     y_scroll = ttk.Scrollbar(tree_wrap, orient="vertical")
-    columns = ("segment_name", "priority", "is_active")
+    columns = ("segment_name", "priority", "target_countries", "is_active")
     tree = ttk.Treeview(tree_wrap, columns=columns, show="headings", yscrollcommand=y_scroll.set, selectmode="browse")
     y_scroll.config(command=tree.yview)
     apply_bomaksan_table_style(tree)
     tree.heading("segment_name", text="Segment")
     tree.heading("priority", text="Öncelik")
+    tree.heading("target_countries", text="Ülke")
     tree.heading("is_active", text="Aktif")
     tree.column("segment_name", width=300, minwidth=220, anchor="w")
     tree.column("priority", width=90, minwidth=80, anchor="w")
+    tree.column("target_countries", width=120, minwidth=90, anchor="w")
     tree.column("is_active", width=60, minwidth=55, anchor="center")
     tree.grid(row=0, column=0, sticky="nsew")
     y_scroll.grid(row=0, column=1, sticky="ns")
@@ -81,6 +83,7 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
     editor.grid_rowconfigure(4, weight=1)
     editor.grid_rowconfigure(6, weight=1)
     editor.grid_rowconfigure(8, weight=1)
+    editor.grid_rowconfigure(10, weight=1)
 
     vars_ = {
         "segment_name": ctk.StringVar(),
@@ -97,15 +100,17 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
     _form_combo(editor, "Öncelik", vars_["priority"], PRIORITY_OPTIONS, 2, 0)
     ctk.CTkCheckBox(editor, text="Aktif", variable=vars_["is_active"], text_color="#334155").grid(row=2, column=2, columnspan=2, sticky="w", padx=14, pady=8)
 
-    textboxes["target_definition"] = _textbox(editor, "Hedef Segment Tanımı", 3, 0, height=88)
-    textboxes["targeting_notes"] = _textbox(editor, "Hedefleme Notları", 3, 2, height=88)
-    textboxes["company_keywords"] = _textbox(editor, "Apollo Firma Keywordleri", 5, 0, height=120)
-    textboxes["person_titles"] = _textbox(editor, "Hedef Ünvanlar", 5, 2, height=120)
-    textboxes["positive_signals"] = _textbox(editor, "Pozitif Sinyaller", 7, 0, height=120)
-    textboxes["negative_signals"] = _textbox(editor, "Negatif Sinyaller", 7, 2, height=120)
+    textboxes["target_countries"] = _textbox(editor, "Hedef Ülkeler", 3, 0, height=82)
+    textboxes["excluded_countries"] = _textbox(editor, "Hariç Ülkeler", 3, 2, height=82)
+    textboxes["target_definition"] = _textbox(editor, "Hedef Segment Tanımı", 5, 0, height=88)
+    textboxes["targeting_notes"] = _textbox(editor, "Hedefleme Notları", 5, 2, height=88)
+    textboxes["company_keywords"] = _textbox(editor, "Apollo Firma Keywordleri", 7, 0, height=110)
+    textboxes["person_titles"] = _textbox(editor, "Hedef Ünvanlar", 7, 2, height=110)
+    textboxes["positive_signals"] = _textbox(editor, "Pozitif Sinyaller", 9, 0, height=110)
+    textboxes["negative_signals"] = _textbox(editor, "Negatif Sinyaller", 9, 2, height=110)
 
     button_bar = ctk.CTkFrame(editor, fg_color="transparent")
-    button_bar.grid(row=9, column=0, columnspan=4, sticky="ew", padx=14, pady=(8, 14))
+    button_bar.grid(row=11, column=0, columnspan=4, sticky="ew", padx=14, pady=(8, 14))
     button_bar.grid_columnconfigure(0, weight=1)
 
     def set_text(key, value):
@@ -134,6 +139,7 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
 
     def fill_form(recipe):
         state["selected_id"] = recipe.get("id")
+        state["new_mode"] = False
         vars_["segment_name"].set(recipe.get("segment_name") or "")
         vars_["sales_channel"].set(recipe.get("sales_channel") or SALES_CHANNELS[0])
         vars_["product_category"].set(recipe.get("product_category") or PRODUCT_CATEGORIES[0])
@@ -155,6 +161,7 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
                 values=(
                     recipe.get("segment_name") or "",
                     recipe.get("priority") or "",
+                    ", ".join((recipe.get("target_countries") or [])[:2]) + ("..." if len(recipe.get("target_countries") or []) > 2 else ""),
                     "Evet" if recipe.get("is_active") else "Hayır",
                 ),
             )
@@ -189,7 +196,7 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
         if not token:
             messagebox.showerror("Segment Ayarları", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
             return
-        if not recipe:
+        if not recipe and not state["new_mode"]:
             messagebox.showwarning("Segment Ayarları", "Lütfen düzenlenecek segmenti seçin.", parent=win)
             return
 
@@ -201,6 +208,8 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
             "sales_channel": sales_channel,
             "product_category": product_category,
             "priority": vars_["priority"].get().strip(),
+            "target_countries": get_lines("target_countries"),
+            "excluded_countries": get_lines("excluded_countries"),
             "target_definition": get_text("target_definition"),
             "targeting_notes": get_text("targeting_notes"),
             "company_keywords": get_lines("company_keywords"),
@@ -212,11 +221,16 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
 
         def worker():
             try:
-                updated = update_ai_search_recipe(token, recipe.get("id"), payload)
-                for index, item in enumerate(state["recipes"]):
-                    if str(item.get("id")) == str(updated.get("id")):
-                        state["recipes"][index] = updated
-                        break
+                if state["new_mode"]:
+                    updated = create_ai_search_recipe(token, payload)
+                    state["recipes"].append(updated)
+                else:
+                    updated = update_ai_search_recipe(token, recipe.get("id"), payload)
+                    for index, item in enumerate(state["recipes"]):
+                        if str(item.get("id")) == str(updated.get("id")):
+                            state["recipes"][index] = updated
+                            break
+                state["new_mode"] = False
                 win.after(0, render)
                 win.after(0, lambda item=updated: (tree.selection_set(str(item.get("id"))), tree.focus(str(item.get("id"))), fill_form(item)))
                 win.after(0, lambda: status_var.set("Segment ayarları kaydedildi."))
@@ -237,6 +251,32 @@ def segment_ayarlari_ekrani(parent=None, on_update=None):
     def rebuild_name():
         vars_["segment_name"].set(build_segment_name(vars_["product_category"].get(), vars_["sales_channel"].get()))
 
+    def new_recipe():
+        state["selected_id"] = None
+        state["new_mode"] = True
+        selection = tree.selection()
+        if selection:
+            tree.selection_remove(selection)
+        vars_["sales_channel"].set("White Label / Resellers")
+        vars_["product_category"].set("Dust Collection")
+        vars_["priority"].set("High")
+        vars_["is_active"].set(True)
+        vars_["segment_name"].set(build_segment_name("Dust Collection", "White Label / Resellers"))
+        defaults = {
+            "target_countries": TARGET_COUNTRIES,
+            "excluded_countries": ["United Kingdom", "Poland"],
+            "target_definition": "",
+            "targeting_notes": "",
+            "company_keywords": [],
+            "person_titles": ["Managing Director", "General Manager", "Business Development Manager", "Sales Manager", "Technical Sales Manager"],
+            "positive_signals": [],
+            "negative_signals": [],
+        }
+        for key, value in defaults.items():
+            set_text(key, value)
+        status_var.set("Yeni segment reçetesi hazırlanıyor. Kaydettiğinizde Apollo Search listesine eklenir.")
+
+    ctk.CTkButton(button_bar, text="Yeni Reçete", width=130, command=new_recipe, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").grid(row=0, column=0, padx=(0, 8), sticky="w")
     ctk.CTkButton(button_bar, text="Segment Adını Yenile", width=150, command=rebuild_name, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").grid(row=0, column=1, padx=8, sticky="e")
     ctk.CTkButton(button_bar, text="Kaydet", width=120, command=save_recipe, fg_color="#d32f2f", hover_color="#b91c1c").grid(row=0, column=2, padx=(8, 0), sticky="e")
 

@@ -362,6 +362,15 @@ def list_ai_search_recipes(token):
     return response or []
 
 
+def create_ai_search_recipe(token, payload):
+    return request_json(
+        "POST",
+        "/desktop/ai-leads/search-recipes",
+        payload=payload,
+        headers=auth_headers(token),
+    ) or {}
+
+
 def update_ai_search_recipe(token, recipe_id, payload):
     return request_json(
         "PUT",
