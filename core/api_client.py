@@ -413,6 +413,10 @@ def analyze_ai_lead(token, lead_id):
     return request_json("POST", f"/desktop/ai-leads/{int(lead_id)}/analyze", headers=auth_headers(token))
 
 
+def deep_research_ai_lead(token, lead_id):
+    return request_json("POST", f"/desktop/ai-leads/{int(lead_id)}/deep-research", headers=auth_headers(token)) or {}
+
+
 def update_ai_lead_segment(token, lead_id, payload):
     return request_json("PUT", f"/desktop/ai-leads/{int(lead_id)}/segment", payload=payload, headers=auth_headers(token))
 

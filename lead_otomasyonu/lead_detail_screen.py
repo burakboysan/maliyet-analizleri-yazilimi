@@ -3,7 +3,7 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, approve_ai_email_draft, generate_ai_email_sequence, get_ai_lead_detail
+from core.api_client import ApiClientError, approve_ai_email_draft, deep_research_ai_lead, generate_ai_email_sequence, get_ai_lead_detail
 from core.session import get_app_token
 
 
@@ -81,9 +81,40 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     angle.insert("1.0", lead.get("personalization_angle") or "Henüz kişiselleştirme açısı yok.")
     angle.configure(state="disabled")
 
+    _section_title(right, "Firma Araştırması")
+    research_box = ctk.CTkTextbox(right, height=180, fg_color="#fafafa", text_color="#212121")
+    research_box.pack(fill="x", padx=18, pady=(4, 12))
+
     _section_title(right, "Email Sekansı")
-    drafts_box = ctk.CTkTextbox(right, height=180, fg_color="#fafafa", text_color="#212121")
+    drafts_box = ctk.CTkTextbox(right, height=150, fg_color="#fafafa", text_color="#212121")
     drafts_box.pack(fill="both", expand=True, padx=18, pady=(4, 12))
+
+    def render_research(research=None):
+        if research is None:
+            research_items = state["detail"].get("research") or []
+            research = research_items[0] if research_items else None
+        research_box.configure(state="normal")
+        research_box.delete("1.0", "end")
+        if not research:
+            research_box.insert("1.0", "Henüz firma araştırması yapılmadı.")
+        else:
+            lines = [
+                f"Durum: {research.get('status') or '-'}",
+                "",
+                f"Firma: {research.get('company_overview') or '-'}",
+                f"Ürün / Çözüm: {research.get('products_services') or '-'}",
+                f"Partner Fit: {research.get('partner_fit_reason') or '-'}",
+                f"Bomaksan Eşleşmesi: {research.get('bomaksan_match') or '-'}",
+                f"Sinyaller: {research.get('detected_signals') or '-'}",
+                f"Sektörler: {research.get('served_industries') or '-'}",
+                f"Email Açısı: {research.get('personalization_angle') or '-'}",
+                f"Risk: {research.get('risk_notes') or '-'}",
+                "",
+                "Kaynaklar:",
+            ]
+            lines.extend(f"- {link}" for link in (research.get("source_links") or []))
+            research_box.insert("1.0", "\n".join(lines).strip())
+        research_box.configure(state="disabled")
 
     def render_drafts(drafts=None):
         if drafts is not None:
@@ -103,6 +134,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         drafts_box.configure(state="disabled")
 
     render_drafts()
+    render_research()
 
     actions = ctk.CTkFrame(root, fg_color="transparent")
     actions.grid(row=2, column=0, columnspan=2, sticky="e", pady=(16, 0))
@@ -119,12 +151,38 @@ def lead_detay_ekrani(parent, lead, on_update=None):
                 state["detail"] = detail
                 lead.update(detail)
                 win.after(0, lambda: render_drafts(detail.get("email_drafts") or []))
+                win.after(0, lambda: render_research())
                 if show_message:
                     win.after(0, lambda: messagebox.showinfo("Email Sekansı", "Taslaklar güncellendi.", parent=win))
                 if on_update:
                     win.after(0, on_update)
             except Exception as exc:
                 win.after(0, lambda err=str(exc): messagebox.showerror("Email Sekansı", f"Taslaklar alınamadı: {err}", parent=win))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def run_research():
+        token = get_app_token()
+        if not token:
+            messagebox.showerror("AI Araştır", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+
+        def worker():
+            try:
+                result = deep_research_ai_lead(token, lead.get("id"))
+                research = result.get("research") or {}
+                lead["research_status"] = research.get("status") or "Completed"
+                lead["research_summary"] = research.get("company_overview") or ""
+                lead["last_action"] = "AI firma araştırması tamamlandı."
+                state["detail"]["research"] = [research]
+                win.after(0, lambda: render_research(research))
+                if on_update:
+                    win.after(0, on_update)
+                win.after(0, lambda: messagebox.showinfo("AI Araştır", "Firma araştırması tamamlandı.", parent=win))
+            except ApiClientError as exc:
+                win.after(0, lambda err=str(exc): messagebox.showerror("AI Araştır", err, parent=win))
+            except Exception as exc:
+                win.after(0, lambda err=str(exc): messagebox.showerror("AI Araştır", f"Araştırma tamamlanamadı: {err}", parent=win))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -204,6 +262,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         messagebox.showinfo("Lead Otomasyonu", "Lead hariç tutuldu.", parent=win)
 
     _action_button(actions, "Sekans Oluştur", create_sequence, "#0f766e").pack(side="left", padx=(0, 8))
+    _action_button(actions, "AI Araştır", run_research, "#7c3aed").pack(side="left", padx=8)
     _action_button(actions, "Taslakları Yenile", lambda: refresh_detail(show_message=True), "#2563eb").pack(side="left", padx=8)
     _action_button(actions, "Taslakları Onayla", approve_drafts, "#15803d").pack(side="left", padx=8)
     _action_button(actions, "Review'a Al", mark_review, "#b45309").pack(side="left", padx=8)

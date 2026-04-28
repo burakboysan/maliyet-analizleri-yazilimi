@@ -4,7 +4,7 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, delete_ai_lead, enrich_ai_lead_from_apollo, generate_ai_email_sequence, list_ai_leads, list_ai_search_recipes, search_apollo_ai_leads, search_apollo_segment_leads
+from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, generate_ai_email_sequence, list_ai_leads, list_ai_search_recipes, search_apollo_ai_leads, search_apollo_segment_leads
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
@@ -142,6 +142,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "priority",
         "ai_score",
         "suggested_sequence",
+        "research_status",
         "draft_count",
         "ai_status",
         "approval_status",
@@ -172,6 +173,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "priority": "Öncelik",
         "ai_score": "AI Skor",
         "suggested_sequence": "Sekans",
+        "research_status": "Araştırma",
         "draft_count": "Taslak",
         "ai_status": "AI Durumu",
         "approval_status": "Onay",
@@ -190,6 +192,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "priority": 110,
         "ai_score": 80,
         "suggested_sequence": 110,
+        "research_status": 120,
         "draft_count": 80,
         "ai_status": 150,
         "approval_status": 150,
@@ -631,6 +634,41 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def research_selected():
+        token = get_app_token()
+        leads = selected_leads()
+        if not token:
+            messagebox.showerror("AI Araştır", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+        if not leads:
+            messagebox.showwarning("AI Araştır", "Lütfen araştırılacak leadleri seçin.", parent=win)
+            return
+
+        def worker():
+            completed = 0
+            failed = 0
+            last_error = ""
+            for lead in leads:
+                try:
+                    result = deep_research_ai_lead(token, lead.get("id"))
+                    research = result.get("research") or {}
+                    lead["research_status"] = research.get("status") or "Completed"
+                    lead["research_summary"] = research.get("company_overview") or ""
+                    lead["last_action"] = "AI firma araştırması tamamlandı."
+                    completed += 1
+                except Exception as exc:
+                    failed += 1
+                    last_error = str(exc)
+            win.after(0, apply_filters)
+            message = f"{completed} lead için AI araştırma tamamlandı."
+            if failed:
+                message += f" {failed} lead araştırılamadı."
+                if last_error:
+                    message += f"\n\nSon hata: {last_error}"
+            win.after(0, lambda msg=message: messagebox.showinfo("AI Araştır", msg, parent=win))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def delete_selected_lead():
         token = get_app_token()
         leads = selected_leads()
@@ -676,6 +714,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     ctk.CTkButton(actions, text="Segmentten Lead Bul", width=165, command=segment_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Apollo Search", width=130, command=apollo_search, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Email Enrich", width=120, command=enrich_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left", padx=8)
+    ctk.CTkButton(actions, text="AI Araştır", width=115, command=research_selected, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Sekans Oluştur", width=145, command=create_sequence_for_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Sil", width=90, command=delete_selected_lead, fg_color="#ffffff", text_color="#dc2626", border_width=1, border_color="#dc2626").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Manuel Lead", width=130, command=add_manual_lead, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=(8, 0))

@@ -1,5 +1,7 @@
 import json
 import os
+import re
+from html import unescape
 from typing import Any, List, Optional
 from urllib import error, parse, request
 
@@ -608,6 +610,28 @@ def _ensure_tables(db: Session) -> None:
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         """,
         """
+        CREATE TABLE IF NOT EXISTS ai_lead_research (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            lead_id INT NOT NULL,
+            status VARCHAR(50) DEFAULT 'Completed',
+            company_overview TEXT,
+            products_services TEXT,
+            partner_fit_reason TEXT,
+            bomaksan_match TEXT,
+            detected_signals TEXT,
+            served_industries TEXT,
+            personalization_angle TEXT,
+            risk_notes TEXT,
+            source_links JSON,
+            raw_summary_json JSON,
+            created_by_user_id INT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (lead_id) REFERENCES ai_leads(id) ON DELETE CASCADE,
+            INDEX idx_ai_lead_research_lead (lead_id),
+            INDEX idx_ai_lead_research_created (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """,
+        """
         CREATE TABLE IF NOT EXISTS ai_search_recipes (
             id INT AUTO_INCREMENT PRIMARY KEY,
             segment_name VARCHAR(255) NOT NULL,
@@ -658,6 +682,7 @@ def _ensure_tables(db: Session) -> None:
     _ensure_column(db, "ai_lead_contacts", "apollo_person_id", "VARCHAR(100)")
     _ensure_column(db, "ai_lead_contacts", "apollo_raw_json", "JSON")
     _ensure_column(db, "ai_segmentation_results", "suggested_sequence", "VARCHAR(100)")
+    _ensure_column(db, "ai_lead_research", "raw_summary_json", "JSON")
     _ensure_column(db, "ai_search_recipes", "target_definition", "TEXT")
     _ensure_column(db, "ai_search_recipes", "targeting_notes", "TEXT")
     db.commit()
@@ -840,8 +865,10 @@ def _latest_segmentation(db: Session, lead_id: int) -> dict[str, Any] | None:
 
 def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
     lead = _lead_row_to_dict(lead_row)
+    lead_id = int(lead["id"])
     segmentation = _latest_segmentation(db, int(lead["id"])) or {}
     contact = _primary_contact(db, int(lead["id"])) or {}
+    research = _latest_research(db, lead_id) or {}
     draft_count = db.execute(
         text("SELECT COUNT(*) FROM ai_email_drafts WHERE lead_id = :lead_id"),
         {"lead_id": lead["id"]},
@@ -864,6 +891,8 @@ def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
         "last_action": (_latest_action(db, int(lead["id"])) or {}).get("output_summary") or "",
         "short_reasoning": segmentation.get("short_reasoning") or "",
         "personalization_angle": segmentation.get("personalization_angle") or "",
+        "research_status": research.get("status") or "Not Researched",
+        "research_summary": research.get("company_overview") or "",
         "draft_count": draft_count,
     }
 
@@ -957,6 +986,180 @@ def _apollo_company_key(person: dict[str, Any]) -> str:
     if company_name:
         return f"name:{company_name.casefold()}"
     return _apollo_person_key(person)
+
+
+def _clean_html_text(html_value: str) -> str:
+    text_value = re.sub(r"(?is)<(script|style|noscript).*?>.*?</\1>", " ", html_value or "")
+    text_value = re.sub(r"(?is)<[^>]+>", " ", text_value)
+    text_value = unescape(text_value)
+    text_value = re.sub(r"\s+", " ", text_value).strip()
+    return text_value[:12000]
+
+
+def _ensure_url(value: str) -> str:
+    normalized = _normalize(value)
+    if not normalized:
+        return ""
+    if not normalized.startswith(("http://", "https://")):
+        normalized = f"https://{normalized}"
+    return normalized
+
+
+def _fetch_public_page(url: str) -> dict[str, str]:
+    final_url = _ensure_url(url)
+    if not final_url:
+        return {}
+    req = request.Request(
+        final_url,
+        headers={
+            "Accept": "text/html,application/xhtml+xml",
+            "User-Agent": "BomaksanLeadResearch/1.0",
+        },
+        method="GET",
+    )
+    try:
+        with request.urlopen(req, timeout=12) as response:
+            content_type = response.headers.get("Content-Type", "")
+            if "text/html" not in content_type and "application/xhtml" not in content_type:
+                return {}
+            raw = response.read(600000)
+            charset = response.headers.get_content_charset() or "utf-8"
+            html_value = raw.decode(charset, errors="ignore")
+            return {"url": response.geturl(), "text": _clean_html_text(html_value)}
+    except Exception:
+        return {}
+
+
+def _website_research_pages(website: str) -> list[dict[str, str]]:
+    base_url = _ensure_url(website)
+    if not base_url:
+        return []
+    parsed = parse.urlparse(base_url)
+    root = f"{parsed.scheme}://{parsed.netloc}"
+    candidates = [
+        root,
+        parse.urljoin(root, "/about"),
+        parse.urljoin(root, "/products"),
+        parse.urljoin(root, "/solutions"),
+        parse.urljoin(root, "/industries"),
+    ]
+    pages = []
+    seen = set()
+    for candidate in candidates:
+        page = _fetch_public_page(candidate)
+        url = page.get("url")
+        text_value = page.get("text")
+        if url and text_value and url not in seen:
+            seen.add(url)
+            pages.append(page)
+        if len(pages) >= 3:
+            break
+    return pages
+
+
+def _research_matches(text_value: str, keywords: list[str]) -> list[str]:
+    haystack = _casefold(text_value)
+    return _dedupe_strings([keyword for keyword in keywords if _casefold(keyword) in haystack])
+
+
+def _research_sentence(text_value: str, keywords: list[str], fallback: str) -> str:
+    sentences = re.split(r"(?<=[.!?])\s+", text_value)
+    keyword_keys = [_casefold(keyword) for keyword in keywords]
+    for sentence in sentences:
+        normalized = _normalize(sentence)
+        if 70 <= len(normalized) <= 280 and any(keyword in _casefold(normalized) for keyword in keyword_keys):
+            return normalized
+    return fallback
+
+
+def _build_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pages: list[dict[str, str]]) -> dict[str, Any]:
+    all_text = " ".join(page.get("text") or "" for page in pages)
+    company_name = _normalize(lead.get("company_name"))
+    product_category = _normalize(segmentation.get("product_category"))
+    sales_channel = _normalize(segmentation.get("sales_channel"))
+
+    signal_keywords = [
+        "distributor",
+        "reseller",
+        "dealer",
+        "system integrator",
+        "integrator",
+        "industrial hvac",
+        "hvac",
+        "ventilation",
+        "welding",
+        "fume extraction",
+        "filtration",
+        "dust collection",
+        "dust collector",
+        "cnc",
+        "machine tool",
+        "oil mist",
+        "turnkey",
+        "automation",
+        "process engineering",
+    ]
+    industry_keywords = [
+        "automotive",
+        "metalworking",
+        "welding",
+        "foundry",
+        "food",
+        "pharma",
+        "battery",
+        "mining",
+        "cement",
+        "woodworking",
+        "plastics",
+        "machining",
+        "aerospace",
+    ]
+    risk_keywords = ["residential", "home hvac", "consumer", "air purifier", "competitor", "manufacturer of dust collectors"]
+    detected_signals = _research_matches(all_text, signal_keywords)
+    industries = _research_matches(all_text, industry_keywords)
+    risks = _research_matches(all_text, risk_keywords)
+
+    overview = _research_sentence(
+        all_text,
+        signal_keywords + industry_keywords,
+        f"{company_name} web sitesinden sınırlı bilgi alınabildi; faaliyet alanı Apollo/lead sinyalleriyle birlikte değerlendirilmelidir.",
+    )
+    products = _research_sentence(
+        all_text,
+        ["product", "solution", "service", "equipment", "system", "products", "solutions"],
+        "Web sitesinde ürün/çözüm bilgisi net yakalanamadı.",
+    )
+    partner_reason = (
+        f"{sales_channel or 'Partner'} profiline uygun sinyaller: {', '.join(detected_signals[:8])}."
+        if detected_signals
+        else "Web sitesinde net partner sinyali sınırlı; manuel kontrol önerilir."
+    )
+    bomaksan_match = (
+        f"Öncelikli eşleşme: {product_category}. Bu eşleşme segment reçetesi ve web sinyallerine göre oluşturuldu."
+        if product_category
+        else "Bomaksan ürün/hizmet eşleşmesi için segmentasyon bilgisinin tamamlanması gerekir."
+    )
+    personalization = (
+        f"{company_name} için {', '.join(detected_signals[:3])} odağında kısa ve teknik bir açılış kullanılabilir."
+        if detected_signals
+        else f"{company_name} için firma faaliyet alanına referans veren kısa bir keşif emaili kullanılabilir."
+    )
+    risk_notes = (
+        f"Kontrol edilmesi gereken risk sinyalleri: {', '.join(risks)}."
+        if risks
+        else "Belirgin risk sinyali yakalanmadı; yine de rakip/son kullanıcı ayrımı manuel kontrol edilebilir."
+    )
+    return {
+        "company_overview": overview,
+        "products_services": products,
+        "partner_fit_reason": partner_reason,
+        "bomaksan_match": bomaksan_match,
+        "detected_signals": ", ".join(detected_signals) or "Net sinyal yakalanamadı.",
+        "served_industries": ", ".join(industries) or "Web sitesinden net sektör listesi yakalanamadı.",
+        "personalization_angle": personalization,
+        "risk_notes": risk_notes,
+        "source_links": [page.get("url") for page in pages if page.get("url")],
+    }
 
 
 def _email_enrichment_note(person: dict[str, Any], email_value: str, email_status: str, attempted: bool = True) -> str:
@@ -1110,6 +1313,22 @@ def _latest_action(db: Session, lead_id: int) -> dict[str, Any] | None:
         {"lead_id": lead_id},
     ).first()
     return _lead_row_to_dict(row) if row else None
+
+
+def _latest_research(db: Session, lead_id: int) -> dict[str, Any] | None:
+    row = db.execute(
+        text("SELECT * FROM ai_lead_research WHERE lead_id = :lead_id ORDER BY id DESC LIMIT 1"),
+        {"lead_id": lead_id},
+    ).first()
+    if not row:
+        return None
+    research = _lead_row_to_dict(row)
+    research["source_links"] = _json_list(research.get("source_links"))
+    try:
+        research["raw_summary"] = json.loads(research.get("raw_summary_json") or "{}")
+    except Exception:
+        research["raw_summary"] = {}
+    return research
 
 
 def _search_recipe_response(row: Any) -> dict[str, Any]:
@@ -2207,10 +2426,73 @@ def get_ai_lead_detail(
     contacts = db.execute(text("SELECT * FROM ai_lead_contacts WHERE lead_id = :lead_id"), {"lead_id": lead_id}).all()
     drafts = db.execute(text("SELECT * FROM ai_email_drafts WHERE lead_id = :lead_id ORDER BY step_number"), {"lead_id": lead_id}).all()
     actions = db.execute(text("SELECT * FROM ai_actions WHERE lead_id = :lead_id ORDER BY id DESC LIMIT 50"), {"lead_id": lead_id}).all()
+    research = db.execute(text("SELECT * FROM ai_lead_research WHERE lead_id = :lead_id ORDER BY id DESC LIMIT 5"), {"lead_id": lead_id}).all()
     response["contacts"] = [_lead_row_to_dict(item) for item in contacts]
     response["email_drafts"] = [_lead_row_to_dict(item) for item in drafts]
     response["actions"] = [_lead_row_to_dict(item) for item in actions]
+    response["research"] = [_latest_research(db, lead_id)] if research else []
+    response["research_history"] = [_lead_row_to_dict(item) for item in research]
     return response
+
+
+@router.post("/ai-leads/{lead_id}/deep-research")
+def deep_research_ai_lead(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Lead bulunamadı.")
+    lead = _lead_row_to_dict(row)
+    segmentation = _latest_segmentation(db, lead_id) or {}
+    website = _normalize(lead.get("website"))
+    if not website:
+        raise HTTPException(status_code=400, detail="Araştırma için lead website bilgisi gerekli.")
+
+    pages = _website_research_pages(website)
+    if not pages:
+        raise HTTPException(status_code=404, detail="Firma web sitesinden araştırma verisi alınamadı.")
+    research = _build_lead_research(lead, segmentation, pages)
+    db.execute(
+        text(
+            """
+            INSERT INTO ai_lead_research (
+                lead_id, status, company_overview, products_services, partner_fit_reason,
+                bomaksan_match, detected_signals, served_industries, personalization_angle,
+                risk_notes, source_links, raw_summary_json, created_by_user_id
+            )
+            VALUES (
+                :lead_id, 'Completed', :company_overview, :products_services, :partner_fit_reason,
+                :bomaksan_match, :detected_signals, :served_industries, :personalization_angle,
+                :risk_notes, :source_links, :raw_summary_json, :user_id
+            )
+            """
+        ),
+        {
+            "lead_id": lead_id,
+            "company_overview": research["company_overview"],
+            "products_services": research["products_services"],
+            "partner_fit_reason": research["partner_fit_reason"],
+            "bomaksan_match": research["bomaksan_match"],
+            "detected_signals": research["detected_signals"],
+            "served_industries": research["served_industries"],
+            "personalization_angle": research["personalization_angle"],
+            "risk_notes": research["risk_notes"],
+            "source_links": json.dumps(research["source_links"], ensure_ascii=False),
+            "raw_summary_json": json.dumps(research, ensure_ascii=False),
+            "user_id": current_user.id,
+        },
+    )
+    db.execute(
+        text("UPDATE ai_leads SET status = 'Review Needed' WHERE id = :lead_id AND status IN ('New', 'Segmented', 'Awaiting Approval')"),
+        {"lead_id": lead_id},
+    )
+    _log_action(db, lead_id, "deep_research", "AI firma araştırması tamamlandı.", current_user.id)
+    db.commit()
+    latest = _latest_research(db, lead_id)
+    return {"research": latest, "lead": _lead_response(db, row)}
 
 
 @router.post("/ai-leads/{lead_id}/analyze")
