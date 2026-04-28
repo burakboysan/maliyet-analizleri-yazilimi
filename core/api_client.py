@@ -288,6 +288,10 @@ def create_leave_request(token, payload):
     return request_json("POST", "/leave/requests", payload=payload, headers=auth_headers(token))
 
 
+def cancel_leave_request(token, request_id):
+    return request_json("POST", f"/leave/requests/{int(request_id)}/cancel", headers=auth_headers(token))
+
+
 def approve_leave_request(token, request_id, payload):
     return request_json("POST", f"/leave/requests/{int(request_id)}/approve", payload=payload, headers=auth_headers(token))
 

@@ -12,6 +12,7 @@ except Exception:
 from core.api_client import (
     ApiClientError,
     approve_leave_request,
+    cancel_leave_request,
     create_leave_request,
     finalize_leave_request,
     get_leave_dashboard,
@@ -113,6 +114,7 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
     dashboard_state = {"data": {}}
     status_text = ctk.StringVar(value="İzin bilgileri yükleniyor...")
     workday_text = ctk.StringVar(value="Tarih aralığı seçin.")
+    selected_my_request = {"item": None}
     selected_pending = {"item": None}
 
     root = ctk.CTkScrollableFrame(
@@ -226,6 +228,11 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
     )
     my_rows = ctk.CTkScrollableFrame(my_panel, fg_color="transparent")
     my_rows.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
+    my_actions = ctk.CTkFrame(my_panel, fg_color="transparent")
+    my_actions.grid(row=2, column=0, sticky="ew", padx=18, pady=(0, 16))
+    my_actions.grid_columnconfigure(0, weight=1)
+    cancel_button = ctk.CTkButton(my_actions, text="Talebi İptal Et", height=38, fg_color=DANGER, hover_color=DANGER_HOVER)
+    cancel_button.grid(row=0, column=0, sticky="ew")
 
     manager_panel = _panel(root)
     manager_panel.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(14, 0))
@@ -327,7 +334,7 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
                     summary_vars["reserved"].set(_format_day(balance.get("reserved_days")))
                     summary_vars["used"].set(_format_day(balance.get("used_days")))
                     summary_vars["pending"].set(_format_day(balance.get("pending_approval_days")))
-                    _render_requests(my_rows, data.get("my_requests") or [], selectable=False, selected_pending=selected_pending)
+                    _render_requests(my_rows, data.get("my_requests") or [], selectable=True, selected_pending=selected_my_request)
                     manager_requests = data.get("manager_requests") or data.get("pending_manager_requests") or []
                     _render_requests(pending_rows, manager_requests, selectable=True, selected_pending=selected_pending, show_user=True)
                     status_text.set("İzin bilgileri güncel.")
@@ -346,6 +353,35 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
             messagebox.showwarning("Seçim Yok", "Lütfen yönetici talep listesinden bir kayıt seçin.", parent=win)
             return None
         return item
+
+    def require_selected_my_request():
+        item = selected_my_request.get("item")
+        if not item:
+            messagebox.showwarning("Seçim Yok", "Lütfen Taleplerim listesinden bir kayıt seçin.", parent=win)
+            return None
+        return item
+
+    def cancel_selected_request():
+        item = require_selected_my_request()
+        if not item:
+            return
+        if item.get("status") in {"REDDEDILDI", "TAMAMLANDI", "IPTAL_EDILDI"}:
+            messagebox.showwarning("İptal Edilemez", "Bu durumdaki izin talebi iptal edilemez.", parent=win)
+            return
+        if not messagebox.askyesno("İptal Onayı", "Seçili izin talebini iptal etmek istiyor musunuz?", parent=win):
+            return
+        cancel_button.configure(state="disabled", text="İptal ediliyor")
+
+        def worker():
+            try:
+                cancel_leave_request(token, item["id"])
+                ui_after(0, load_dashboard)
+            except Exception as exc:
+                ui_after(0, lambda message=str(exc): messagebox.showerror("Hata", message, parent=win))
+            finally:
+                ui_after(0, lambda: cancel_button.configure(state="normal", text="Talebi İptal Et"))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def approve_selected():
         item = require_selected_pending()
@@ -406,6 +442,7 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
     refresh_button.configure(command=load_dashboard)
     calc_button.configure(command=calculate_workdays)
     submit_button.configure(command=submit_request)
+    cancel_button.configure(command=cancel_selected_request)
     approve_button.configure(command=approve_selected)
     reject_button.configure(command=reject_selected)
     finalize_button.configure(command=finalize_selected)
