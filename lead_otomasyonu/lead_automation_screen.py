@@ -4,10 +4,11 @@ from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, delete_ai_lead, enrich_ai_lead_from_apollo, generate_ai_email_sequence, list_ai_leads, search_apollo_ai_leads, search_apollo_segment_leads
+from core.api_client import ApiClientError, delete_ai_lead, enrich_ai_lead_from_apollo, generate_ai_email_sequence, list_ai_leads, list_ai_search_recipes, search_apollo_ai_leads, search_apollo_segment_leads
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
+from lead_otomasyonu.segment_settings_screen import segment_ayarlari_ekrani
 from lead_otomasyonu.strategy_constants import (
     MOCK_LEADS,
     HIGH_PRIORITY_SEGMENT_NAMES,
@@ -482,6 +483,13 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         if not token:
             messagebox.showerror("Segmentten Lead Bul", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
             return
+        try:
+            recipes = list_ai_search_recipes(token)
+            segment_values = [item.get("segment_name") for item in recipes if item.get("is_active") and item.get("segment_name")]
+        except Exception:
+            segment_values = HIGH_PRIORITY_SEGMENT_NAMES
+        if not segment_values:
+            segment_values = HIGH_PRIORITY_SEGMENT_NAMES
 
         dialog = ctk.CTkToplevel(win)
         dialog.title("Segmentten Lead Bul")
@@ -494,12 +502,12 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         form.pack(fill="both", expand=True, padx=18, pady=18)
 
         vars_ = {
-            "segment_name": ctk.StringVar(value=HIGH_PRIORITY_SEGMENT_NAMES[0] if HIGH_PRIORITY_SEGMENT_NAMES else ""),
+            "segment_name": ctk.StringVar(value=segment_values[0] if segment_values else ""),
             "country": ctk.StringVar(value="Germany"),
             "limit": ctk.StringVar(value="25"),
             "enrich": ctk.StringVar(value="Evet"),
         }
-        _form_combo(form, "Segment", vars_["segment_name"], HIGH_PRIORITY_SEGMENT_NAMES, 0)
+        _form_combo(form, "Segment", vars_["segment_name"], segment_values, 0)
         _form_combo(form, "Ülke", vars_["country"], TARGET_COUNTRIES, 1)
         _form_entry(form, "Lead Limiti", vars_["limit"], 2)
         _form_combo(form, "Email Enrichment", vars_["enrich"], ["Evet", "Hayır"], 3)
@@ -551,6 +559,9 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             fg_color="#d32f2f",
             hover_color="#b91c1c",
         ).grid(row=5, column=1, sticky="e", padx=16, pady=18)
+
+    def open_segment_settings():
+        segment_ayarlari_ekrani(win)
 
     def enrich_selected():
         token = get_app_token()
@@ -661,6 +672,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     ctk.CTkButton(actions, text="Yenile", width=110, command=load_from_api, fg_color="#ffffff", text_color="#d32f2f", border_width=1, border_color="#d32f2f").pack(side="left", padx=(0, 8))
     ctk.CTkButton(actions, text="CSV Import", width=120, command=import_csv, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
+    ctk.CTkButton(actions, text="Segment Ayarları", width=145, command=open_segment_settings, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Segmentten Lead Bul", width=165, command=segment_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Apollo Search", width=130, command=apollo_search, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Email Enrich", width=120, command=enrich_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left", padx=8)

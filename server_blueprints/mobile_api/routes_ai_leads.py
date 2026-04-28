@@ -308,6 +308,20 @@ class ApolloSegmentSearchRequest(BaseModel):
     page: int = 1
 
 
+class AiSearchRecipeUpdateRequest(BaseModel):
+    segment_name: Optional[str] = None
+    sales_channel: Optional[str] = None
+    product_category: Optional[str] = None
+    priority: Optional[str] = None
+    target_definition: Optional[str] = None
+    targeting_notes: Optional[str] = None
+    company_keywords: Any = None
+    person_titles: Any = None
+    positive_signals: Any = None
+    negative_signals: Any = None
+    is_active: Optional[bool] = None
+
+
 def _normalize(value: Any) -> str:
     return " ".join(str(value or "").strip().split())
 
@@ -600,6 +614,8 @@ def _ensure_tables(db: Session) -> None:
             sales_channel VARCHAR(100) NOT NULL,
             product_category VARCHAR(100) NOT NULL,
             priority VARCHAR(50) NOT NULL,
+            target_definition TEXT,
+            targeting_notes TEXT,
             company_keywords JSON,
             person_titles JSON,
             positive_signals JSON,
@@ -642,6 +658,8 @@ def _ensure_tables(db: Session) -> None:
     _ensure_column(db, "ai_lead_contacts", "apollo_person_id", "VARCHAR(100)")
     _ensure_column(db, "ai_lead_contacts", "apollo_raw_json", "JSON")
     _ensure_column(db, "ai_segmentation_results", "suggested_sequence", "VARCHAR(100)")
+    _ensure_column(db, "ai_search_recipes", "target_definition", "TEXT")
+    _ensure_column(db, "ai_search_recipes", "targeting_notes", "TEXT")
     db.commit()
     _seed_search_recipes(db)
 
@@ -660,14 +678,7 @@ def _seed_search_recipes(db: Session) -> None:
                     :company_keywords, :person_titles, :positive_signals, :negative_signals, TRUE
                 )
                 ON DUPLICATE KEY UPDATE
-                    sales_channel = VALUES(sales_channel),
-                    product_category = VALUES(product_category),
-                    priority = VALUES(priority),
-                    company_keywords = VALUES(company_keywords),
-                    person_titles = VALUES(person_titles),
-                    positive_signals = VALUES(positive_signals),
-                    negative_signals = VALUES(negative_signals),
-                    is_active = TRUE
+                    segment_name = segment_name
                 """
             ),
             {
@@ -891,6 +902,19 @@ def _json_list(value: Any) -> list[str]:
     return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
+def _payload_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return _dedupe_strings([str(item).strip() for item in value if str(item).strip()])
+    text_value = str(value or "").replace("\r", "\n")
+    if "\n" in text_value:
+        items = [item.strip() for item in text_value.split("\n") if item.strip()]
+    else:
+        items = [item.strip() for item in text_value.split(",") if item.strip()]
+    return _dedupe_strings(items)
+
+
 def _dedupe_strings(values: list[str]) -> list[str]:
     seen = set()
     deduped = []
@@ -1088,6 +1112,15 @@ def _latest_action(db: Session, lead_id: int) -> dict[str, Any] | None:
     return _lead_row_to_dict(row) if row else None
 
 
+def _search_recipe_response(row: Any) -> dict[str, Any]:
+    recipe = _lead_row_to_dict(row)
+    for key in ("company_keywords", "person_titles", "positive_signals", "negative_signals"):
+        recipe[key] = _json_list(recipe.get(key))
+    recipe["is_active"] = bool(recipe.get("is_active"))
+    recipe["default_sequence_code"] = _sequence_code(recipe.get("sales_channel"))
+    return recipe
+
+
 @router.get("/ai-leads/segments")
 def list_ai_segments(
     db: Session = Depends(get_db),
@@ -1105,6 +1138,101 @@ def list_ai_segments(
         for product in PRODUCT_CATEGORIES
         for channel in SALES_CHANNELS
     ]
+
+
+@router.get("/ai-leads/search-recipes")
+def list_ai_search_recipes(
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    rows = db.execute(
+        text(
+            """
+            SELECT *
+            FROM ai_search_recipes
+            ORDER BY
+                FIELD(priority, 'Very High', 'High', 'Medium', 'Low', 'Excluded'),
+                product_category,
+                sales_channel
+            """
+        )
+    ).all()
+    return [_search_recipe_response(row) for row in rows]
+
+
+@router.put("/ai-leads/search-recipes/{recipe_id}")
+def update_ai_search_recipe(
+    recipe_id: int,
+    payload: AiSearchRecipeUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    row = db.execute(text("SELECT * FROM ai_search_recipes WHERE id = :id"), {"id": recipe_id}).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Apollo Search Recipe bulunamadÄ±.")
+    current = _lead_row_to_dict(row)
+
+    sales_channel = _normalize(payload.sales_channel) or current.get("sales_channel")
+    product_category = _normalize(payload.product_category) or current.get("product_category")
+    segment_name = _normalize(payload.segment_name) or _segment_name(product_category, sales_channel)
+    priority = _normalize(payload.priority) or current.get("priority") or _priority_for_segment(product_category, sales_channel)
+    if sales_channel not in SALES_CHANNELS:
+        raise HTTPException(status_code=400, detail="GeÃ§ersiz satÄ±ÅŸ kanalÄ±.")
+    if product_category not in PRODUCT_CATEGORIES:
+        raise HTTPException(status_code=400, detail="GeÃ§ersiz Ã¼rÃ¼n / hizmet.")
+    if priority not in {"Very High", "High", "Medium", "Low", "Excluded"}:
+        raise HTTPException(status_code=400, detail="GeÃ§ersiz Ã¶ncelik.")
+
+    def json_field(name: str) -> str:
+        incoming = getattr(payload, name)
+        values = _payload_list(incoming) if incoming is not None else _json_list(current.get(name))
+        return json.dumps(values, ensure_ascii=False)
+
+    try:
+        db.execute(
+            text(
+                """
+                UPDATE ai_search_recipes
+                SET segment_name = :segment_name,
+                    sales_channel = :sales_channel,
+                    product_category = :product_category,
+                    priority = :priority,
+                    target_definition = :target_definition,
+                    targeting_notes = :targeting_notes,
+                    company_keywords = :company_keywords,
+                    person_titles = :person_titles,
+                    positive_signals = :positive_signals,
+                    negative_signals = :negative_signals,
+                    is_active = :is_active
+                WHERE id = :id
+                """
+            ),
+            {
+                "id": recipe_id,
+                "segment_name": segment_name,
+                "sales_channel": sales_channel,
+                "product_category": product_category,
+                "priority": priority,
+                "target_definition": payload.target_definition if payload.target_definition is not None else current.get("target_definition"),
+                "targeting_notes": payload.targeting_notes if payload.targeting_notes is not None else current.get("targeting_notes"),
+                "company_keywords": json_field("company_keywords"),
+                "person_titles": json_field("person_titles"),
+                "positive_signals": json_field("positive_signals"),
+                "negative_signals": json_field("negative_signals"),
+                "is_active": current.get("is_active") if payload.is_active is None else bool(payload.is_active),
+            },
+        )
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        if "Duplicate" in str(exc):
+            raise HTTPException(status_code=400, detail="Bu segment adÄ± zaten kullanÄ±lÄ±yor.") from exc
+        raise
+
+    updated = db.execute(text("SELECT * FROM ai_search_recipes WHERE id = :id"), {"id": recipe_id}).first()
+    return _search_recipe_response(updated)
 
 
 @router.get("/ai-leads/sequences")
