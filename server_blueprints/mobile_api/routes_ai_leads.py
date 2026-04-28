@@ -1621,12 +1621,13 @@ def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pa
         "priority": segmentation.get("priority"),
     }
     prompt = (
-        "Analyze this company as a potential Bomaksan industrial air filtration partner. "
-        "Use only the provided website text and lead context. If evidence is weak, say so. "
-        "First identify the real company/legal or brand name from the website evidence; do not use page titles like gallery, products, blog, or top lists as company names. "
-        "Focus on what the company does, what products or services it sells, why it may fit the selected partner segment, "
-        "which Bomaksan product/service category matches, distributor/integrator/HVAC/welding/filtration/CNC/dust collection signals, "
-        "served industries, email personalization angle, and risks such as direct competitor, end-user-only, residential HVAC, or consumer focus.\n\n"
+        "Bu firmayı Bomaksan için potansiyel endüstriyel hava filtrasyonu partneri olarak analiz et. "
+        "Yanıtın JSON alan adları şemadaki gibi kalsın, ancak tüm açıklama içeriklerini Türkçe yaz. "
+        "Verilen web sitesi metni ve lead bağlamı dışına çıkma; kanıt zayıfsa bunu Türkçe olarak açıkça belirt. "
+        "Önce web sitesi kanıtından gerçek firma/tüzel kişi veya marka adını belirle; gallery, products, blog, top lists gibi sayfa başlıklarını firma adı olarak kullanma. "
+        "Firmanın ne yaptığını, hangi ürün veya hizmetleri sattığını, seçili partner segmentine neden uyabileceğini, "
+        "hangi Bomaksan ürün/hizmet kategorisiyle eşleştiğini, distributor/integrator/HVAC/welding/filtration/CNC/dust collection sinyallerini, "
+        "hizmet verdiği sektörleri, email kişiselleştirme açısını ve doğrudan rakip, sadece son kullanıcı, residential HVAC veya tüketici odağı gibi riskleri Türkçe değerlendir.\n\n"
         f"LEAD_CONTEXT_JSON:\n{json.dumps(context, ensure_ascii=False)}\n\n"
         f"WEBSITE_TEXT:\n{source_text}"
     )
@@ -1635,7 +1636,7 @@ def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pa
         "input": [
             {
                 "role": "system",
-                "content": "You are an industrial B2B partner research analyst. Return concise, evidence-aware JSON.",
+                "content": "Sen endüstriyel B2B partner araştırma analistisin. Sadece geçerli JSON döndür ve tüm metin değerlerini Türkçe, kısa ve kanıta dayalı yaz.",
             },
             {"role": "user", "content": prompt},
         ],
