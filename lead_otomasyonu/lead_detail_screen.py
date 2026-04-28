@@ -405,6 +405,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         _research_row(summary_card, 3, "Güven", research.get("confidence_score") or 0)
         _research_row(summary_card, 4, "Genel Merkez Ülkesi", raw_summary.get("headquarters_country") or "-")
         _research_row(summary_card, 5, "AI Firma Adı", raw_summary.get("detected_company_name") or "-")
+        _research_row(summary_card, 6, "Ülke Kanıtı", raw_summary.get("headquarters_country_evidence") or "-")
 
         detail_card = ctk.CTkFrame(research_cards_frame, fg_color="#f8fafc", corner_radius=10)
         detail_card.pack(fill="x", pady=(0, 10))

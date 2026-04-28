@@ -1415,7 +1415,13 @@ def _website_research_pages(website: str) -> list[dict[str, str]]:
     root = f"{parsed.scheme}://{parsed.netloc}"
     candidates = [
         root,
+        parse.urljoin(root, "/contact"),
+        parse.urljoin(root, "/contact-us"),
         parse.urljoin(root, "/about"),
+        parse.urljoin(root, "/about-us"),
+        parse.urljoin(root, "/company"),
+        parse.urljoin(root, "/impressum"),
+        parse.urljoin(root, "/imprint"),
         parse.urljoin(root, "/products"),
         parse.urljoin(root, "/solutions"),
         parse.urljoin(root, "/industries"),
@@ -1429,7 +1435,7 @@ def _website_research_pages(website: str) -> list[dict[str, str]]:
         if url and text_value and url not in seen:
             seen.add(url)
             pages.append(page)
-        if len(pages) >= 3:
+        if len(pages) >= 5:
             break
     return pages
 
@@ -1575,6 +1581,7 @@ def _lead_research_schema() -> dict[str, Any]:
         "properties": {
             "detected_company_name": {"type": "string"},
             "headquarters_country": {"type": "string"},
+            "headquarters_country_evidence": {"type": "string"},
             "company_overview": {"type": "string"},
             "products_services": {"type": "string"},
             "partner_fit_reason": {"type": "string"},
@@ -1588,6 +1595,7 @@ def _lead_research_schema() -> dict[str, Any]:
         "required": [
             "detected_company_name",
             "headquarters_country",
+            "headquarters_country_evidence",
             "company_overview",
             "products_services",
             "partner_fit_reason",
@@ -1627,7 +1635,9 @@ def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pa
         "Yanıtın JSON alan adları şemadaki gibi kalsın, ancak tüm açıklama içeriklerini Türkçe yaz. "
         "Verilen web sitesi metni ve lead bağlamı dışına çıkma; kanıt zayıfsa bunu Türkçe olarak açıkça belirt. "
         "Önce web sitesi kanıtından gerçek firma/tüzel kişi veya marka adını belirle; gallery, products, blog, top lists gibi sayfa başlıklarını firma adı olarak kullanma. "
-        "Firmanın genel merkez ülkesini web sitesindeki adres, iletişim, about us veya legal footer kanıtından belirle; emin değilsen boş string döndür. "
+        "Firmanın genel merkez ülkesini yalnızca web sitesindeki açık adres, iletişim, impressum, legal footer veya şirket merkezi ifadesi gibi kanıta dayanarak belirle. "
+        "LEAD_CONTEXT_JSON içindeki country alanı arama/ilk kayıt ülkesi olabilir; bunu tek başına genel merkez ülkesi kanıtı sayma. "
+        "Kanıt yoksa headquarters_country için boş string, headquarters_country_evidence için 'Web sitesinde genel merkez ülkesi için yeterli kanıt bulunamadı.' döndür. "
         "Firmanın ne yaptığını, hangi ürün veya hizmetleri sattığını, seçili partner segmentine neden uyabileceğini, "
         "hangi Bomaksan ürün/hizmet kategorisiyle eşleştiğini, distributor/integrator/HVAC/welding/filtration/CNC/dust collection sinyallerini, "
         "hizmet verdiği sektörleri, email kişiselleştirme açısını ve doğrudan rakip, sadece son kullanıcı, residential HVAC veya tüketici odağı gibi riskleri Türkçe değerlendir.\n\n"
@@ -1681,6 +1691,7 @@ def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pa
     return {
         "detected_company_name": _normalize(parsed.get("detected_company_name")),
         "headquarters_country": _normalize(parsed.get("headquarters_country")),
+        "headquarters_country_evidence": _normalize(parsed.get("headquarters_country_evidence")),
         "company_overview": _normalize(parsed.get("company_overview")),
         "products_services": _normalize(parsed.get("products_services")),
         "partner_fit_reason": _normalize(parsed.get("partner_fit_reason")),
@@ -2802,6 +2813,27 @@ def _should_update_company_name(current_name: str, new_name: str, website: str) 
     if domain_name and current.casefold() == domain_name.casefold() and new.casefold() != domain_name.casefold():
         return True
     return True
+
+
+def _validated_research_country(research: dict[str, Any]) -> str:
+    country = _normalize(research.get("headquarters_country"))
+    evidence = _normalize(research.get("headquarters_country_evidence"))
+    if not country or len(country) > 80:
+        return ""
+    folded = evidence.casefold()
+    weak_markers = [
+        "yeterli kanıt bulunamadı",
+        "kanıt bulunamadı",
+        "emin değil",
+        "belirsiz",
+        "not found",
+        "no evidence",
+        "insufficient",
+        "unclear",
+    ]
+    if not evidence or any(marker in folded for marker in weak_markers):
+        return ""
+    return country
 
 
 def _clean_company_name_candidate(candidate: str, domain: str) -> str:
@@ -3951,7 +3983,7 @@ def deep_research_ai_lead(
         research["openai_status"] = "completed"
     updated_company_name = _best_company_name_for_research(lead, research)
     company_name_updated = _should_update_company_name(lead.get("company_name"), updated_company_name, website)
-    updated_country = _normalize(research.get("headquarters_country"))
+    updated_country = _validated_research_country(research)
     db.execute(
         text(
             """
