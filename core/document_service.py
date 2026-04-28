@@ -20,6 +20,8 @@ ALLOWED_DOCUMENT_TYPES = {
     "brosur": "Broşür",
     "teknik_foy": "Teknik Bilgi Föyü",
     "kullanim_kilavuzu": "Kullanım Kılavuzu",
+    "sectoral": "Sektörel Doküman",
+    "informative": "Bilgilendirici Doküman",
 }
 DOCUMENT_LANGUAGE_OPTIONS = {
     "tr": "Türkçe",

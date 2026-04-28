@@ -22,11 +22,7 @@ from core.roles import has_master_admin_capabilities
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 
 
-DOCUMENT_TYPE_OPTIONS = [
-    ("brosur", "Broşür"),
-    ("teknik_foy", "Teknik Bilgi Föyü"),
-    ("kullanim_kilavuzu", "Kullanım Kılavuzu"),
-]
+DOCUMENT_TYPE_OPTIONS = list(ALLOWED_DOCUMENT_TYPES.items())
 DOCUMENT_LANGUAGE_FILTER_OPTIONS = [("all", "Tüm Diller")] + list(DOCUMENT_LANGUAGE_OPTIONS.items())
 
 
@@ -114,7 +110,7 @@ def dokumanlar_ekrani(kullanici_rolu, parent=None):
 
     filtre_combo = ctk.CTkComboBox(
         list_header,
-        values=["Tümü", "Broşür", "Teknik Bilgi Föyü", "Kullanım Kılavuzu"],
+        values=["Tümü"] + [label for _, label in DOCUMENT_TYPE_OPTIONS],
         variable=filtre_var,
         width=170,
     )
