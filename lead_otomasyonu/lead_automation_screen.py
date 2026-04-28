@@ -5,7 +5,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, generate_ai_email_sequence, list_ai_leads, search_apollo_ai_leads, search_serpapi_domains
+from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, enrich_ai_lead_from_hunter, generate_ai_email_sequence, list_ai_leads, search_apollo_ai_leads, search_hunter_companies, search_serpapi_domains
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
@@ -595,6 +595,98 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         )
         search_button.grid(row=7, column=1, sticky="e", padx=16, pady=18)
 
+    def hunter_company_search():
+        token = get_app_token()
+        if not token:
+            messagebox.showerror("Hunter Firma Bul", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+        dialog = ctk.CTkToplevel(win)
+        dialog.title("Hunter Firma Bul")
+        dialog.geometry("600x430")
+        dialog.configure(fg_color="#f5f5f5")
+        dialog.transient(win)
+        dialog.grab_set()
+
+        form = ctk.CTkFrame(dialog, fg_color="#ffffff", corner_radius=14)
+        form.pack(fill="both", expand=True, padx=18, pady=18)
+        vars_ = {
+            "country": ctk.StringVar(value="Germany"),
+            "limit": ctk.StringVar(value="25"),
+        }
+        keyword_tags = [
+            "industrial filtration distributor",
+            "dust collection equipment supplier",
+            "fume extraction supplier",
+        ]
+        _form_country_selector(form, "Ülke", vars_["country"], TARGET_COUNTRIES, 0, dialog)
+        keyword_entry = _keyword_tag_editor(form, "Anahtar Kelimeler", keyword_tags, 1)
+        _form_entry(form, "Kayıt Limiti", vars_["limit"], 2)
+        note = ctk.CTkLabel(
+            form,
+            text="Hunter Discover firma/domain adayı bulur. Ürün x segment etiketi daha sonra manuel atanır; email kişileri için Hunter Email Bulucu çalıştırılır.",
+            text_color="#64748b",
+            wraplength=500,
+            justify="left",
+        )
+        note.grid(row=3, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 4))
+        progress = ctk.CTkProgressBar(form, mode="indeterminate")
+        progress.grid(row=4, column=0, columnspan=2, sticky="ew", padx=16, pady=(12, 2))
+        progress.grid_remove()
+        status_label = ctk.CTkLabel(form, text="", text_color="#64748b")
+        status_label.grid(row=5, column=0, columnspan=2, sticky="w", padx=16, pady=(2, 4))
+
+        def run_search():
+            _add_keyword_tags_from_entry(keyword_entry, keyword_tags)
+            keywords = list(keyword_tags)
+            if not keywords:
+                messagebox.showwarning("Eksik Bilgi", "Lütfen en az bir keyword girin.", parent=dialog)
+                return
+            try:
+                limit = max(1, min(int(vars_["limit"].get() or 25), 100))
+            except Exception:
+                messagebox.showwarning("Eksik Bilgi", "Kayıt limiti sayı olmalı.", parent=dialog)
+                return
+            payload = {
+                "country": vars_["country"].get().strip(),
+                "keywords": keywords,
+                "limit": limit,
+            }
+            progress.grid()
+            progress.start()
+            status_label.configure(text="Hunter firma/domain adaylarını arıyor...")
+            search_button.configure(state="disabled", text="Aranıyor...")
+
+            def finish_search():
+                progress.stop()
+                progress.grid_remove()
+                status_label.configure(text="")
+                search_button.configure(state="normal", text="Hunter Firma Bul")
+
+            def worker():
+                try:
+                    result = search_hunter_companies(token, payload)
+                    created = int(result.get("created") or 0)
+                    found = int(result.get("found_companies") or 0)
+                    skipped = int(result.get("skipped_duplicates") or 0)
+                    win.after(0, finish_search)
+                    win.after(0, lambda: messagebox.showinfo("Hunter Firma Bul", f"{found} firma/domain adayı bulundu. {created} aday eklendi. {skipped} tekrar kayıt atlandı.", parent=win))
+                    win.after(0, load_from_api)
+                    win.after(0, dialog.destroy)
+                except Exception as exc:
+                    win.after(0, finish_search)
+                    win.after(0, lambda err=str(exc): messagebox.showerror("Hunter Firma Bul", f"Arama başarısız: {err}", parent=dialog))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        search_button = ctk.CTkButton(
+            form,
+            text="Hunter Firma Bul",
+            command=run_search,
+            fg_color="#d32f2f",
+            hover_color="#b91c1c",
+        )
+        search_button.grid(row=6, column=1, sticky="e", padx=16, pady=18)
+
     def open_segment_settings():
         segment_ayarlari_ekrani(win)
 
@@ -612,6 +704,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         bulk_enrich_status_var.set(f"Apollo email araması başlıyor: 0/{total}")
         bulk_enrich_frame.grid()
         apollo_email_button.configure(state="disabled", text="Aranıyor...")
+        hunter_email_button.configure(state="disabled")
 
         def update_enrich_progress(done, lead_name=""):
             progress = done / total if total else 0
@@ -621,6 +714,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
         def finish_enrich_progress():
             apollo_email_button.configure(state="normal", text="Apollo Email Bulucu")
+            hunter_email_button.configure(state="normal")
             bulk_enrich_frame.grid_remove()
             bulk_enrich_status_var.set("")
             bulk_enrich_progress.set(0)
@@ -660,6 +754,76 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             except Exception as exc:
                 win.after(0, finish_enrich_progress)
                 win.after(0, lambda err=str(exc): messagebox.showerror("Apollo", f"Apollo enrichment başarısız: {err}", parent=win))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def hunter_enrich_selected():
+        token = get_app_token()
+        leads = selected_leads()
+        if not token:
+            messagebox.showerror("Hunter", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+        if not leads:
+            messagebox.showwarning("Hunter", "Lütfen email aranacak leadleri seçin.", parent=win)
+            return
+        total = len(leads)
+        bulk_enrich_progress.set(0)
+        bulk_enrich_status_var.set(f"Hunter email araması başlıyor: 0/{total}")
+        bulk_enrich_frame.grid()
+        hunter_email_button.configure(state="disabled", text="Aranıyor...")
+        apollo_email_button.configure(state="disabled")
+
+        def update_enrich_progress(done, lead_name=""):
+            progress = done / total if total else 0
+            bulk_enrich_progress.set(progress)
+            name_suffix = f" | {lead_name}" if lead_name else ""
+            bulk_enrich_status_var.set(f"Hunter email arıyor: {done}/{total}{name_suffix}")
+
+        def finish_enrich_progress():
+            hunter_email_button.configure(state="normal", text="Hunter Email Bulucu")
+            apollo_email_button.configure(state="normal")
+            bulk_enrich_frame.grid_remove()
+            bulk_enrich_status_var.set("")
+            bulk_enrich_progress.set(0)
+
+        def worker():
+            success = 0
+            failed = 0
+            last_note = ""
+            try:
+                for index, lead in enumerate(leads, start=1):
+                    lead_name = str(lead.get("company_name") or "Lead")
+                    win.after(0, lambda done=index - 1, name=lead_name: update_enrich_progress(done, name))
+                    try:
+                        result = enrich_ai_lead_from_hunter(token, lead.get("id"))
+                        contact = result.get("contact") or {}
+                        refreshed_lead = result.get("lead") or {}
+                        if refreshed_lead:
+                            lead.update(refreshed_lead)
+                        if contact:
+                            lead["contact_email"] = contact.get("email") or lead.get("contact_email") or ""
+                            lead["email_status"] = contact.get("email_status") or lead.get("email_status") or "hunter_found"
+                            lead["enrichment_note"] = contact.get("enrichment_note") or lead.get("enrichment_note") or ""
+                            lead["contact_name"] = contact.get("name") or lead.get("contact_name") or ""
+                            lead["contact_title"] = contact.get("title") or lead.get("contact_title") or ""
+                        note = lead.get("enrichment_note") or "Hunter Domain Search tamamlandı."
+                        lead["last_action"] = note
+                        last_note = note
+                        success += 1
+                    except Exception:
+                        failed += 1
+                    win.after(0, lambda done=index, name=lead_name: update_enrich_progress(done, name))
+                win.after(0, apply_filters)
+                win.after(0, finish_enrich_progress)
+                message = f"{success} lead için Hunter email araması tamamlandı."
+                if failed:
+                    message += f" {failed} lead başarısız oldu."
+                if success == 1 and last_note:
+                    message += f"\n\n{last_note}"
+                win.after(0, lambda msg=message: messagebox.showinfo("Hunter", msg, parent=win))
+            except Exception as exc:
+                win.after(0, finish_enrich_progress)
+                win.after(0, lambda err=str(exc): messagebox.showerror("Hunter", f"Hunter email araması başarısız: {err}", parent=win))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -792,6 +956,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     apollo_email_button = ctk.CTkButton(filter_actions, text="Apollo Email Bulucu", width=165, command=enrich_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e")
     apollo_email_button.pack(side="left", padx=(0, 8))
+    hunter_email_button = ctk.CTkButton(filter_actions, text="Hunter Email Bulucu", width=165, command=hunter_enrich_selected, fg_color="#ffffff", text_color="#b45309", border_width=1, border_color="#b45309")
+    hunter_email_button.pack(side="left", padx=(0, 8))
     ai_research_button = ctk.CTkButton(filter_actions, text="AI Araştır", width=120, command=research_selected, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed")
     ai_research_button.pack(side="left", padx=(0, 8))
     ctk.CTkButton(filter_actions, text="Sekans Oluştur", width=145, command=create_sequence_for_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left")
@@ -800,6 +966,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     bottom_actions.grid(row=4, column=0, sticky="e", pady=(14, 0))
     ctk.CTkButton(bottom_actions, text="Lead Ekle", width=125, command=add_manual_lead, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="SerpAPI Firma Bul", width=165, command=segment_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
+    ctk.CTkButton(bottom_actions, text="Hunter Firma Bul", width=155, command=hunter_company_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Apollo Search", width=130, command=apollo_search, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Sil", width=90, command=delete_selected_lead, fg_color="#ffffff", text_color="#dc2626", border_width=1, border_color="#dc2626").pack(side="left", padx=(8, 0))
 

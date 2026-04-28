@@ -439,6 +439,14 @@ def enrich_ai_lead_from_apollo(token, lead_id):
     return request_json("POST", f"/desktop/ai-leads/{int(lead_id)}/apollo-enrich", headers=auth_headers(token)) or {}
 
 
+def enrich_ai_lead_from_hunter(token, lead_id):
+    return request_json("POST", f"/desktop/ai-leads/{int(lead_id)}/hunter-domain-search", headers=auth_headers(token)) or {}
+
+
+def search_hunter_companies(token, payload):
+    return request_json("POST", "/desktop/ai-leads/hunter/company-search", payload=payload or {}, headers=auth_headers(token), timeout=90) or {}
+
+
 def get_ai_lead_detail(token, lead_id):
     return request_json("GET", f"/desktop/ai-leads/{int(lead_id)}", headers=auth_headers(token)) or {}
 

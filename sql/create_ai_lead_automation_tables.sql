@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS ai_leads (
     country VARCHAR(100),
     region VARCHAR(50),
     local_language VARCHAR(100),
-    source ENUM('Apollo', 'Manual', 'CSV') DEFAULT 'Manual',
+    source ENUM('Apollo', 'Manual', 'CSV', 'SerpAPI', 'Hunter') DEFAULT 'Manual',
     source_reference VARCHAR(255),
     apollo_person_id VARCHAR(100),
     apollo_organization_id VARCHAR(100),

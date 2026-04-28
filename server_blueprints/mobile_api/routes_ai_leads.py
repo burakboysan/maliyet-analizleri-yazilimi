@@ -603,6 +603,13 @@ class SerpApiSearchRequest(BaseModel):
     search_mode: str = "broad"
 
 
+class HunterCompanySearchRequest(BaseModel):
+    country: Optional[str] = None
+    keywords: List[str] = []
+    query: Optional[str] = None
+    limit: int = 25
+
+
 class AiSearchRecipeUpdateRequest(BaseModel):
     segment_name: Optional[str] = None
     sales_channel: Optional[str] = None
@@ -787,7 +794,7 @@ def _ensure_tables(db: Session) -> None:
             country VARCHAR(100),
             region VARCHAR(50),
             local_language VARCHAR(100),
-            source ENUM('Apollo', 'Manual', 'CSV', 'SerpAPI') DEFAULT 'Manual',
+            source ENUM('Apollo', 'Manual', 'CSV', 'SerpAPI', 'Hunter') DEFAULT 'Manual',
             source_reference VARCHAR(255),
             apollo_person_id VARCHAR(100),
             apollo_organization_id VARCHAR(100),
@@ -1082,8 +1089,8 @@ def _ensure_ai_leads_source_enum(db: Session) -> None:
             """
         )
     ).scalar()
-    if column_type and "SerpAPI" not in str(column_type):
-        db.execute(text("ALTER TABLE ai_leads MODIFY source ENUM('Apollo', 'Manual', 'CSV', 'SerpAPI') DEFAULT 'Manual'"))
+    if column_type and ("SerpAPI" not in str(column_type) or "Hunter" not in str(column_type)):
+        db.execute(text("ALTER TABLE ai_leads MODIFY source ENUM('Apollo', 'Manual', 'CSV', 'SerpAPI', 'Hunter') DEFAULT 'Manual'"))
 
 
 def _log_action(db: Session, lead_id: int | None, action_type: str, output_summary: str, user_id: int | None = None) -> None:
@@ -1556,6 +1563,33 @@ def _openai_api_key() -> str:
 
 def _openai_research_model() -> str:
     return _normalize(os.getenv("OPENAI_RESEARCH_MODEL")) or _read_env_file_value("OPENAI_RESEARCH_MODEL") or "gpt-4o-mini"
+
+
+def _hunter_api_key() -> str:
+    return _normalize(os.getenv("HUNTER_API_KEY")) or _read_env_file_value("HUNTER_API_KEY")
+
+
+def _hunter_request(path: str, query: dict[str, Any] | None = None, payload: dict[str, Any] | None = None, method: str = "GET") -> dict[str, Any]:
+    api_key = _hunter_api_key()
+    if not api_key:
+        raise HTTPException(status_code=500, detail="HUNTER_API_KEY sunucuda tanımlı değil.")
+    params = {key: value for key, value in (query or {}).items() if value not in (None, "", [], {})}
+    params["api_key"] = api_key
+    url = f"https://api.hunter.io/v2{path}?{parse.urlencode(params, doseq=True)}"
+    data = None
+    headers = {"Accept": "application/json", "User-Agent": "BomaksanHunterIntegration/1.0"}
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with request.urlopen(req, timeout=35) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="ignore")
+        raise HTTPException(status_code=502, detail=f"Hunter API hatası: {detail[:500]}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Hunter API servisine ulaşılamadı: {exc}") from exc
 
 
 def _extract_response_text(payload: Any) -> str:
@@ -2324,7 +2358,7 @@ def create_ai_lead(
             "country": analysis["country"] or payload.country,
             "region": payload.region,
             "local_language": analysis["local_language"],
-            "source": payload.source if payload.source in {"Apollo", "Manual", "CSV"} else "Manual",
+            "source": payload.source if payload.source in {"Apollo", "Manual", "CSV", "SerpAPI", "Hunter"} else "Manual",
             "source_reference": payload.source_reference,
             "company_description": payload.company_description,
             "detected_activity": payload.detected_activity,
@@ -2421,7 +2455,7 @@ def _create_ai_lead_from_import_row(
             "country": analysis["country"] or payload.country,
             "region": payload.region,
             "local_language": analysis["local_language"],
-            "source": payload.source if payload.source in {"Apollo", "Manual", "CSV"} else "CSV",
+            "source": payload.source if payload.source in {"Apollo", "Manual", "CSV", "SerpAPI", "Hunter"} else "CSV",
             "source_reference": payload.source_reference,
             "company_description": payload.company_description,
             "detected_activity": payload.detected_activity,
@@ -3341,6 +3375,173 @@ def _create_unassigned_lead_from_serp_domain(
     return _lead_response(db, row)
 
 
+def _hunter_company_query(payload: HunterCompanySearchRequest) -> str:
+    explicit_query = _normalize(payload.query)
+    if explicit_query:
+        return explicit_query
+    keywords = ", ".join(_dedupe_strings(payload.keywords or []))
+    country = _normalize(payload.country)
+    parts = ["Industrial B2B companies"]
+    if keywords:
+        parts.append(f"matching these keywords: {keywords}")
+    if country:
+        parts.append(f"headquartered or operating in {country}")
+    return " ".join(parts)
+
+
+def _hunter_company_country(row: dict[str, Any], fallback_country: str) -> str:
+    for key in ("country", "country_name", "headquarters_country"):
+        value = _normalize(row.get(key))
+        if value:
+            return value
+    location = row.get("location") or row.get("headquarters_location") or {}
+    if isinstance(location, dict):
+        return _normalize(location.get("country") or location.get("country_name")) or fallback_country
+    return fallback_country
+
+
+def _create_unassigned_lead_from_hunter_company(
+    db: Session,
+    company: dict[str, Any],
+    country: str,
+    query: str,
+    current_user: UserTable,
+) -> dict[str, Any]:
+    domain = _normalize(company.get("domain"))
+    if not domain:
+        raise ValueError("domain_missing")
+    if _find_existing_lead_by_domain(db, domain):
+        raise ValueError("duplicate")
+    company_name = _normalize(company.get("organization") or company.get("name") or company.get("company")) or domain
+    company_country = _hunter_company_country(company, country)
+    description = _normalize(company.get("description") or company.get("industry") or company.get("category"))
+    website = f"https://{domain}"
+    result = db.execute(
+        text(
+            """
+            INSERT INTO ai_leads (
+                company_name, website, country, region, local_language, source, source_reference,
+                apollo_search_attempt, apollo_search_keyword, apollo_search_country,
+                apollo_fit_filter_status, apollo_fit_filter_reason,
+                company_description, detected_activity, status, exclusion_status, exclusion_reason, created_by_user_id
+            )
+            VALUES (
+                :company_name, :website, :country, :region, :local_language, 'Hunter', :source_reference,
+                :apollo_search_attempt, :apollo_search_keyword, :apollo_search_country,
+                :apollo_fit_filter_status, :apollo_fit_filter_reason,
+                :company_description, :detected_activity, 'Awaiting Approval', 'Active', '', :user_id
+            )
+            """
+        ),
+        {
+            "company_name": company_name,
+            "website": website,
+            "country": company_country,
+            "region": "EMEA" if company_country else "",
+            "local_language": _language_for_country(company_country),
+            "source_reference": domain,
+            "apollo_search_attempt": f"hunter_discover:{domain}",
+            "apollo_search_keyword": query,
+            "apollo_search_country": country,
+            "apollo_fit_filter_status": "Hunter Candidate",
+            "apollo_fit_filter_reason": "Firma/domain Hunter Discover ile bulundu; ürün x satış kanalı etiketi kullanıcı tarafından manuel atanmalıdır.",
+            "company_description": description,
+            "detected_activity": description,
+            "user_id": current_user.id,
+        },
+    )
+    lead_id = int(result.lastrowid)
+    _log_action(db, lead_id, "hunter_company_discovery", f"Hunter ile etiketsiz firma/domain adayı bulundu: {domain}", current_user.id)
+    row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    return _lead_response(db, row)
+
+
+def _hunter_email_status(email_row: dict[str, Any]) -> str:
+    verification = email_row.get("verification") or {}
+    status = _normalize(verification.get("status") or email_row.get("verification_status"))
+    if status == "valid":
+        return "verified"
+    return status or "hunter_found"
+
+
+def _hunter_contact_note(email_row: dict[str, Any]) -> str:
+    confidence = email_row.get("confidence")
+    verification = email_row.get("verification") or {}
+    status = _normalize(verification.get("status") or email_row.get("verification_status") or "")
+    source_count = len(email_row.get("sources") or [])
+    parts = ["Hunter Domain Search ile bulundu."]
+    if confidence not in (None, ""):
+        parts.append(f"Güven skoru: {confidence}.")
+    if status:
+        parts.append(f"Doğrulama durumu: {status}.")
+    if source_count:
+        parts.append(f"Kaynak sayısı: {source_count}.")
+    return " ".join(parts)
+
+
+def _insert_or_update_contact_from_hunter_email(db: Session, lead_id: int, email_row: dict[str, Any]) -> dict[str, Any]:
+    email_value = _normalize(email_row.get("value") or email_row.get("email"))
+    if not email_value:
+        raise ValueError("email_missing")
+    first_name = _normalize(email_row.get("first_name"))
+    last_name = _normalize(email_row.get("last_name"))
+    title = _normalize(email_row.get("position") or email_row.get("position_raw") or email_row.get("title"))
+    linkedin_url = _normalize(email_row.get("linkedin") or email_row.get("linkedin_url"))
+    phone = _normalize(email_row.get("phone_number") or email_row.get("phone"))
+    values = {
+        "lead_id": lead_id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "title": title,
+        "email": email_value,
+        "email_status": _hunter_email_status(email_row),
+        "enrichment_note": _hunter_contact_note(email_row),
+        "linkedin_url": linkedin_url,
+        "phone": phone,
+        "apollo_person_id": None,
+        "apollo_raw_json": json.dumps({"provider": "Hunter", "email": email_row}, ensure_ascii=False),
+    }
+    existing = db.execute(
+        text("SELECT * FROM ai_lead_contacts WHERE lead_id = :lead_id AND email = :email LIMIT 1"),
+        {"lead_id": lead_id, "email": email_value},
+    ).first()
+    if existing:
+        contact_id = _lead_row_to_dict(existing)["id"]
+        db.execute(
+            text(
+                """
+                UPDATE ai_lead_contacts
+                SET first_name = :first_name,
+                    last_name = :last_name,
+                    title = :title,
+                    email_status = :email_status,
+                    enrichment_note = :enrichment_note,
+                    linkedin_url = :linkedin_url,
+                    phone = :phone,
+                    apollo_raw_json = :apollo_raw_json
+                WHERE id = :contact_id
+                """
+            ),
+            {**values, "contact_id": contact_id},
+        )
+    else:
+        result = db.execute(
+            text(
+                """
+                INSERT INTO ai_lead_contacts (
+                    lead_id, first_name, last_name, title, email, email_status, enrichment_note, linkedin_url, phone, apollo_person_id, apollo_raw_json
+                )
+                VALUES (
+                    :lead_id, :first_name, :last_name, :title, :email, :email_status, :enrichment_note, :linkedin_url, :phone, :apollo_person_id, :apollo_raw_json
+                )
+                """
+            ),
+            values,
+        )
+        contact_id = int(result.lastrowid)
+    return {"id": contact_id, **values, "name": " ".join(part for part in [first_name, last_name] if part)}
+
+
 def _insert_or_update_contact_from_person(db: Session, lead_id: int, person: dict[str, Any]) -> dict[str, Any]:
     first_name = _normalize(person.get("first_name"))
     last_name = _normalize(person.get("last_name"))
@@ -3687,6 +3888,108 @@ def search_serpapi_domains(
         "skipped_duplicates": skipped_duplicates,
         "rows": created,
     }
+
+
+@router.post("/ai-leads/hunter/company-search")
+def search_hunter_companies(
+    payload: HunterCompanySearchRequest,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    query = _hunter_company_query(payload)
+    limit = min(max(int(payload.limit or 25), 1), 100)
+    response = _hunter_request("/discover", payload={"query": query}, method="POST")
+    rows = response.get("data") or []
+    created = []
+    skipped_duplicates = 0
+    skipped_invalid = 0
+    country = _normalize(payload.country)
+    for company in rows[:limit]:
+        try:
+            created.append(_create_unassigned_lead_from_hunter_company(db, company, country, query, current_user))
+        except ValueError as exc:
+            if str(exc) == "duplicate":
+                skipped_duplicates += 1
+            else:
+                skipped_invalid += 1
+            continue
+    db.commit()
+    return {
+        "query": query,
+        "found_companies": len(rows),
+        "created": len(created),
+        "skipped_duplicates": skipped_duplicates,
+        "skipped_invalid": skipped_invalid,
+        "rows": created,
+    }
+
+
+@router.post("/ai-leads/{lead_id}/hunter-domain-search")
+def enrich_ai_lead_from_hunter(
+    lead_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    lead_row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    if not lead_row:
+        raise HTTPException(status_code=404, detail="Lead bulunamadı.")
+    lead = _lead_row_to_dict(lead_row)
+    domain = _company_domain(lead.get("website"))
+    company_name = _normalize(lead.get("company_name"))
+    if not domain and not company_name:
+        raise HTTPException(status_code=400, detail="Hunter araması için lead website/domain veya firma adı gerekli.")
+    query = {
+        "domain": domain or None,
+        "company": None if domain else company_name,
+        "limit": 100,
+        "type": "personal",
+    }
+    try:
+        response = _hunter_request("/domain-search", query=query)
+    except HTTPException as exc:
+        detail = str(exc.detail)
+        if "pagination_error" not in detail:
+            raise
+        query["limit"] = 10
+        response = _hunter_request("/domain-search", query=query)
+    data = response.get("data") or {}
+    emails = data.get("emails") or []
+    if not emails:
+        raise HTTPException(status_code=404, detail="Hunter Domain Search bu firma/domain için kişi emaili döndürmedi.")
+    contacts = []
+    for email_row in emails:
+        try:
+            contacts.append(_insert_or_update_contact_from_hunter_email(db, lead_id, email_row))
+        except ValueError:
+            continue
+    if not contacts:
+        raise HTTPException(status_code=404, detail="Hunter sonucu email içeriyordu ancak kaydedilebilir kişi kaydı oluşmadı.")
+    organization_name = _normalize(data.get("organization"))
+    update_values = {
+        "lead_id": lead_id,
+        "company_name": organization_name or lead.get("company_name"),
+        "website": lead.get("website") or (f"https://{data.get('domain')}" if data.get("domain") else None),
+        "apollo_raw_json": json.dumps({"provider": "Hunter", "domain_search": response}, ensure_ascii=False),
+    }
+    db.execute(
+        text(
+            """
+            UPDATE ai_leads
+            SET company_name = :company_name,
+                website = COALESCE(:website, website),
+                apollo_raw_json = :apollo_raw_json
+            WHERE id = :lead_id
+            """
+        ),
+        update_values,
+    )
+    primary = next((item for item in contacts if item.get("email_status") == "verified"), contacts[0])
+    _log_action(db, lead_id, "hunter_domain_search", f"Hunter Domain Search tamamlandı. {len(contacts)} kişi lead içine eklendi.", current_user.id)
+    db.commit()
+    row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    return {"status": "ok", "contacts": contacts, "contact": primary, "lead": _lead_response(db, row)}
 
 
 @router.post("/ai-leads/{lead_id}/apollo-enrich")
