@@ -26,6 +26,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         pass
 
     state = {"detail": dict(lead), "drafts": []}
+    company_name_var = ctk.StringVar(value=lead.get("company_name") or "Lead Detay")
     status_var = ctk.StringVar(value=lead.get("ai_status") or lead.get("status") or "New")
     status_note_var = ctk.StringVar()
     info_vars = {}
@@ -39,12 +40,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     header = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
     header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
     header.grid_columnconfigure(0, weight=1)
-    ctk.CTkLabel(
-        header,
-        text=lead.get("company_name") or "Lead Detay",
-        font=ctk.CTkFont(family="Inter", size=24, weight="bold"),
-        text_color="#212121",
-    ).grid(row=0, column=0, sticky="w", padx=18, pady=(14, 2))
+    _selectable_header_entry(header, company_name_var).grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 2))
     ctk.CTkLabel(
         header,
         text="Lead bilgileri, araştırma sonucu, email uygunluğu ve operasyonel durum tek ekrandan yönetilir.",
@@ -71,6 +67,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     company_panel.pack(fill="x", pady=(0, 12))
     _section_title(company_panel, "Firma Bilgileri")
     for key, label in [
+        ("company_name", "Firma"),
         ("country", "Ülke"),
         ("local_language", "Dil"),
         ("source", "Kaynak"),
@@ -290,6 +287,9 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         update_textbox("drafts", "\n".join(lines).strip())
 
     def render_all():
+        company_name = detail().get("company_name") or "Lead Detay"
+        company_name_var.set(str(company_name))
+        win.title(f"Lead Detay - {company_name}")
         for key, var in info_vars.items():
             if key == "sequence_eligibility":
                 var.set(sequence_eligibility_text())
@@ -418,6 +418,21 @@ def _section_title(parent, text):
         font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
         text_color="#212121",
     ).pack(anchor="w", padx=18, pady=(16, 8))
+
+
+def _selectable_header_entry(parent, variable):
+    entry = ctk.CTkEntry(
+        parent,
+        textvariable=variable,
+        font=ctk.CTkFont(family="Inter", size=24, weight="bold"),
+        text_color="#212121",
+        fg_color="#ffffff",
+        border_width=0,
+        height=34,
+    )
+    entry.configure(state="readonly")
+    _bind_select_all(entry)
+    return entry
 
 
 def _kv_var(parent, label):
