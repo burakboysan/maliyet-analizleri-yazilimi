@@ -3,15 +3,16 @@ from tkinter import messagebox
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, approve_ai_email_draft, deep_research_ai_lead, generate_ai_email_sequence, get_ai_lead_detail
+from core.api_client import ApiClientError, deep_research_ai_lead, generate_ai_email_sequence, get_ai_lead_detail, update_ai_lead_status
 from core.session import get_app_token
+from lead_otomasyonu.strategy_constants import STATUS_OPTIONS
 
 
 def lead_detay_ekrani(parent, lead, on_update=None):
     win = ctk.CTkToplevel(parent) if parent else ctk.CTkToplevel()
     win.title(f"Lead Detay - {lead.get('company_name', '')}")
-    win.geometry("1040x720")
-    win.minsize(900, 620)
+    win.geometry("1120x780")
+    win.minsize(940, 680)
     win.configure(fg_color="#f5f5f5")
 
     try:
@@ -22,85 +23,198 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     except Exception:
         pass
 
+    state = {"detail": dict(lead), "drafts": []}
+    status_var = ctk.StringVar(value=lead.get("ai_status") or lead.get("status") or "New")
+    status_note_var = ctk.StringVar()
+    info_vars = {}
+    textboxes = {}
+
     root = ctk.CTkFrame(win, fg_color="transparent")
-    root.pack(fill="both", expand=True, padx=20, pady=20)
+    root.pack(fill="both", expand=True, padx=18, pady=18)
     root.grid_columnconfigure(0, weight=1)
-    root.grid_columnconfigure(1, weight=1)
     root.grid_rowconfigure(1, weight=1)
 
-    title = ctk.CTkLabel(
-        root,
+    header = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
+    header.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+    header.grid_columnconfigure(0, weight=1)
+    ctk.CTkLabel(
+        header,
         text=lead.get("company_name") or "Lead Detay",
-        font=ctk.CTkFont(family="Inter", size=26, weight="bold"),
+        font=ctk.CTkFont(family="Inter", size=24, weight="bold"),
         text_color="#212121",
-    )
-    title.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 16))
+    ).grid(row=0, column=0, sticky="w", padx=18, pady=(14, 2))
+    ctk.CTkLabel(
+        header,
+        text="Lead bilgileri, araştırma sonucu, email uygunluğu ve operasyonel durum tek ekrandan yönetilir.",
+        text_color="#64748b",
+    ).grid(row=1, column=0, sticky="w", padx=18, pady=(0, 14))
 
-    left = _panel(root)
-    left.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
-    right = _panel(root)
-    right.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
-    state = {"detail": dict(lead), "drafts": []}
+    status_bar = ctk.CTkFrame(header, fg_color="transparent")
+    status_bar.grid(row=0, column=1, rowspan=2, sticky="e", padx=18, pady=14)
+    ctk.CTkLabel(status_bar, text="Durum", text_color="#475569").grid(row=0, column=0, sticky="w", padx=(0, 8))
+    ctk.CTkComboBox(status_bar, values=STATUS_OPTIONS, variable=status_var, width=190).grid(row=1, column=0, sticky="ew", padx=(0, 8))
+    ctk.CTkEntry(status_bar, textvariable=status_note_var, width=260, placeholder_text="Durum notu").grid(row=1, column=1, sticky="ew", padx=8)
 
-    _section_title(left, "Firma Bilgileri")
-    _kv(left, "Ülke", lead.get("country"))
-    _kv(left, "Dil", lead.get("local_language"))
-    _kv(left, "Kaynak", lead.get("source"))
-    _kv(left, "Web", lead.get("website"))
-    _kv(left, "Aktivite", lead.get("detected_activity"))
+    content = ctk.CTkScrollableFrame(root, fg_color="transparent")
+    content.grid(row=1, column=0, sticky="nsew")
+    content.grid_columnconfigure(0, weight=1)
+    content.grid_columnconfigure(1, weight=1)
 
-    _section_title(left, "Kişi ve Email")
-    _kv(left, "Kişi", lead.get("contact_name"))
-    _kv(left, "Unvan", lead.get("contact_title"))
-    _kv(left, "Email", lead.get("contact_email"))
-    _kv(left, "Email Durumu", lead.get("email_status"))
-    _kv(left, "Enrichment Notu", lead.get("enrichment_note"))
+    left = ctk.CTkFrame(content, fg_color="transparent")
+    left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+    right = ctk.CTkFrame(content, fg_color="transparent")
+    right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
 
-    _section_title(left, "AI Aksiyonları")
-    _kv(left, "Son Aksiyon", lead.get("last_action"))
-    _kv(left, "AI Durumu", lead.get("ai_status"))
-    _kv(left, "Onay Durumu", lead.get("approval_status"))
+    company_panel = _panel(left)
+    company_panel.pack(fill="x", pady=(0, 12))
+    _section_title(company_panel, "Firma Bilgileri")
+    for key, label in [
+        ("country", "Ülke"),
+        ("local_language", "Dil"),
+        ("source", "Kaynak"),
+        ("website", "Web"),
+        ("detected_activity", "Aktivite"),
+    ]:
+        info_vars[key] = _kv_var(company_panel, label)
 
-    _section_title(right, "Segmentasyon")
-    _kv(right, "Satış Kanalı", lead.get("sales_channel"))
-    _kv(right, "Ürün / Hizmet", lead.get("product_category"))
-    _kv(right, "Segment", lead.get("segment_name"))
-    _kv(right, "Öncelik", lead.get("priority"))
-    _kv(right, "AI Skor", lead.get("ai_score"))
-    _kv(right, "Sekans", lead.get("suggested_sequence"))
+    email_panel = _panel(left)
+    email_panel.pack(fill="x", pady=(0, 12))
+    _section_title(email_panel, "Kişi ve Email")
+    for key, label in [
+        ("contact_name", "Kişi"),
+        ("contact_title", "Unvan"),
+        ("contact_email", "Email"),
+        ("email_status", "Email Durumu"),
+    ]:
+        info_vars[key] = _kv_var(email_panel, label)
+    textboxes["email_explanation"] = _readonly_box(email_panel, height=130)
 
-    _section_title(right, "AI Gerekçesi")
-    reason = ctk.CTkTextbox(right, height=120, fg_color="#fafafa", text_color="#212121")
-    reason.pack(fill="x", padx=18, pady=(4, 12))
-    reason.insert("1.0", lead.get("short_reasoning") or "Henüz AI gerekçesi yok.")
-    reason.configure(state="disabled")
+    status_panel = _panel(left)
+    status_panel.pack(fill="x", pady=(0, 12))
+    _section_title(status_panel, "Operasyon Durumu")
+    for key, label in [
+        ("last_action", "Son Aksiyon"),
+        ("ai_status", "Lead Durumu"),
+        ("approval_status", "Onay / Hazırlık"),
+        ("sequence_eligibility", "Sekans Uygunluğu"),
+    ]:
+        info_vars[key] = _kv_var(status_panel, label)
 
-    _section_title(right, "Kişiselleştirme Açısı")
-    angle = ctk.CTkTextbox(right, height=110, fg_color="#fafafa", text_color="#212121")
-    angle.pack(fill="x", padx=18, pady=(4, 12))
-    angle.insert("1.0", lead.get("personalization_angle") or "Henüz kişiselleştirme açısı yok.")
-    angle.configure(state="disabled")
+    segmentation_panel = _panel(right)
+    segmentation_panel.pack(fill="x", pady=(0, 12))
+    _section_title(segmentation_panel, "Segmentasyon")
+    for key, label in [
+        ("sales_channel", "Satış Kanalı"),
+        ("product_category", "Ürün / Hizmet"),
+        ("segment_name", "Segment"),
+        ("priority", "Öncelik"),
+        ("ai_score", "Skor"),
+        ("suggested_sequence", "Sekans"),
+    ]:
+        info_vars[key] = _kv_var(segmentation_panel, label)
+    textboxes["segmentation_source"] = _readonly_box(segmentation_panel, height=120)
 
-    _section_title(right, "Firma Araştırması")
-    research_box = ctk.CTkTextbox(right, height=180, fg_color="#fafafa", text_color="#212121")
-    research_box.pack(fill="x", padx=18, pady=(4, 12))
+    personalization_panel = _panel(right)
+    personalization_panel.pack(fill="x", pady=(0, 12))
+    _section_title(personalization_panel, "Kişiselleştirme Açısı")
+    textboxes["personalization"] = _readonly_box(personalization_panel, height=150)
 
-    _section_title(right, "Email Sekansı")
-    drafts_box = ctk.CTkTextbox(right, height=150, fg_color="#fafafa", text_color="#212121")
-    drafts_box.pack(fill="both", expand=True, padx=18, pady=(4, 12))
+    research_panel = _panel(right)
+    research_panel.pack(fill="x", pady=(0, 12))
+    _section_title(research_panel, "Firma Araştırması")
+    textboxes["research"] = _readonly_box(research_panel, height=260)
 
-    def render_research(research=None):
-        if research is None:
-            research_items = state["detail"].get("research") or []
-            research = research_items[0] if research_items else None
-        research_box.configure(state="normal")
-        research_box.delete("1.0", "end")
+    drafts_panel = _panel(content)
+    drafts_panel.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+    _section_title(drafts_panel, "Email Sekansı")
+    textboxes["drafts"] = _readonly_box(drafts_panel, height=250)
+
+    actions = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
+    actions.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+    actions.grid_columnconfigure(0, weight=1)
+
+    def detail():
+        return state["detail"]
+
+    def update_textbox(key, value):
+        box = textboxes[key]
+        box.configure(state="normal")
+        box.delete("1.0", "end")
+        box.insert("1.0", str(value or "-"))
+        box.configure(state="disabled")
+
+    def current_research():
+        items = detail().get("research") or []
+        return items[0] if items else None
+
+    def sequence_eligibility_text():
+        email = detail().get("contact_email")
+        status = str(detail().get("email_status") or "").casefold()
+        if not email:
+            return "Uygun değil: email yok. Önce Email Enrich veya manuel email girişi gerekli."
+        if status in {"verified", "user managed"}:
+            return "Uygun: email verified veya kullanıcı tarafından doğrulanmış."
+        if status == "extrapolated":
+            return "Uygun değil: Apollo bu emaili tahmini/çıkarımsal verdi. Verified olmadığı için sekans engelleniyor."
+        return f"Uygun değil: email durumu '{detail().get('email_status') or 'boş'}'."
+
+    def email_explanation_text():
+        status = str(detail().get("email_status") or "").strip()
+        note = detail().get("enrichment_note") or ""
+        explanations = {
+            "verified": "Apollo bu email adresini doğrulanmış olarak döndürdü. Sekans oluşturmak için uygundur.",
+            "user managed": "Email kullanıcı tarafından girildi veya yönetiliyor. Sekans oluşturmak için uygundur.",
+            "extrapolated": "Apollo bu email adresini doğrulanmış veri olarak değil, isim/domain patterninden tahmini olarak üretmiş olabilir. Bu yüzden otomatik sekans başlatmıyoruz.",
+            "guessed": "Email tahmini olabilir. Doğrulanmadan otomatik sekans için uygun kabul edilmez.",
+            "unverified": "Email var ama doğrulanmamış. Bounce riski nedeniyle sekans engellenir.",
+            "unavailable": "Apollo bu kişi için email döndürmedi.",
+            "missing": "Bu lead için email bilgisi yok.",
+        }
+        explanation = explanations.get(status.casefold(), "Email durumu Apollo'dan geldiği şekliyle gösteriliyor; verified değilse otomatik sekans için uygun kabul edilmez.")
+        return f"Status: {status or '-'}\n\n{explanation}\n\nEnrichment notu:\n{note or '-'}"
+
+    def segmentation_source_text():
+        reason = detail().get("short_reasoning") or ""
+        if reason.startswith("Segment Search recipe matched"):
+            return (
+                "Bu bölüm LLM analizi değildir.\n\n"
+                "Segment, 'Segmentten Lead Bul' ekranında seçilen Apollo Search Recipe üzerinden atanmış. "
+                "Yani lead bu reçeteyle bulunduğu için satış kanalı/ürün/öncelik otomatik olarak reçeteden geldi.\n\n"
+                f"Sistem notu: {reason}"
+            )
+        if reason:
+            return f"Segmentasyon gerekçesi:\n{reason}"
+        return "Henüz segmentasyon gerekçesi yok."
+
+    def personalization_text():
+        research = current_research() or {}
+        lines = []
+        if detail().get("personalization_angle"):
+            lines.append("Segmentasyon açısı:")
+            lines.append(str(detail().get("personalization_angle")))
+        if research.get("personalization_angle"):
+            lines.append("")
+            lines.append("Firma araştırmasından gelen açı:")
+            lines.append(str(research.get("personalization_angle")))
+        if research.get("detected_signals"):
+            lines.append("")
+            lines.append(f"Kullanılabilecek sinyaller: {research.get('detected_signals')}")
+        if not lines:
+            lines.append("Henüz yeterli kişiselleştirme verisi yok. AI Araştır çalıştırıldığında bu bölüm zenginleşir.")
+        return "\n".join(lines)
+
+    def research_text():
+        research = current_research()
         if not research:
-            research_box.insert("1.0", "Henüz firma araştırması yapılmadı.")
-        else:
-            lines = [
-                f"Durum: {research.get('status') or '-'}",
-                f"Model: {research.get('model_used') or '-'} | Güven: {research.get('confidence_score') or 0}",
+            return "Henüz firma araştırması yapılmadı. AI Araştır butonu web sitesini ve lead bağlamını analiz eder."
+        model = str(research.get("model_used") or "")
+        method = "OpenAI / LLM destekli analiz" if model and model != "rule_based_research" else "Kural bazlı web sinyal analizi"
+        links = "\n".join(f"- {link}" for link in (research.get("source_links") or [])) or "-"
+        return "\n".join(
+            [
+                f"Yöntem: {method}",
+                f"Model: {model or '-'}",
+                f"Güven: {research.get('confidence_score') or 0}",
                 "",
                 f"Firma: {research.get('company_overview') or '-'}",
                 f"Ürün / Çözüm: {research.get('products_services') or '-'}",
@@ -108,37 +222,40 @@ def lead_detay_ekrani(parent, lead, on_update=None):
                 f"Bomaksan Eşleşmesi: {research.get('bomaksan_match') or '-'}",
                 f"Sinyaller: {research.get('detected_signals') or '-'}",
                 f"Sektörler: {research.get('served_industries') or '-'}",
-                f"Email Açısı: {research.get('personalization_angle') or '-'}",
                 f"Risk: {research.get('risk_notes') or '-'}",
                 "",
                 "Kaynaklar:",
+                links,
             ]
-            lines.extend(f"- {link}" for link in (research.get("source_links") or []))
-            research_box.insert("1.0", "\n".join(lines).strip())
-        research_box.configure(state="disabled")
+        )
 
     def render_drafts(drafts=None):
         if drafts is not None:
             state["drafts"] = drafts
-        drafts_box.configure(state="normal")
-        drafts_box.delete("1.0", "end")
-        if not state["drafts"]:
-            drafts_box.insert("1.0", "Henüz email sekansı oluşturulmadı.")
-        else:
-            lines = []
-            for draft in state["drafts"]:
-                lines.append(f"Email {draft.get('step_number')} | {draft.get('status')} | {draft.get('language')}")
-                lines.append(f"Konu: {draft.get('subject') or '-'}")
-                lines.append(str(draft.get("body") or "-"))
-                lines.append("")
-            drafts_box.insert("1.0", "\n".join(lines).strip())
-        drafts_box.configure(state="disabled")
+        drafts = state["drafts"] or []
+        if not drafts:
+            update_textbox("drafts", "Henüz email sekansı oluşturulmadı.")
+            return
+        lines = []
+        for draft in drafts:
+            lines.append(f"Email {draft.get('step_number')} | {draft.get('status')} | {draft.get('language')}")
+            lines.append(f"Konu: {draft.get('subject') or '-'}")
+            lines.append(str(draft.get("body") or "-"))
+            lines.append("")
+        update_textbox("drafts", "\n".join(lines).strip())
 
-    render_drafts()
-    render_research()
-
-    actions = ctk.CTkFrame(root, fg_color="transparent")
-    actions.grid(row=2, column=0, columnspan=2, sticky="e", pady=(16, 0))
+    def render_all():
+        for key, var in info_vars.items():
+            if key == "sequence_eligibility":
+                var.set(sequence_eligibility_text())
+            else:
+                var.set(str(detail().get(key) if detail().get(key) not in (None, "") else "-"))
+        status_var.set(detail().get("ai_status") or detail().get("status") or status_var.get())
+        update_textbox("email_explanation", email_explanation_text())
+        update_textbox("segmentation_source", segmentation_source_text())
+        update_textbox("personalization", personalization_text())
+        update_textbox("research", research_text())
+        render_drafts(detail().get("email_drafts") or state["drafts"])
 
     def refresh_detail(show_message=False):
         token = get_app_token()
@@ -148,17 +265,16 @@ def lead_detay_ekrani(parent, lead, on_update=None):
 
         def worker():
             try:
-                detail = get_ai_lead_detail(token, lead.get("id"))
-                state["detail"] = detail
-                lead.update(detail)
-                win.after(0, lambda: render_drafts(detail.get("email_drafts") or []))
-                win.after(0, lambda: render_research())
+                response = get_ai_lead_detail(token, lead.get("id"))
+                state["detail"] = response
+                lead.update(response)
+                win.after(0, render_all)
                 if show_message:
-                    win.after(0, lambda: messagebox.showinfo("Email Sekansı", "Taslaklar güncellendi.", parent=win))
+                    win.after(0, lambda: messagebox.showinfo("Lead Detay", "Detay bilgileri yenilendi.", parent=win))
                 if on_update:
                     win.after(0, on_update)
             except Exception as exc:
-                win.after(0, lambda err=str(exc): messagebox.showerror("Email Sekansı", f"Taslaklar alınamadı: {err}", parent=win))
+                win.after(0, lambda err=str(exc): messagebox.showerror("Lead Detay", f"Detay alınamadı: {err}", parent=win))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -172,11 +288,12 @@ def lead_detay_ekrani(parent, lead, on_update=None):
             try:
                 result = deep_research_ai_lead(token, lead.get("id"))
                 research = result.get("research") or {}
-                lead["research_status"] = research.get("status") or "Completed"
-                lead["research_summary"] = research.get("company_overview") or ""
-                lead["last_action"] = "AI firma araştırması tamamlandı."
                 state["detail"]["research"] = [research]
-                win.after(0, lambda: render_research(research))
+                state["detail"]["research_status"] = research.get("status") or "Completed"
+                state["detail"]["research_summary"] = research.get("company_overview") or ""
+                state["detail"]["last_action"] = "AI firma araştırması tamamlandı."
+                lead.update(state["detail"])
+                win.after(0, render_all)
                 if on_update:
                     win.after(0, on_update)
                 win.after(0, lambda: messagebox.showinfo("AI Araştır", "Firma araştırması tamamlandı.", parent=win))
@@ -197,14 +314,16 @@ def lead_detay_ekrani(parent, lead, on_update=None):
             try:
                 result = generate_ai_email_sequence(token, lead.get("id"))
                 drafts = result.get("drafts") or []
-                lead["draft_count"] = len(drafts)
-                lead["ai_status"] = "Draft Generated"
-                lead["approval_status"] = "Awaiting Approval"
-                lead["last_action"] = "3 adımlı email sekansı taslakları oluşturuldu."
-                win.after(0, lambda: render_drafts(drafts))
+                state["detail"]["email_drafts"] = drafts
+                state["detail"]["draft_count"] = len(drafts)
+                state["detail"]["ai_status"] = "Draft Generated"
+                state["detail"]["approval_status"] = "Awaiting Approval"
+                state["detail"]["last_action"] = "3 adımlı email sekansı taslakları oluşturuldu."
+                lead.update(state["detail"])
+                win.after(0, render_all)
                 if on_update:
                     win.after(0, on_update)
-                win.after(0, lambda: messagebox.showinfo("Email Sekansı", f"{len(drafts)} email taslağı oluşturuldu. Gönderim yapılmadı; onay bekliyor.", parent=win))
+                win.after(0, lambda: messagebox.showinfo("Email Sekansı", f"{len(drafts)} email taslağı oluşturuldu. Gönderim yapılmadı.", parent=win))
             except ApiClientError as exc:
                 win.after(0, lambda err=str(exc): messagebox.showerror("Email Sekansı", err, parent=win))
             except Exception as exc:
@@ -212,96 +331,73 @@ def lead_detay_ekrani(parent, lead, on_update=None):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def approve_drafts():
+    def save_status():
         token = get_app_token()
-        drafts = state.get("drafts") or []
         if not token:
-            messagebox.showerror("Email Sekansı", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
-            return
-        if not drafts:
-            messagebox.showwarning("Email Sekansı", "Onaylanacak email taslağı yok.", parent=win)
+            messagebox.showerror("Durum", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
             return
 
         def worker():
             try:
-                approved = 0
-                for draft in drafts:
-                    if draft.get("status") != "Approved":
-                        approve_ai_email_draft(token, draft.get("id"))
-                        approved += 1
-                lead["approval_status"] = "Approved"
-                lead["ai_status"] = "Approved"
-                lead["last_action"] = f"{approved} email taslağı onaylandı."
-                win.after(0, lambda: refresh_detail(show_message=False))
-                win.after(0, lambda: messagebox.showinfo("Email Sekansı", f"{approved} email taslağı onaylandı.", parent=win))
+                response = update_ai_lead_status(token, lead.get("id"), status_var.get(), status_note_var.get())
+                state["detail"] = response
+                lead.update(response)
+                win.after(0, render_all)
+                if on_update:
+                    win.after(0, on_update)
+                win.after(0, lambda: messagebox.showinfo("Durum", "Lead durumu kaydedildi.", parent=win))
             except Exception as exc:
-                win.after(0, lambda err=str(exc): messagebox.showerror("Email Sekansı", f"Onay başarısız: {err}", parent=win))
+                win.after(0, lambda err=str(exc): messagebox.showerror("Durum", f"Durum kaydedilemedi: {err}", parent=win))
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def mark_review():
-        lead["approval_status"] = "Review Needed"
-        lead["last_action"] = "Kullanıcı review'a aldı"
-        if on_update:
-            on_update()
-        messagebox.showinfo("Lead Otomasyonu", "Lead review durumuna alındı.", parent=win)
+    _ghost_button(actions, "Detayı Yenile", lambda: refresh_detail(show_message=True), "#2563eb").pack(side="left", padx=10, pady=12)
+    _ghost_button(actions, "AI Araştır", run_research, "#7c3aed").pack(side="left", padx=8, pady=12)
+    _primary_button(actions, "Sekans Oluştur", create_sequence, "#0f766e").pack(side="left", padx=8, pady=12)
+    _ghost_button(actions, "Durumu Kaydet", save_status, "#334155").pack(side="right", padx=8, pady=12)
+    _ghost_button(actions, "Kapat", win.destroy, "#64748b").pack(side="right", padx=10, pady=12)
 
-    def approve():
-        lead["approval_status"] = "Approved"
-        lead["last_action"] = "Kullanıcı segment ve taslağı onayladı"
-        if on_update:
-            on_update()
-        messagebox.showinfo("Lead Otomasyonu", "Lead onaylandı.", parent=win)
-
-    def exclude():
-        lead["priority"] = "Excluded"
-        lead["ai_status"] = "Excluded"
-        lead["approval_status"] = "Not Required"
-        lead["last_action"] = "Kullanıcı hariç tuttu"
-        if on_update:
-            on_update()
-        messagebox.showinfo("Lead Otomasyonu", "Lead hariç tutuldu.", parent=win)
-
-    _action_button(actions, "Sekans Oluştur", create_sequence, "#0f766e").pack(side="left", padx=(0, 8))
-    _action_button(actions, "AI Araştır", run_research, "#7c3aed").pack(side="left", padx=8)
-    _action_button(actions, "Taslakları Yenile", lambda: refresh_detail(show_message=True), "#2563eb").pack(side="left", padx=8)
-    _action_button(actions, "Taslakları Onayla", approve_drafts, "#15803d").pack(side="left", padx=8)
-    _action_button(actions, "Review'a Al", mark_review, "#b45309").pack(side="left", padx=8)
-    _action_button(actions, "Exclude Et", exclude, "#dc2626").pack(side="left", padx=8)
-    _action_button(actions, "Onayla", approve, "#16a34a").pack(side="left", padx=8)
-    _action_button(actions, "Kapat", win.destroy, "#475569").pack(side="left", padx=(8, 0))
+    render_all()
     refresh_detail(show_message=False)
 
 
 def _panel(parent):
-    panel = ctk.CTkFrame(parent, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
-    return panel
+    return ctk.CTkFrame(parent, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
 
 
 def _section_title(parent, text):
     ctk.CTkLabel(
         parent,
         text=text,
-        font=ctk.CTkFont(family="Inter", size=17, weight="bold"),
+        font=ctk.CTkFont(family="Inter", size=16, weight="bold"),
         text_color="#212121",
-    ).pack(anchor="w", padx=18, pady=(18, 8))
+    ).pack(anchor="w", padx=18, pady=(16, 8))
 
 
-def _kv(parent, label, value):
+def _kv_var(parent, label):
+    var = ctk.StringVar(value="-")
     row = ctk.CTkFrame(parent, fg_color="transparent")
     row.pack(fill="x", padx=18, pady=4)
-    ctk.CTkLabel(row, text=f"{label}:", width=120, anchor="w", text_color="#64748b").pack(side="left")
+    ctk.CTkLabel(row, text=f"{label}:", width=130, anchor="w", text_color="#64748b").pack(side="left")
     ctk.CTkLabel(
         row,
-        text=str(value if value not in (None, "") else "-"),
+        textvariable=var,
         anchor="w",
         text_color="#111827",
-        wraplength=340,
+        wraplength=360,
         justify="left",
     ).pack(side="left", fill="x", expand=True)
+    return var
 
 
-def _action_button(parent, text, command, color):
+def _readonly_box(parent, height=120):
+    box = ctk.CTkTextbox(parent, height=height, fg_color="#fafafa", text_color="#212121", wrap="word")
+    box.pack(fill="x", padx=18, pady=(4, 14))
+    box.configure(state="disabled")
+    return box
+
+
+def _primary_button(parent, text, command, color):
     return ctk.CTkButton(
         parent,
         text=text,
@@ -309,6 +405,23 @@ def _action_button(parent, text, command, color):
         fg_color=color,
         hover_color=color,
         text_color="white",
+        width=130,
         height=38,
-        corner_radius=10,
+        corner_radius=8,
+    )
+
+
+def _ghost_button(parent, text, command, color):
+    return ctk.CTkButton(
+        parent,
+        text=text,
+        command=command,
+        fg_color="#ffffff",
+        hover_color="#f8fafc",
+        text_color=color,
+        border_width=1,
+        border_color=color,
+        width=120,
+        height=38,
+        corner_radius=8,
     )

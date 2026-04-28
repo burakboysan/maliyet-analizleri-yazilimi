@@ -421,6 +421,15 @@ def update_ai_lead_segment(token, lead_id, payload):
     return request_json("PUT", f"/desktop/ai-leads/{int(lead_id)}/segment", payload=payload, headers=auth_headers(token))
 
 
+def update_ai_lead_status(token, lead_id, status, note=None):
+    return request_json(
+        "PUT",
+        f"/desktop/ai-leads/{int(lead_id)}/status",
+        payload={"status": str(status or "").strip(), "note": str(note or "").strip() or None},
+        headers=auth_headers(token),
+    ) or {}
+
+
 def exclude_ai_lead(token, lead_id, reason):
     return request_json(
         "POST",

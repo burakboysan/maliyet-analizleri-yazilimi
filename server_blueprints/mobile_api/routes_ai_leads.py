@@ -282,6 +282,11 @@ class AiExcludeRequest(BaseModel):
     reason: str
 
 
+class AiLeadStatusUpdateRequest(BaseModel):
+    status: str
+    note: Optional[str] = None
+
+
 class AiEmailDraftRequest(BaseModel):
     step_number: int = 1
 
@@ -2806,6 +2811,59 @@ def exclude_ai_lead(
     return {"status": "ok"}
 
 
+@router.put("/ai-leads/{lead_id}/status")
+def update_ai_lead_status(
+    lead_id: int,
+    payload: AiLeadStatusUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    allowed = {
+        "New",
+        "Pending AI Analysis",
+        "Review Needed",
+        "Segmented",
+        "Sequence Suggested",
+        "Draft Generated",
+        "Awaiting Approval",
+        "Approved",
+        "Ready for Outreach",
+        "Export to CRM",
+        "Archived",
+        "Excluded",
+    }
+    status_value = _normalize(payload.status)
+    if status_value not in allowed:
+        raise HTTPException(status_code=400, detail="Geçersiz lead durumu.")
+    exclusion_status = "Excluded" if status_value == "Excluded" else ("Review" if status_value == "Review Needed" else "Active")
+    exclusion_reason = _normalize(payload.note) if status_value == "Excluded" else None
+    result = db.execute(
+        text(
+            """
+            UPDATE ai_leads
+            SET status = :status,
+                exclusion_status = :exclusion_status,
+                exclusion_reason = :exclusion_reason
+            WHERE id = :lead_id
+            """
+        ),
+        {
+            "lead_id": lead_id,
+            "status": status_value,
+            "exclusion_status": exclusion_status,
+            "exclusion_reason": exclusion_reason,
+        },
+    )
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Lead bulunamadı.")
+    note = _normalize(payload.note) or f"Lead durumu {status_value} olarak güncellendi."
+    _log_action(db, lead_id, "update_lead_status", note, current_user.id)
+    db.commit()
+    row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+    return _lead_response(db, row)
+
+
 @router.delete("/ai-leads/{lead_id}")
 def delete_ai_lead(
     lead_id: int,
@@ -2865,7 +2923,14 @@ def generate_ai_email_sequence(
     if not contact.get("email"):
         raise HTTPException(status_code=400, detail="Sekans başlatmak için lead email adresi gerekli. Önce Email Enrich çalıştırın veya emaili manuel ekleyin.")
     if str(contact.get("email_status") or "").casefold() not in {"verified", "user managed"}:
-        raise HTTPException(status_code=400, detail=f"Email durumu sekans için uygun değil: {contact.get('email_status') or 'boş'}.")
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Email durumu sekans için uygun değil: {contact.get('email_status') or 'boş'}. "
+                "Sekans yalnızca verified veya kullanıcı tarafından manuel doğrulanmış email ile oluşturulur. "
+                "Apollo 'extrapolated' statüsü emailin tahmini/çıkarımsal olduğunu, doğrulanmış olmadığını gösterir."
+            ),
+        )
 
     segmentation = _latest_segmentation(db, lead_id)
     if not segmentation:
