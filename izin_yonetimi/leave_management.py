@@ -232,7 +232,7 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
     manager_panel.grid_columnconfigure(0, weight=1)
     ctk.CTkLabel(
         manager_panel,
-        text="Yönetici Bekleyen Talepler",
+        text="Yönetici Taleplerim",
         font=ctk.CTkFont(size=18, weight="bold"),
         text_color=TEXT_COLOR,
     ).grid(row=0, column=0, sticky="w", padx=18, pady=(18, 10))
@@ -328,7 +328,8 @@ def izin_yonetimi_ekrani(parent=None, kullanici_rolu=None):
                     summary_vars["used"].set(_format_day(balance.get("used_days")))
                     summary_vars["pending"].set(_format_day(balance.get("pending_approval_days")))
                     _render_requests(my_rows, data.get("my_requests") or [], selectable=False, selected_pending=selected_pending)
-                    _render_requests(pending_rows, data.get("pending_manager_requests") or [], selectable=True, selected_pending=selected_pending)
+                    manager_requests = data.get("manager_requests") or data.get("pending_manager_requests") or []
+                    _render_requests(pending_rows, manager_requests, selectable=True, selected_pending=selected_pending, show_user=True)
                     status_text.set("İzin bilgileri güncel.")
 
                 ui_after(0, apply)
@@ -527,7 +528,7 @@ def _metric_card(parent, column, label, variable, color):
     )
 
 
-def _render_requests(parent, rows, selectable, selected_pending):
+def _render_requests(parent, rows, selectable, selected_pending, show_user=False):
     for child in parent.winfo_children():
         child.destroy()
     if not rows:
@@ -537,7 +538,10 @@ def _render_requests(parent, rows, selectable, selected_pending):
         return
     headers = ctk.CTkFrame(parent, fg_color="#f1f5f9", corner_radius=6)
     headers.pack(fill="x", pady=(0, 6))
-    for col, label in enumerate(["Tarih", "Gün", "Tip", "Durum"]):
+    headers_list = ["Tarih", "Gün", "Tip", "Durum"]
+    if show_user:
+        headers_list.insert(0, "Çalışan")
+    for col, label in enumerate(headers_list):
         headers.grid_columnconfigure(col, weight=1)
         ctk.CTkLabel(headers, text=label, font=ctk.CTkFont(size=11, weight="bold"), text_color=TEXT_COLOR).grid(
             row=0, column=col, sticky="w", padx=8, pady=8
@@ -554,6 +558,8 @@ def _render_requests(parent, rows, selectable, selected_pending):
             str(item.get("approval_mode") or item.get("leave_type") or "-"),
             _display_status(item.get("status")),
         ]
+        if show_user:
+            values.insert(0, str(item.get("user_name") or "-"))
         for col, value in enumerate(values):
             row.grid_columnconfigure(col, weight=1)
             label = ctk.CTkLabel(row, text=value, font=ctk.CTkFont(size=11), text_color=TEXT_COLOR, anchor="w")
