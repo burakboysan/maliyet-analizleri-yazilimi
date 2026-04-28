@@ -21,9 +21,20 @@ MODULES = [
     {"key": "lead_automation", "title": "Lead Otomasyonu", "menu_title": "Lead Otomasyonu"},
 ]
 
+MOBILE_MODULES = [
+    {"key": "selection_wizard", "title": "Seçim Sihirbazı", "menu_title": "Seçim Sihirbazı"},
+    {"key": "field_service", "title": "Saha Servis", "menu_title": "Saha Servis"},
+    {"key": "ai_assistant", "title": "AI Asistan", "menu_title": "AI Asistan"},
+    {"key": "leave_management", "title": "İzin Yönetimi Modülü", "menu_title": "İzin Yönetimi Modülü"},
+    {"key": "technical_calculations", "title": "Teknik Hesaplamalar", "menu_title": "Teknik Hesaplamalar"},
+    {"key": "price_list", "title": "Fiyat Listesi", "menu_title": "Fiyat Listesi"},
+    {"key": "documents", "title": "Dokümanlar", "menu_title": "Dokümanlar"},
+]
+
 MODULES_BY_KEY = {module["key"]: module for module in MODULES}
 MENU_TITLE_TO_KEY = {module["menu_title"]: module["key"] for module in MODULES}
 DEFAULT_MODULE_PERMISSION_KEYS = tuple(module["key"] for module in MODULES)
+DEFAULT_MOBILE_MODULE_PERMISSION_KEYS = tuple(module["key"] for module in MOBILE_MODULES)
 
 
 def normalize_module_permissions(value, role=None):
@@ -54,13 +65,31 @@ def build_permission_payload(selected_keys):
     return {key: key in allowed for key in DEFAULT_MODULE_PERMISSION_KEYS}
 
 
-def _permissions_cache_path():
+def normalize_mobile_module_permissions(value, role=None):
+    if is_owner(role):
+        return list(DEFAULT_MOBILE_MODULE_PERMISSION_KEYS)
+    if value is None:
+        return list(DEFAULT_MOBILE_MODULE_PERMISSION_KEYS)
+    if isinstance(value, dict):
+        return [key for key in DEFAULT_MOBILE_MODULE_PERMISSION_KEYS if bool(value.get(key))]
+    if isinstance(value, (list, tuple, set)):
+        allowed = set(str(item) for item in value)
+        return [key for key in DEFAULT_MOBILE_MODULE_PERMISSION_KEYS if key in allowed]
+    return list(DEFAULT_MOBILE_MODULE_PERMISSION_KEYS)
+
+
+def build_mobile_permission_payload(selected_keys):
+    allowed = set(str(key) for key in (selected_keys or []))
+    return {key: key in allowed for key in DEFAULT_MOBILE_MODULE_PERMISSION_KEYS}
+
+
+def _permissions_cache_path(filename="module_permissions.json"):
     base_dir = Path(os.getenv("APPDATA") or Path.home())
-    return base_dir / "Bomaksan" / "Maliyet Analizleri" / "module_permissions.json"
+    return base_dir / "Bomaksan" / "Maliyet Analizleri" / filename
 
 
-def _read_permissions_cache():
-    path = _permissions_cache_path()
+def _read_permissions_cache(filename="module_permissions.json"):
+    path = _permissions_cache_path(filename)
     if not path.exists():
         return {}
     try:
@@ -71,8 +100,8 @@ def _read_permissions_cache():
     return payload if isinstance(payload, dict) else {}
 
 
-def _write_permissions_cache(payload):
-    path = _permissions_cache_path()
+def _write_permissions_cache(payload, filename="module_permissions.json"):
+    path = _permissions_cache_path(filename)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2, sort_keys=True)
@@ -104,4 +133,23 @@ def save_local_user_module_permissions(user_id=None, username=None, module_permi
     for key in _cache_keys(user_id, username):
         cache[key] = payload
     _write_permissions_cache(cache)
+    return payload
+
+
+def load_local_user_mobile_module_permissions(user_id=None, username=None):
+    cache = _read_permissions_cache("mobile_module_permissions.json")
+    for key in _cache_keys(user_id, username):
+        if key in cache:
+            return cache.get(key)
+    return None
+
+
+def save_local_user_mobile_module_permissions(user_id=None, username=None, mobile_module_permissions=None):
+    cache = _read_permissions_cache("mobile_module_permissions.json")
+    payload = build_mobile_permission_payload(
+        key for key, value in (mobile_module_permissions or {}).items() if bool(value)
+    )
+    for key in _cache_keys(user_id, username):
+        cache[key] = payload
+    _write_permissions_cache(cache, "mobile_module_permissions.json")
     return payload

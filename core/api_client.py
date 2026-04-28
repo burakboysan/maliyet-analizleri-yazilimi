@@ -157,9 +157,19 @@ def get_my_module_permissions(token):
     return (response or {}).get("module_permissions")
 
 
+def get_my_mobile_module_permissions(token):
+    response = request_json("GET", "/auth/me/mobile-module-permissions", headers=auth_headers(token))
+    return (response or {}).get("mobile_module_permissions")
+
+
 def get_user_module_permissions(token, user_id):
     response = request_json("GET", f"/admin/users/{int(user_id)}/module-permissions", headers=auth_headers(token))
     return (response or {}).get("module_permissions")
+
+
+def get_user_mobile_module_permissions(token, user_id):
+    response = request_json("GET", f"/admin/users/{int(user_id)}/mobile-module-permissions", headers=auth_headers(token))
+    return (response or {}).get("mobile_module_permissions")
 
 
 def update_user_module_permissions(token, user_id, module_permissions):
@@ -167,6 +177,15 @@ def update_user_module_permissions(token, user_id, module_permissions):
         "PUT",
         f"/admin/users/{int(user_id)}/module-permissions",
         payload={"module_permissions": module_permissions or {}},
+        headers=auth_headers(token),
+    )
+
+
+def update_user_mobile_module_permissions(token, user_id, mobile_module_permissions):
+    return request_json(
+        "PUT",
+        f"/admin/users/{int(user_id)}/mobile-module-permissions",
+        payload={"mobile_module_permissions": mobile_module_permissions or {}},
         headers=auth_headers(token),
     )
 
