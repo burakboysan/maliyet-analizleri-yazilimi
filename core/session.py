@@ -6,10 +6,11 @@ _session_state = {
     "rol": None,
     "app_token": None,
     "admin_token": None,
+    "module_permissions": None,
 }
 
 
-def set_session(kullanici_adi=None, sifre=None, rol=None, app_token=None, admin_token=None):
+def set_session(kullanici_adi=None, sifre=None, rol=None, app_token=None, admin_token=None, module_permissions=None):
     if kullanici_adi is not None:
         _session_state["kullanici_adi"] = kullanici_adi
     if sifre is not None:
@@ -20,6 +21,8 @@ def set_session(kullanici_adi=None, sifre=None, rol=None, app_token=None, admin_
         _session_state["app_token"] = app_token
     if admin_token is not None:
         _session_state["admin_token"] = admin_token
+    if module_permissions is not None:
+        _session_state["module_permissions"] = module_permissions
 
 
 def clear_session():
@@ -28,6 +31,7 @@ def clear_session():
     _session_state["rol"] = None
     _session_state["app_token"] = None
     _session_state["admin_token"] = None
+    _session_state["module_permissions"] = None
 
 
 def get_session():
@@ -52,3 +56,7 @@ def get_app_token():
 
 def get_admin_token():
     return _session_state.get("admin_token")
+
+
+def get_module_permissions():
+    return _session_state.get("module_permissions")

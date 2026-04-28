@@ -9,6 +9,7 @@ from core.api_client import (
     ApiClientError,
     create_user,
     delete_user,
+    get_user_module_permissions,
     get_user_leave_management,
     list_leave_admin_users,
     list_roles,
@@ -17,9 +18,17 @@ from core.api_client import (
     resend_user_verification,
     update_user_email,
     update_user_leave_management,
+    update_user_module_permissions,
     update_user_password,
 )
 from core.email_verification import is_valid_email, verify_email_code
+from core.module_permissions import (
+    MODULES,
+    build_permission_payload,
+    load_local_user_module_permissions,
+    normalize_module_permissions,
+    save_local_user_module_permissions,
+)
 from core.roles import can_access_user_management
 from core.session import get_app_token
 
@@ -144,6 +153,9 @@ def _display_leave_status(value):
 
 
 def _normalize_user_row(row):
+    module_permissions = row.get("module_permissions")
+    if module_permissions is None:
+        module_permissions = load_local_user_module_permissions(row.get("id"), row.get("kullanici_adi"))
     return (
         row.get("id") or "",
         row.get("kullanici_adi") or "",
@@ -159,6 +171,7 @@ def _normalize_user_row(row):
         row.get("reserved_days"),
         row.get("used_days"),
         row.get("available_days"),
+        normalize_module_permissions(module_permissions, row.get("rol_adi")),
     )
 
 
@@ -320,7 +333,7 @@ def kullanici_yonetim_ekrani(parent=None, kullanici_rolu=None):
         for user in current_users:
             if user[0] == selected_user_id.get():
                 return user
-        return current_users[0] if current_users else ("", "Kullanıcı seçilmedi", "", "", "Bekliyor", "Pasif", "-", None, None, None, None, None, None, None)
+        return current_users[0] if current_users else ("", "Kullanıcı seçilmedi", "", "", "Bekliyor", "Pasif", "-", None, None, None, None, None, None, None, None)
 
     def render_details():
         for child in details.winfo_children():
@@ -746,13 +759,14 @@ def _build_detail_panel(parent, user, token, status_text, on_reload, manager_opt
 
     tab_bar = ctk.CTkFrame(parent, fg_color="transparent")
     tab_bar.grid(row=0, column=0, sticky="ew", pady=(0, 14))
-    tab_bar.grid_columnconfigure((0, 1, 2), weight=1, uniform="detail_tabs")
+    tab_bar.grid_columnconfigure((0, 1, 2, 3), weight=1, uniform="detail_tabs")
 
     content = ctk.CTkFrame(parent, fg_color="transparent")
     content.grid(row=1, column=0, sticky="nsew")
     content.grid_columnconfigure(0, weight=1)
 
     tabs = [
+        ("Modüller", "Modüller"),
         ("Profil", "👤  Profil"),
         ("Güvenlik", "🔐  Güvenlik"),
         ("İzin Yönetimi", "🗓  İzin"),
@@ -776,8 +790,10 @@ def _build_detail_panel(parent, user, token, status_text, on_reload, manager_opt
             _profile_tab(content, user, token, status_text, on_reload)
         elif name == "Güvenlik":
             _security_tab(content, user, token, status_text, on_reload)
-        else:
+        elif name == "İzin Yönetimi":
             _leave_tab(content, user, token, status_text, on_reload, manager_options)
+        else:
+            _modules_tab(content, user, token, status_text, on_reload)
 
     for index, (name, label) in enumerate(tabs):
         button = ctk.CTkButton(
@@ -1014,6 +1030,151 @@ def _security_tab(parent, user, token, status_text, on_reload):
         command=verify_code,
     )
     verify_button.grid(row=2, column=1, sticky="ew", padx=(6, 14), pady=(4, 14))
+
+
+def _modules_tab(parent, user, token, status_text, on_reload):
+    parent.grid_rowconfigure(1, weight=1)
+    user_id = user[0]
+    initial_permissions = user[14] if len(user) > 14 else None
+    module_vars = {
+        module["key"]: tk.BooleanVar(value=module["key"] in normalize_module_permissions(initial_permissions, user[3]))
+        for module in MODULES
+    }
+
+    header = ctk.CTkFrame(parent, fg_color=SURFACE_BG, corner_radius=8, border_width=1, border_color=SOFT_BORDER_COLOR)
+    header.grid(row=0, column=0, sticky="ew", padx=0, pady=(10, 12))
+    header.grid_columnconfigure(0, weight=1)
+    ctk.CTkLabel(
+        header,
+        text="Modül Görünürlükleri",
+        font=ctk.CTkFont(size=15, weight="bold"),
+        text_color=TEXT_COLOR,
+    ).grid(row=0, column=0, sticky="w", padx=14, pady=(14, 4))
+    ctk.CTkLabel(
+        header,
+        text="Seçili kullanıcının ana menüde görebileceği modülleri belirleyin.",
+        font=ctk.CTkFont(size=12),
+        text_color=MUTED_TEXT_COLOR,
+    ).grid(row=1, column=0, sticky="w", padx=14, pady=(0, 14))
+
+    list_frame = ctk.CTkScrollableFrame(parent, fg_color=SURFACE_BG, corner_radius=8, border_width=1, border_color=SOFT_BORDER_COLOR)
+    list_frame.grid(row=1, column=0, sticky="nsew", pady=(0, 12))
+    list_frame.grid_columnconfigure(0, weight=1)
+
+    for row_index, module in enumerate(MODULES):
+        checkbox = ctk.CTkCheckBox(
+            list_frame,
+            text=module["menu_title"],
+            variable=module_vars[module["key"]],
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=TEXT_COLOR,
+            fg_color=ACCENT_COLOR,
+            hover_color=ACCENT_HOVER_COLOR,
+        )
+        checkbox.grid(row=row_index, column=0, sticky="w", padx=14, pady=8)
+
+    actions = ctk.CTkFrame(parent, fg_color="transparent")
+    actions.grid(row=2, column=0, sticky="ew")
+    actions.grid_columnconfigure((0, 1, 2), weight=1)
+
+    def set_all(value):
+        for variable in module_vars.values():
+            variable.set(bool(value))
+
+    def save_permissions():
+        selected_keys = [key for key, variable in module_vars.items() if variable.get()]
+        payload = build_permission_payload(selected_keys)
+        save_button.configure(state="disabled", text="Kaydediliyor")
+        status_text.set("Modül yetkileri kaydediliyor...")
+
+        def on_success(result):
+            local_suffix = "\n\nAPI hazır olmadığı için yerel yedek kayıt kullanıldı." if (result or {}).get("local_fallback") else ""
+            messagebox.showinfo("Başarılı", f"Modül yetkileri kaydedildi.{local_suffix}", parent=parent)
+            save_button.configure(state="normal", text="Yetkileri Kaydet")
+            status_text.set("Modül yetkileri kaydedildi.")
+            on_reload()
+
+        def on_error(message):
+            messagebox.showerror("Hata", message, parent=parent)
+            save_button.configure(state="normal", text="Yetkileri Kaydet")
+            status_text.set("Modül yetkileri kaydedilemedi.")
+
+        def action():
+            try:
+                return update_user_module_permissions(token, user_id, payload)
+            except ApiClientError:
+                saved_payload = save_local_user_module_permissions(user_id, user[1], payload)
+                return {"local_fallback": True, "module_permissions": saved_payload}
+
+        _run_backend_action(parent, action, on_success, on_error)
+
+    def reload_permissions():
+        reload_button.configure(state="disabled", text="Yükleniyor")
+        status_text.set("Modül yetkileri yükleniyor...")
+
+        def on_success(result):
+            permissions = normalize_module_permissions(result, user[3])
+            for key, variable in module_vars.items():
+                variable.set(key in permissions)
+            reload_button.configure(state="normal", text="API'den Yükle")
+            status_text.set("Modül yetkileri yüklendi.")
+
+        def on_error(message):
+            messagebox.showerror("Hata", message, parent=parent)
+            reload_button.configure(state="normal", text="API'den Yükle")
+            status_text.set("Modül yetkileri yüklenemedi.")
+
+        def action():
+            try:
+                return get_user_module_permissions(token, user_id)
+            except ApiClientError:
+                local_permissions = load_local_user_module_permissions(user_id, user[1])
+                if local_permissions is None:
+                    raise
+                return local_permissions
+
+        _run_backend_action(parent, action, on_success, on_error)
+
+    ctk.CTkButton(
+        actions,
+        text="Tümünü Aç",
+        height=38,
+        fg_color=BLUE,
+        hover_color=BLUE_HOVER,
+        command=lambda: set_all(True),
+    ).grid(row=0, column=0, sticky="ew", padx=(0, 6))
+    ctk.CTkButton(
+        actions,
+        text="Tümünü Kapat",
+        height=38,
+        fg_color=PANEL_BG,
+        hover_color="#f1f5f9",
+        text_color=TEXT_COLOR,
+        border_width=1,
+        border_color=BORDER_COLOR,
+        command=lambda: set_all(False),
+    ).grid(row=0, column=1, sticky="ew", padx=6)
+    reload_button = ctk.CTkButton(
+        actions,
+        text="API'den Yükle",
+        height=38,
+        fg_color=PANEL_BG,
+        hover_color="#f1f5f9",
+        text_color=TEXT_COLOR,
+        border_width=1,
+        border_color=BORDER_COLOR,
+        command=reload_permissions,
+    )
+    reload_button.grid(row=1, column=0, columnspan=2, sticky="ew", padx=(0, 6), pady=(8, 0))
+    save_button = ctk.CTkButton(
+        actions,
+        text="Yetkileri Kaydet",
+        height=38,
+        fg_color=ACCENT_COLOR,
+        hover_color=ACCENT_HOVER_COLOR,
+        command=save_permissions,
+    )
+    save_button.grid(row=0, column=2, rowspan=2, sticky="nsew", padx=(6, 0))
 
 
 def _leave_tab(parent, user, token, status_text, on_reload, manager_options):

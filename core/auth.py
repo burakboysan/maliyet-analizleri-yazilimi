@@ -1,7 +1,8 @@
 import hashlib
 import bcrypt
 
-from core.api_client import ApiClientError, app_login
+from core.api_client import ApiClientError, app_login, get_my_module_permissions
+from core.module_permissions import load_local_user_module_permissions, normalize_module_permissions
 from core.session import set_session
 
 
@@ -48,9 +49,19 @@ def kullanici_giris_yap(kullanici_adi, sifre):
         token = response.get("access_token")
         if not token or not user:
             raise LoginError("Giris yaniti eksik dondu.")
-        set_session(app_token=token)
+        role_name = user.get("rol_adi")
+        module_permissions = user.get("module_permissions")
+        if module_permissions is None:
+            try:
+                module_permissions = get_my_module_permissions(token)
+            except ApiClientError:
+                module_permissions = load_local_user_module_permissions(
+                    user_id=user.get("id"),
+                    username=user.get("kullanici_adi") or kullanici_adi,
+                )
+        set_session(app_token=token, module_permissions=normalize_module_permissions(module_permissions, role_name))
         print(f"Basarili giris: {kullanici_adi}")
-        return user.get("kullanici_adi"), user.get("rol_adi")
+        return user.get("kullanici_adi"), role_name
     except LoginError:
         raise
     except ApiClientError as e:

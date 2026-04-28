@@ -37,7 +37,8 @@ from core.api_client import (
     save_mobile_price_list,
 )
 from core.roles import can_access_user_management, has_master_admin_capabilities
-from core.session import get_app_token
+from core.session import get_app_token, get_module_permissions
+from core.module_permissions import can_view_module
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping, setup_responsive_table
 import threading
 import time
@@ -2102,6 +2103,12 @@ def ana_menu_ac(kullanici_adi, kullanici_rolu, parent_root=None):
         modules_data = [m for m in modules_data if m.get("title") not in OWNER_ONLY_MODULES]
 
     modules_data = [m for m in modules_data if m.get("title") != "Sihirbaz"]
+    current_module_permissions = get_module_permissions()
+    modules_data = [
+        m
+        for m in modules_data
+        if can_view_module(m.get("title"), current_module_permissions, kullanici_rolu)
+    ]
 
     wide_module_titles = {"Fiyat Listesi", "Seçim Sihirbazı", "Teknik Hesaplamalar"}
 
