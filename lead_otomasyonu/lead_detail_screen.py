@@ -90,6 +90,11 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     info_vars["email_status"] = _kv_var(email_panel, "Email Durumu")
     textboxes["email_explanation"] = _readonly_box(email_panel, height=130)
 
+    contacts_panel = _panel(left)
+    contacts_panel.pack(fill="x", pady=(0, 12))
+    _section_title(contacts_panel, "Lead İçindeki Kişiler")
+    textboxes["contacts"] = _readonly_box(contacts_panel, height=180)
+
     status_panel = _panel(left)
     status_panel.pack(fill="x", pady=(0, 12))
     _section_title(status_panel, "Operasyon Durumu")
@@ -199,6 +204,29 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         }
         explanation = explanations.get(status.casefold(), "Email durumu Apollo'dan geldiği şekliyle gösteriliyor; verified değilse otomatik sekans için uygun kabul edilmez.")
         return f"Status: {status or '-'}\n\n{explanation}\n\nEnrichment notu:\n{note or '-'}"
+
+    def contacts_text():
+        contacts = detail().get("contacts") or []
+        if not contacts:
+            return "Bu lead altında kayıtlı kişi yok. SerpAPI firma/domain bulur; Apollo Email Enrich çalışınca karar vericiler bu alana eklenir."
+        lines = []
+        for index, contact in enumerate(contacts, start=1):
+            name = " ".join(
+                part
+                for part in [
+                    str(contact.get("first_name") or "").strip(),
+                    str(contact.get("last_name") or "").strip(),
+                ]
+                if part
+            ) or str(contact.get("name") or "").strip() or "-"
+            lines.append(f"{index}. {name}")
+            lines.append(f"   Ünvan: {contact.get('title') or '-'}")
+            lines.append(f"   Email: {contact.get('email') or '-'}")
+            lines.append(f"   Email Durumu: {contact.get('email_status') or '-'}")
+            if contact.get("linkedin_url"):
+                lines.append(f"   LinkedIn: {contact.get('linkedin_url')}")
+            lines.append("")
+        return "\n".join(lines).strip()
 
     def segmentation_source_text():
         reason = detail().get("short_reasoning") or ""
@@ -310,6 +338,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         if detail().get("product_category") in PRODUCT_CATEGORIES:
             segment_product_var.set(detail().get("product_category"))
         update_textbox("email_explanation", email_explanation_text())
+        update_textbox("contacts", contacts_text())
         update_textbox("segmentation_source", segmentation_source_text())
         update_textbox("apollo_source", apollo_source_text())
         update_textbox("personalization", personalization_text())

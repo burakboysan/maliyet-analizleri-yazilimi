@@ -504,7 +504,7 @@ class ApolloSegmentSearchRequest(BaseModel):
 class SerpApiSearchRequest(BaseModel):
     country: Optional[str] = None
     keywords: List[str] = []
-    limit: int = 25
+    pages: int = 1
 
 
 class AiSearchRecipeUpdateRequest(BaseModel):
@@ -1166,7 +1166,10 @@ def _primary_contact(db: Session, lead_id: int) -> dict[str, Any] | None:
             SELECT *
             FROM ai_lead_contacts
             WHERE lead_id = :lead_id
-            ORDER BY id ASC
+            ORDER BY
+                CASE WHEN LOWER(COALESCE(email_status, '')) = 'verified' THEN 0 ELSE 1 END,
+                CASE WHEN COALESCE(email, '') != '' THEN 0 ELSE 1 END,
+                id ASC
             LIMIT 1
             """
         ),
@@ -2422,7 +2425,7 @@ def _serpapi_get(query: dict[str, Any]) -> dict[str, Any]:
 
 def _bulk_enrich_people(people: list[dict[str, Any]], domain: str) -> list[dict[str, Any]]:
     details = []
-    for person in people[:10]:
+    for person in people[:25]:
         detail = {"id": person.get("id")}
         if not detail["id"]:
             detail = {
@@ -2527,36 +2530,37 @@ def _serpapi_find_domains(recipe: dict[str, Any], country: str, limit: int) -> l
     return domains
 
 
-def _serpapi_find_domains_by_keywords(keywords: list[str], country: str, limit: int) -> list[dict[str, str]]:
+def _serpapi_find_domains_by_keywords(keywords: list[str], country: str, pages: int) -> list[dict[str, str]]:
     domains = []
     seen_domains = set()
     gl = _serpapi_country_code(country)
     country_part = country or ""
+    page_count = min(max(int(pages or 1), 1), 10)
     queries = [
         f"{keyword} {country_part} company -jobs -linkedin -facebook -youtube"
         for keyword in _dedupe_strings(keywords)
         if _normalize(keyword)
     ]
     for search_query in queries:
-        response = _serpapi_get({"q": search_query, "gl": gl, "hl": "en"})
-        for result in response.get("organic_results") or []:
-            link = _normalize(result.get("link"))
-            domain = _domain_from_url(link)
-            if not _is_searchable_company_domain(domain) or domain in seen_domains:
-                continue
-            seen_domains.add(domain)
-            domains.append(
-                {
-                    "domain": domain,
-                    "website": f"https://{domain}",
-                    "company_name": _normalize(result.get("title")).split("|")[0].split("-")[0].strip() or domain,
-                    "snippet": _normalize(result.get("snippet")),
-                    "serp_query": search_query,
-                    "serp_link": link,
-                }
-            )
-            if len(domains) >= limit:
-                return domains
+        for page_index in range(page_count):
+            response = _serpapi_get({"q": search_query, "gl": gl, "hl": "en", "start": page_index * 10})
+            for result in response.get("organic_results") or []:
+                link = _normalize(result.get("link"))
+                domain = _domain_from_url(link)
+                if not _is_searchable_company_domain(domain) or domain in seen_domains:
+                    continue
+                seen_domains.add(domain)
+                domains.append(
+                    {
+                        "domain": domain,
+                        "website": f"https://{domain}",
+                        "company_name": _normalize(result.get("title")).split("|")[0].split("-")[0].strip() or domain,
+                        "snippet": _normalize(result.get("snippet")),
+                        "serp_query": search_query,
+                        "serp_link": link,
+                        "serp_page": str(page_index + 1),
+                    }
+                )
     return domains
 
 
@@ -2960,6 +2964,95 @@ def _create_unassigned_lead_from_serp_domain(
     return _lead_response(db, row)
 
 
+def _insert_or_update_contact_from_person(db: Session, lead_id: int, person: dict[str, Any]) -> dict[str, Any]:
+    first_name = _normalize(person.get("first_name"))
+    last_name = _normalize(person.get("last_name"))
+    name = _normalize(person.get("name"))
+    if not first_name and name:
+        first_name, last_name = _split_name(name)
+    title = _normalize(person.get("title"))
+    email_value = _normalize(person.get("email"))
+    email_status = _normalize(person.get("email_status") or person.get("contact_email_status") or "not_revealed")
+    enrichment_note = _email_enrichment_note(person, email_value, email_status, attempted=True)
+    phone = _normalize(person.get("phone") or person.get("sanitized_phone"))
+    linkedin_url = _normalize(person.get("linkedin_url"))
+    apollo_person_id = _normalize(person.get("id"))
+
+    existing = None
+    if apollo_person_id:
+        existing = db.execute(
+            text("SELECT * FROM ai_lead_contacts WHERE lead_id = :lead_id AND apollo_person_id = :apollo_person_id LIMIT 1"),
+            {"lead_id": lead_id, "apollo_person_id": apollo_person_id},
+        ).first()
+    if not existing and email_value:
+        existing = db.execute(
+            text("SELECT * FROM ai_lead_contacts WHERE lead_id = :lead_id AND email = :email LIMIT 1"),
+            {"lead_id": lead_id, "email": email_value},
+        ).first()
+
+    values = {
+        "lead_id": lead_id,
+        "first_name": first_name,
+        "last_name": last_name,
+        "title": title,
+        "email": email_value,
+        "email_status": email_status,
+        "enrichment_note": enrichment_note,
+        "linkedin_url": linkedin_url,
+        "phone": phone,
+        "apollo_person_id": apollo_person_id,
+        "apollo_raw_json": json.dumps(person, ensure_ascii=False),
+    }
+    if existing:
+        existing_contact = _lead_row_to_dict(existing)
+        db.execute(
+            text(
+                """
+                UPDATE ai_lead_contacts
+                SET first_name = :first_name,
+                    last_name = :last_name,
+                    title = :title,
+                    email = :email,
+                    email_status = :email_status,
+                    enrichment_note = :enrichment_note,
+                    linkedin_url = :linkedin_url,
+                    phone = :phone,
+                    apollo_person_id = :apollo_person_id,
+                    apollo_raw_json = :apollo_raw_json
+                WHERE id = :contact_id
+                """
+            ),
+            {"contact_id": existing_contact["id"], **values},
+        )
+        contact_id = int(existing_contact["id"])
+    else:
+        result = db.execute(
+            text(
+                """
+                INSERT INTO ai_lead_contacts (
+                    lead_id, first_name, last_name, title, email, email_status, enrichment_note, linkedin_url, phone, apollo_person_id, apollo_raw_json
+                )
+                VALUES (
+                    :lead_id, :first_name, :last_name, :title, :email, :email_status, :enrichment_note, :linkedin_url, :phone, :apollo_person_id, :apollo_raw_json
+                )
+                """
+            ),
+            values,
+        )
+        contact_id = int(result.lastrowid)
+    return {
+        "id": contact_id,
+        "name": " ".join(part for part in [first_name, last_name] if part),
+        "title": title,
+        "email": email_value,
+        "email_status": email_status,
+        "enrichment_note": enrichment_note,
+        "linkedin_url": linkedin_url,
+        "phone": phone,
+        "apollo_person_id": apollo_person_id,
+    }
+
+
 def _apollo_people_for_serp_domain(domain_result: dict[str, str], recipe: dict[str, Any], country: str, per_domain: int) -> list[dict[str, Any]]:
     domain = _normalize(domain_result.get("domain"))
     if not domain:
@@ -3191,9 +3284,9 @@ def search_serpapi_domains(
     keywords = _dedupe_strings(payload.keywords or [])
     if not keywords:
         raise HTTPException(status_code=400, detail="En az bir SerpAPI keyword girilmelidir.")
-    limit = min(max(int(payload.limit or 25), 1), 100)
+    pages = min(max(int(payload.pages or 1), 1), 10)
     country = _normalize(payload.country)
-    domains = _serpapi_find_domains_by_keywords(keywords, country, limit)
+    domains = _serpapi_find_domains_by_keywords(keywords, country, pages)
     created = []
     skipped_duplicates = 0
     for domain_result in domains:
@@ -3206,6 +3299,7 @@ def search_serpapi_domains(
     db.commit()
     return {
         "country": country,
+        "pages": pages,
         "found_domains": len(domains),
         "created": len(created),
         "skipped_duplicates": skipped_duplicates,
@@ -3237,30 +3331,48 @@ def enrich_ai_lead_from_apollo(
             "q_organization_domains_list[]": [domain],
             "organization_locations[]": [lead.get("country")] if lead.get("country") else [],
             "page": 1,
-            "per_page": 5,
+            "per_page": 25,
         }
         people_response = _apollo_post("/mixed_people/api_search", payload={}, query=people_query)
         people = people_response.get("people") or people_response.get("contacts") or []
         if not people:
             raise HTTPException(status_code=404, detail="Apollo domain aramasında karar verici bulunamadı.")
         people = _bulk_enrich_people(people, domain)
-        person = people[0] or {}
-        organization = person.get("organization") or {}
-        person["organization"] = {
-            "name": lead.get("company_name"),
-            "website_url": lead.get("website"),
-            "primary_domain": domain,
-            "country": lead.get("country"),
-            "short_description": lead.get("detected_activity") or lead.get("company_description") or "",
-            **organization,
-        }
-        person["__forced_segment"] = {
-            "sales_channel": segmentation.get("sales_channel"),
-            "product_category": segmentation.get("product_category"),
-            "segment_name": segmentation.get("segment_name"),
-            "priority": segmentation.get("priority"),
-            "suggested_sequence": segmentation.get("suggested_sequence"),
-        }
+        contacts = []
+        for found_person in people:
+            organization = found_person.get("organization") or {}
+            found_person["organization"] = {
+                "name": lead.get("company_name"),
+                "website_url": lead.get("website"),
+                "primary_domain": domain,
+                "country": lead.get("country"),
+                "short_description": lead.get("detected_activity") or lead.get("company_description") or "",
+                **organization,
+            }
+            found_person["__forced_segment"] = {
+                "sales_channel": segmentation.get("sales_channel"),
+                "product_category": segmentation.get("product_category"),
+                "segment_name": segmentation.get("segment_name"),
+                "priority": segmentation.get("priority"),
+                "suggested_sequence": segmentation.get("suggested_sequence"),
+            }
+            contacts.append(_insert_or_update_contact_from_person(db, lead_id, found_person))
+        primary = next((item for item in contacts if _normalize(item.get("email"))), contacts[0] if contacts else {})
+        db.execute(
+            text(
+                """
+                UPDATE ai_leads
+                SET apollo_person_id = COALESCE(apollo_person_id, :apollo_person_id),
+                    apollo_raw_json = :apollo_raw_json
+                WHERE id = :lead_id
+                """
+            ),
+            {"lead_id": lead_id, "apollo_person_id": primary.get("apollo_person_id"), "apollo_raw_json": json.dumps(people_response, ensure_ascii=False)},
+        )
+        _log_action(db, lead_id, "apollo_enrich", f"Apollo domain araması tamamlandı. {len(contacts)} kişi lead içine eklendi.", current_user.id)
+        db.commit()
+        row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+        return {"status": "ok", "contacts": contacts, "contact": primary, "lead": _lead_response(db, row)}
     query = {
         "id": apollo_person_id or None,
         "name": full_name or None,

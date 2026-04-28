@@ -475,11 +475,11 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         vars_ = {
             "country": ctk.StringVar(value=TARGET_COUNTRIES[0] if TARGET_COUNTRIES else "Germany"),
             "keywords": ctk.StringVar(value="dust collection distributor, industrial filtration company, fume extraction supplier"),
-            "limit": ctk.StringVar(value="25"),
+            "pages": ctk.StringVar(value="1"),
         }
         _form_country_selector(form, "Ülke", vars_["country"], TARGET_COUNTRIES, 0, dialog)
         _form_entry(form, "Anahtar Kelimeler", vars_["keywords"], 1)
-        _form_entry(form, "Firma Limiti", vars_["limit"], 2)
+        _form_entry(form, "Arama Sayfası", vars_["pages"], 2)
 
         note = ctk.CTkLabel(
             form,
@@ -496,15 +496,15 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 messagebox.showwarning("Eksik Bilgi", "Lütfen en az bir keyword girin.", parent=dialog)
                 return
             try:
-                limit = max(1, min(int(vars_["limit"].get() or 25), 100))
+                pages = max(1, min(int(vars_["pages"].get() or 1), 10))
             except Exception:
-                messagebox.showwarning("Eksik Bilgi", "Firma limiti sayı olmalı.", parent=dialog)
+                messagebox.showwarning("Eksik Bilgi", "Arama sayfası sayı olmalı.", parent=dialog)
                 return
 
             payload = {
                 "country": vars_["country"].get().strip(),
                 "keywords": keywords,
-                "limit": limit,
+                "pages": pages,
             }
 
             def worker():
