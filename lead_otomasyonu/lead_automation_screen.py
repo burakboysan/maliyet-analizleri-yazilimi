@@ -1,6 +1,7 @@
 import csv
 import threading
 from tkinter import filedialog, messagebox, ttk
+import tkinter as tk
 
 import customtkinter as ctk
 
@@ -487,7 +488,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             "enrich": ctk.StringVar(value="Evet"),
         }
         _form_combo(form, "Segment", vars_["segment_name"], segment_values, 0)
-        _form_combo(form, "Ülke", vars_["country"], TARGET_COUNTRIES, 1)
+        _form_country_selector(form, "Ülke", vars_["country"], TARGET_COUNTRIES, 1, dialog)
         _form_entry(form, "Lead Limiti", vars_["limit"], 2)
         _form_combo(form, "Email Enrichment", vars_["enrich"], ["Evet", "Hayır"], 3)
 
@@ -731,6 +732,88 @@ def _form_combo(parent, label, variable, values, row):
     combo.grid(row=row, column=1, sticky="ew", padx=16, pady=8)
     parent.grid_columnconfigure(1, weight=1)
     return combo
+
+
+def _form_country_selector(parent, label, variable, values, row, owner):
+    ctk.CTkLabel(parent, text=label, text_color="#475569").grid(row=row, column=0, sticky="w", padx=16, pady=8)
+    field = ctk.CTkFrame(parent, fg_color="transparent")
+    field.grid(row=row, column=1, sticky="ew", padx=16, pady=8)
+    field.grid_columnconfigure(0, weight=1)
+    entry = ctk.CTkEntry(field, textvariable=variable)
+    entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+    def open_picker(_event=None):
+        picker = ctk.CTkToplevel(owner)
+        picker.title("Ülke Seç")
+        picker.geometry("380x460")
+        picker.minsize(320, 360)
+        picker.configure(fg_color="#f5f5f5")
+        picker.transient(owner)
+        picker.grab_set()
+
+        frame = ctk.CTkFrame(picker, fg_color="#ffffff", corner_radius=12)
+        frame.pack(fill="both", expand=True, padx=14, pady=14)
+        ctk.CTkLabel(
+            frame,
+            text="Baş harfe basarak liste içinde hızlıca gezinebilirsiniz.",
+            text_color="#64748b",
+            wraplength=330,
+        ).pack(anchor="w", padx=12, pady=(12, 8))
+
+        list_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        list_frame.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical")
+        listbox = tk.Listbox(
+            list_frame,
+            activestyle="dotbox",
+            exportselection=False,
+            height=18,
+            font=("Segoe UI", 10),
+        )
+        listbox.config(yscrollcommand=scrollbar.set)
+        scrollbar.config(command=listbox.yview)
+        listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        for country in values:
+            listbox.insert("end", country)
+
+        def select_current(_event=None):
+            selected = listbox.curselection()
+            if not selected:
+                return
+            variable.set(listbox.get(selected[0]))
+            picker.destroy()
+
+        def jump_to_letter(event):
+            char = str(event.char or "").casefold()
+            if not char or not char.isalpha():
+                return
+            for index, country in enumerate(values):
+                if str(country).casefold().startswith(char):
+                    listbox.selection_clear(0, "end")
+                    listbox.selection_set(index)
+                    listbox.activate(index)
+                    listbox.see(index)
+                    return "break"
+            return None
+
+        current = variable.get()
+        if current in values:
+            index = values.index(current)
+            listbox.selection_set(index)
+            listbox.activate(index)
+            listbox.see(index)
+        listbox.bind("<Double-1>", select_current)
+        listbox.bind("<Return>", select_current)
+        listbox.bind("<Key>", jump_to_letter)
+        picker.bind("<Escape>", lambda _event: picker.destroy())
+        picker.after(100, listbox.focus_set)
+
+    ctk.CTkButton(field, text="Seç", width=70, command=open_picker, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").grid(row=0, column=1, sticky="e")
+    entry.bind("<Button-1>", open_picker)
+    parent.grid_columnconfigure(1, weight=1)
+    return entry
 
 
 def _next_id(leads):
