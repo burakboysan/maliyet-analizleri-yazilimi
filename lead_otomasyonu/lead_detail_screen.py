@@ -597,7 +597,8 @@ def lead_detay_ekrani(parent, lead, on_update=None):
 
         def worker():
             try:
-                response = update_ai_lead_status(token, lead.get("id"), status_var.get(), status_note_var.get())
+                update_ai_lead_status(token, lead.get("id"), status_var.get(), status_note_var.get())
+                response = get_ai_lead_detail(token, lead.get("id"))
                 state["detail"] = response
                 lead.update(response)
                 win.after(0, render_all)
