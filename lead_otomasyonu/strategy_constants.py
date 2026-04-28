@@ -266,19 +266,9 @@ def build_segment_name(product_category, sales_channel):
 
 def priority_for_segment(product_category, sales_channel):
     product = str(product_category or "").strip()
-    channel = str(sales_channel or "").strip()
-
-    if channel == "Direct Sales":
-        return "Medium" if product == "Turnkey Solutions" else "Low"
-    if product == "Turnkey Solutions" and channel == "System Integration Solution Partner":
-        return "Very High"
-    if product == "Dust Collection" and channel == "System Integration Solution Partner":
-        return "Very High"
-    if channel in {"White Label / Resellers", "Clean Air Solution Partner", "System Integration Solution Partner"}:
+    if product in {"Fume Extraction", "Dust Collection", "Oil Mist Filtration"}:
         return "High"
-    if channel == "OEM" and product in {"Fume Extraction", "Dust Collection", "Oil Mist Filtration"}:
-        return "Medium"
-    return "Low"
+    return "Medium"
 
 
 SEGMENTS = [

@@ -391,17 +391,11 @@ def _language_for_country(country: str) -> str:
 
 
 def _priority_for_segment(product_category: str, sales_channel: str) -> str:
-    if sales_channel == "Direct Sales":
-        return "Medium" if product_category == "Turnkey Solutions" else "Low"
-    if product_category == "Turnkey Solutions" and sales_channel == "System Integration Solution Partner":
-        return "Very High"
-    if product_category == "Dust Collection" and sales_channel == "System Integration Solution Partner":
-        return "Very High"
-    if sales_channel in {"White Label / Resellers", "Clean Air Solution Partner", "System Integration Solution Partner"}:
+    if product_category in {"Fume Extraction", "Dust Collection", "Oil Mist Filtration"}:
         return "High"
-    if sales_channel == "OEM" and product_category in {"Fume Extraction", "Dust Collection", "Oil Mist Filtration"}:
+    if sales_channel == "Direct Sales":
         return "Medium"
-    return "Low"
+    return "Medium"
 
 
 def _guess_sales_channel(text_value: str) -> str:
@@ -462,15 +456,6 @@ def _product_category_from_import_row(row: dict[str, Any], fallback_text: str) -
 
 
 def _priority_from_import_row(row: dict[str, Any], product_category: str, sales_channel: str) -> str:
-    tier = _first_import_value(row, ["icp_tier", "ICP Tier"])
-    if tier == "A+ Partner Target":
-        return "Very High"
-    if tier == "A Partner Target":
-        return "High"
-    if tier == "B Partner Target":
-        return "Medium"
-    if tier:
-        return "Low"
     return _priority_for_segment(product_category, sales_channel)
 
 
@@ -496,19 +481,7 @@ def _sequence_from_import_row(row: dict[str, Any], sales_channel: str) -> str:
 
 
 def _score(priority: str, excluded: bool, has_contact: bool, sales_channel: str) -> int:
-    if excluded:
-        return 0
-    base = {
-        "Very High": 86,
-        "High": 74,
-        "Medium": 58,
-        "Low": 34,
-    }.get(priority, 45)
-    if has_contact:
-        base += 8
-    if sales_channel in {"White Label / Resellers", "Clean Air Solution Partner", "System Integration Solution Partner"}:
-        base += 6
-    return min(base, 100)
+    return 0
 
 
 def _ensure_tables(db: Session) -> None:
@@ -834,7 +807,7 @@ def _analyze_values(lead: dict[str, Any], has_contact: bool = False) -> dict[str
     sales_channel = _guess_sales_channel(activity)
     product_category = _guess_product_category(activity)
     priority = "Excluded" if excluded else _priority_for_segment(product_category, sales_channel)
-    ai_score = _score(priority, excluded, has_contact, sales_channel)
+    ai_score = 0
     sequence = _sequence_code(sales_channel)
     segment = _segment_name(product_category, sales_channel)
     language = _normalize(lead.get("local_language")) or _language_for_country(country)
@@ -890,7 +863,7 @@ def _analysis_from_import_row(row: dict[str, Any], lead: dict[str, Any], has_con
     sales_channel = _sales_channel_from_import_row(row, fallback_text)
     product_category = _product_category_from_import_row(row, fallback_text)
     priority = "Excluded" if excluded else _priority_from_import_row(row, product_category, sales_channel)
-    ai_score = 0 if excluded else _score_from_import_row(row, priority)
+    ai_score = 0
     sequence = _sequence_from_import_row(row, sales_channel)
     return {
         "country": country,
@@ -943,12 +916,16 @@ def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
         text("SELECT COUNT(*) FROM ai_email_drafts WHERE lead_id = :lead_id"),
         {"lead_id": lead["id"]},
     ).scalar() or 0
+    sequence_stage = _email_sequence_stage(lead, contact, draft_count)
+    priority_value = segmentation.get("priority") or ("Excluded" if lead.get("exclusion_status") == "Excluded" else "")
+    if lead.get("status") == "Review Needed":
+        priority_value = "Low"
     return {
         **lead,
         "sales_channel": segmentation.get("sales_channel") or "",
         "product_category": segmentation.get("product_category") or "",
         "segment_name": segmentation.get("segment_name") or "",
-        "priority": segmentation.get("priority") or ("Excluded" if lead.get("exclusion_status") == "Excluded" else ""),
+        "priority": priority_value,
         "ai_score": segmentation.get("ai_score") or 0,
         "contact_name": _contact_name(contact),
         "contact_title": contact.get("title") or "",
@@ -964,7 +941,24 @@ def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
         "research_status": research.get("status") or "Not Researched",
         "research_summary": research.get("company_overview") or "",
         "draft_count": draft_count,
+        "email_sequence_stage": sequence_stage,
     }
+
+
+def _email_sequence_stage(lead: dict[str, Any], contact: dict[str, Any], draft_count: int) -> str:
+    status = str(lead.get("status") or "")
+    email_status = str(contact.get("email_status") or "").casefold()
+    if status == "Excluded":
+        return "Kapsam Dışı"
+    if status == "Review Needed":
+        return "Review Needed"
+    if draft_count:
+        return f"Taslak Oluşturuldu ({draft_count})"
+    if not contact.get("email"):
+        return "Email Bekliyor"
+    if email_status not in {"verified", "user managed"}:
+        return "Email Doğrulama Bekliyor"
+    return "Sekans Hazır"
 
 
 def _primary_contact(db: Session, lead_id: int) -> dict[str, Any] | None:
@@ -2283,16 +2277,22 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
                 "sales_channel": forced_segment.get("sales_channel") or analysis["sales_channel"],
                 "product_category": forced_segment.get("product_category") or analysis["product_category"],
                 "segment_name": forced_segment.get("segment_name") or analysis["segment_name"],
-                "priority": forced_segment.get("priority") or analysis["priority"],
+                "priority": _priority_for_segment(
+                    forced_segment.get("product_category") or analysis["product_category"],
+                    forced_segment.get("sales_channel") or analysis["sales_channel"],
+                ),
                 "suggested_sequence": forced_segment.get("suggested_sequence") or analysis["suggested_sequence"],
                 "partner_type": forced_segment.get("sales_channel") or analysis["partner_type"],
                 "short_reasoning": f"Segment Search recipe matched: {forced_segment.get('segment_name')}",
             }
         )
-        analysis["ai_score"] = _score(analysis["priority"], False, True, analysis["sales_channel"])
+        analysis["ai_score"] = 0
     if fit_filter.get("reason"):
         analysis["short_reasoning"] = f"{analysis.get('short_reasoning') or ''}\nFit filter: {fit_filter.get('reason')}".strip()
     status_value = "Excluded" if analysis["is_excluded"] else (fit_filter.get("lead_status") or "Segmented")
+    if status_value == "Review Needed":
+        analysis["priority"] = "Low"
+        analysis["ai_score"] = 0
     result = db.execute(
         text(
             """
@@ -2976,7 +2976,7 @@ def update_ai_lead_segment(
         "product_category": payload.product_category,
         "segment_name": _segment_name(payload.product_category, payload.sales_channel),
         "priority": priority,
-        "ai_score": payload.ai_score if payload.ai_score is not None else _score(priority, False, False, payload.sales_channel),
+        "ai_score": 0,
         "partner_type": payload.sales_channel,
         "end_user_fit_signals": "",
         "key_match_signals": "Manual segment override",

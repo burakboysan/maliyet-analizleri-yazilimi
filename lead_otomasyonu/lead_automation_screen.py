@@ -135,21 +135,12 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     columns = (
         "company_name",
         "contact_email",
-        "email_status",
-        "enrichment_note",
         "country",
         "local_language",
-        "source",
         "sales_channel",
         "product_category",
         "priority",
-        "ai_score",
-        "suggested_sequence",
-        "research_status",
-        "draft_count",
-        "ai_status",
-        "approval_status",
-        "last_action",
+        "email_sequence_stage",
     )
     tree = ttk.Treeview(
         table_wrap,
@@ -166,40 +157,22 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     headings = {
         "company_name": "Firma",
         "contact_email": "Email",
-        "email_status": "Email Durumu",
-        "enrichment_note": "Enrichment Notu",
         "country": "Ülke",
         "local_language": "Dil",
-        "source": "Kaynak",
         "sales_channel": "Satış Kanalı",
         "product_category": "Ürün / Hizmet",
         "priority": "Öncelik",
-        "ai_score": "AI Skor",
-        "suggested_sequence": "Sekans",
-        "research_status": "Araştırma",
-        "draft_count": "Taslak",
-        "ai_status": "AI Durumu",
-        "approval_status": "Onay",
-        "last_action": "Son Aksiyon",
+        "email_sequence_stage": "Email Sekans Aşaması",
     }
     widths = {
-        "company_name": 230,
-        "contact_email": 210,
-        "email_status": 120,
-        "enrichment_note": 320,
+        "company_name": 260,
+        "contact_email": 230,
         "country": 120,
-        "local_language": 110,
-        "source": 90,
+        "local_language": 100,
         "sales_channel": 230,
-        "product_category": 160,
+        "product_category": 170,
         "priority": 110,
-        "ai_score": 80,
-        "suggested_sequence": 110,
-        "research_status": 120,
-        "draft_count": 80,
-        "ai_status": 150,
-        "approval_status": 150,
-        "last_action": 260,
+        "email_sequence_stage": 190,
     }
     for col in columns:
         tree.heading(col, text=headings[col])
@@ -243,7 +216,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         if children:
             tree.delete(*children)
         for item in state["filtered"]:
-            values = [item.get(col, "") for col in columns]
+            values = [_table_value(item, col) for col in columns]
             tree.insert("", "end", iid=str(item.get("id")), values=values)
         apply_zebra_striping(tree, tree.get_children())
         refresh_metrics()
@@ -322,7 +295,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 "product_category": product,
                 "segment_name": build_segment_name(product, channel),
                 "priority": priority,
-                "ai_score": 65 if priority in {"High", "Very High"} else 45,
+                "ai_score": 0,
                 "suggested_sequence": get_sequence_code(channel),
                 "ai_status": "Segmented",
                 "approval_status": "Awaiting Approval",
@@ -830,24 +803,33 @@ def _product_from_apollo_row(row, text):
 
 
 def _priority_from_icp(row):
-    tier = _first_value(row, ["icp_tier", "ICP Tier"])
-    if tier == "A+ Partner Target":
-        return "Very High"
-    if tier == "A Partner Target":
-        return "High"
-    if tier == "B Partner Target":
-        return "Medium"
-    if tier:
-        return "Low"
     return ""
 
 
 def _score_from_icp(row, priority):
-    raw = _first_value(row, ["icp_score", "ICP Score"])
-    try:
-        return max(0, min(int(float(raw)), 100))
-    except Exception:
-        return 82 if priority == "Very High" else 70 if priority == "High" else 50 if priority == "Medium" else 30
+    return 0
+
+
+def _table_value(item, column):
+    if column == "email_sequence_stage":
+        value = item.get("email_sequence_stage")
+        if value:
+            return value
+        status = item.get("ai_status")
+        email_status = str(item.get("email_status") or "").casefold()
+        draft_count = int(item.get("draft_count") or 0)
+        if status == "Excluded":
+            return "Kapsam Dışı"
+        if status == "Review Needed":
+            return "Review Needed"
+        if draft_count:
+            return f"Taslak Oluşturuldu ({draft_count})"
+        if not item.get("contact_email"):
+            return "Email Bekliyor"
+        if email_status not in {"verified", "user managed"}:
+            return "Email Doğrulama Bekliyor"
+        return "Sekans Hazır"
+    return item.get(column, "")
 
 
 def _sequence_from_campaign(campaign, channel):

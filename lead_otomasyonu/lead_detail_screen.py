@@ -107,7 +107,6 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         ("product_category", "Ürün / Hizmet"),
         ("segment_name", "Segment"),
         ("priority", "Öncelik"),
-        ("ai_score", "Skor"),
         ("suggested_sequence", "Sekans"),
     ]:
         info_vars[key] = _kv_var(segmentation_panel, label)
