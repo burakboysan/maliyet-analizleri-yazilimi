@@ -316,6 +316,9 @@ SERPAPI_COUNTRY_CODES = {
 
 SERPAPI_BLOCKED_DOMAINS = {
     "apollo.io",
+    "bomaksan.com",
+    "bomaksan.com.tr",
+    "castingarea.com",
     "facebook.com",
     "instagram.com",
     "linkedin.com",
@@ -325,6 +328,41 @@ SERPAPI_BLOCKED_DOMAINS = {
     "x.com",
     "youtube.com",
 }
+
+
+SERPAPI_BLOCKED_TITLE_FRAGMENTS = [
+    "blog",
+    "catalog",
+    "directory",
+    "exhibition",
+    "gallery",
+    "historia",
+    "join ",
+    "manufacturers in europe",
+    "news",
+    "pdf",
+    "suppliers list",
+    "top 10",
+    "top 20",
+    "trade fair",
+    "video",
+    "webinar",
+]
+
+
+SERPAPI_BLOCKED_PATH_FRAGMENTS = [
+    "/blog",
+    "/catalog",
+    "/directory",
+    "/events",
+    "/gallery",
+    "/news",
+    "/pdf",
+    "/press",
+    "/suppliers/",
+    "/video",
+    ".pdf",
+]
 
 
 LOCALIZED_TITLE_KEYWORDS = {
@@ -2502,6 +2540,58 @@ def _is_searchable_company_domain(domain: str) -> bool:
     return not any(fragment in domain for fragment in blocked_fragments)
 
 
+def _company_name_from_domain(domain: str) -> str:
+    root = _normalize(domain).split(".")[0]
+    if not root:
+        return _normalize(domain)
+    separators = ["-", "_"]
+    for separator in separators:
+        root = root.replace(separator, " ")
+    words = [word for word in root.split() if word]
+    return " ".join(word.upper() if len(word) <= 3 else word.capitalize() for word in words) or _normalize(domain)
+
+
+def _serpapi_result_is_company_candidate(result: dict[str, Any], domain: str) -> bool:
+    title = _casefold(result.get("title"))
+    link = _casefold(result.get("link"))
+    snippet = _casefold(result.get("snippet"))
+    haystack = f"{title} {snippet}"
+    if any(fragment in title for fragment in SERPAPI_BLOCKED_TITLE_FRAGMENTS):
+        return False
+    if any(fragment in link for fragment in SERPAPI_BLOCKED_PATH_FRAGMENTS):
+        return False
+    if any(fragment in haystack for fragment in ["top companies", "company list", "list of companies", "supplier list"]):
+        return False
+    domain_root = _company_name_from_domain(domain).casefold()
+    generic_titles = {
+        "about us",
+        "home",
+        "homepage",
+        "products",
+        "solutions",
+        "the right solution",
+    }
+    if title in generic_titles and len(domain_root) < 4:
+        return False
+    return True
+
+
+def _company_name_from_serp_result(result: dict[str, Any], domain: str) -> str:
+    domain_name = _company_name_from_domain(domain)
+    title = _normalize(result.get("title"))
+    if not title:
+        return domain_name
+    cleaned = title.split("|")[0].split(" - ")[0].split(" – ")[0].strip()
+    cleaned_casefold = cleaned.casefold()
+    if any(fragment in cleaned_casefold for fragment in SERPAPI_BLOCKED_TITLE_FRAGMENTS):
+        return domain_name
+    if len(cleaned) < 3 or len(cleaned) > 60:
+        return domain_name
+    if any(word in cleaned_casefold for word in ["manufacturer", "supplier", "top ", "gallery", "history", "video"]):
+        return domain_name
+    return cleaned
+
+
 def _serpapi_country_code(country: str) -> str:
     return SERPAPI_COUNTRY_CODES.get(_casefold(country), "")
 
@@ -2532,12 +2622,14 @@ def _serpapi_find_domains(recipe: dict[str, Any], country: str, limit: int) -> l
             domain = _domain_from_url(link)
             if not _is_searchable_company_domain(domain) or domain in seen_domains:
                 continue
+            if not _serpapi_result_is_company_candidate(result, domain):
+                continue
             seen_domains.add(domain)
             domains.append(
                 {
                     "domain": domain,
                     "website": f"https://{domain}",
-                    "company_name": _normalize(result.get("title")).split("|")[0].split("-")[0].strip() or domain,
+                    "company_name": _company_name_from_serp_result(result, domain),
                     "snippet": _normalize(result.get("snippet")),
                     "serp_query": search_query,
                     "serp_link": link,
@@ -2581,12 +2673,14 @@ def _serpapi_find_domains_by_keywords(
                 domain = _domain_from_url(link)
                 if not _is_searchable_company_domain(domain) or domain in seen_domains:
                     continue
+                if not _serpapi_result_is_company_candidate(result, domain):
+                    continue
                 seen_domains.add(domain)
                 domains.append(
                     {
                         "domain": domain,
                         "website": f"https://{domain}",
-                        "company_name": _normalize(result.get("title")).split("|")[0].split("-")[0].strip() or domain,
+                        "company_name": _company_name_from_serp_result(result, domain),
                         "snippet": _normalize(result.get("snippet")),
                         "serp_query": search_query,
                         "serp_link": link,
