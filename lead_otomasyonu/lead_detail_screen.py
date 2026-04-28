@@ -55,17 +55,18 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     ctk.CTkComboBox(status_bar, values=STATUS_OPTIONS, variable=status_var, width=190).grid(row=1, column=0, sticky="ew", padx=(0, 8))
     ctk.CTkEntry(status_bar, textvariable=status_note_var, width=260, placeholder_text="Durum notu").grid(row=1, column=1, sticky="ew", padx=8)
 
-    content = ctk.CTkScrollableFrame(root, fg_color="transparent")
-    content.grid(row=1, column=0, sticky="nsew")
-    content.grid_columnconfigure(0, weight=1)
-    content.grid_columnconfigure(1, weight=1)
+    tabs = ctk.CTkTabview(root, fg_color="#ffffff")
+    tabs.grid(row=1, column=0, sticky="nsew")
+    for tab_name in ["Firma Bilgileri", "Kişiler", "Segmentasyon", "Kişiselleştirme", "Bilgi"]:
+        tabs.add(tab_name)
 
-    left = ctk.CTkFrame(content, fg_color="transparent")
-    left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-    right = ctk.CTkFrame(content, fg_color="transparent")
-    right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+    company_tab = _tab_content(tabs.tab("Firma Bilgileri"))
+    people_tab = _tab_content(tabs.tab("Kişiler"))
+    segmentation_tab = _tab_content(tabs.tab("Segmentasyon"))
+    personalization_tab = _tab_content(tabs.tab("Kişiselleştirme"))
+    info_tab = _tab_content(tabs.tab("Bilgi"))
 
-    company_panel = _panel(left)
+    company_panel = _panel(company_tab)
     company_panel.pack(fill="x", pady=(0, 12))
     _section_title(company_panel, "Firma Bilgileri")
     for key, label in [
@@ -78,7 +79,12 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     info_vars["website"] = _clickable_kv_var(company_panel, "Web", lambda: open_website())
     info_vars["detected_activity"] = _kv_var(company_panel, "Aktivite")
 
-    email_panel = _panel(left)
+    research_panel = _panel(company_tab)
+    research_panel.pack(fill="x", pady=(0, 12))
+    _section_title(research_panel, "Firma Araştırması")
+    textboxes["research"] = _readonly_box(research_panel, height=260)
+
+    email_panel = _panel(people_tab)
     email_panel.pack(fill="x", pady=(0, 12))
     _section_title(email_panel, "Kişi ve Email")
     for key, label in [
@@ -90,12 +96,13 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     info_vars["email_status"] = _kv_var(email_panel, "Email Durumu")
     textboxes["email_explanation"] = _readonly_box(email_panel, height=130)
 
-    contacts_panel = _panel(left)
+    contacts_panel = _panel(people_tab)
     contacts_panel.pack(fill="x", pady=(0, 12))
     _section_title(contacts_panel, "Lead İçindeki Kişiler")
-    textboxes["contacts"] = _readonly_box(contacts_panel, height=180)
+    contacts_cards_frame = ctk.CTkFrame(contacts_panel, fg_color="transparent")
+    contacts_cards_frame.pack(fill="x", padx=18, pady=(4, 14))
 
-    status_panel = _panel(left)
+    status_panel = _panel(company_tab)
     status_panel.pack(fill="x", pady=(0, 12))
     _section_title(status_panel, "Operasyon Durumu")
     for key, label in [
@@ -106,7 +113,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     ]:
         info_vars[key] = _kv_var(status_panel, label)
 
-    segmentation_panel = _panel(right)
+    segmentation_panel = _panel(segmentation_tab)
     segmentation_panel.pack(fill="x", pady=(0, 12))
     _section_title(segmentation_panel, "Segmentasyon")
     for key, label in [
@@ -127,23 +134,18 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     segment_editor.grid_columnconfigure(1, weight=1)
     textboxes["segmentation_source"] = _readonly_box(segmentation_panel, height=120)
 
-    apollo_source_panel = _panel(right)
+    apollo_source_panel = _panel(info_tab)
     apollo_source_panel.pack(fill="x", pady=(0, 12))
     _section_title(apollo_source_panel, "Arama Kaynağı")
     textboxes["apollo_source"] = _readonly_box(apollo_source_panel, height=170)
 
-    personalization_panel = _panel(right)
+    personalization_panel = _panel(personalization_tab)
     personalization_panel.pack(fill="x", pady=(0, 12))
     _section_title(personalization_panel, "Kişiselleştirme Açısı")
     textboxes["personalization"] = _readonly_box(personalization_panel, height=150)
 
-    research_panel = _panel(right)
-    research_panel.pack(fill="x", pady=(0, 12))
-    _section_title(research_panel, "Firma Araştırması")
-    textboxes["research"] = _readonly_box(research_panel, height=260)
-
-    drafts_panel = _panel(content)
-    drafts_panel.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(0, 12))
+    drafts_panel = _panel(personalization_tab)
+    drafts_panel.pack(fill="x", pady=(0, 12))
     _section_title(drafts_panel, "Email Sekansı")
     textboxes["drafts"] = _readonly_box(drafts_panel, height=250)
 
@@ -245,6 +247,47 @@ def lead_detay_ekrani(parent, lead, on_update=None):
                 lines.append(f"   LinkedIn: {contact.get('linkedin_url')}")
             lines.append("")
         return "\n".join(lines).strip()
+
+    def render_contact_cards():
+        for child in contacts_cards_frame.winfo_children():
+            child.destroy()
+
+        contacts = detail().get("contacts") or []
+        if not contacts:
+            empty = ctk.CTkFrame(contacts_cards_frame, fg_color="#f8fafc", corner_radius=10)
+            empty.pack(fill="x", pady=(0, 10))
+            ctk.CTkLabel(
+                empty,
+                text="Bu lead altında kayıtlı kişi yok. Apollo Email Enrich çalışınca karar vericiler burada kart olarak görünür.",
+                text_color="#64748b",
+                wraplength=760,
+                justify="left",
+            ).pack(anchor="w", padx=14, pady=14)
+            return
+
+        for index, contact in enumerate(contacts, start=1):
+            name = " ".join(
+                part
+                for part in [
+                    str(contact.get("first_name") or "").strip(),
+                    str(contact.get("last_name") or "").strip(),
+                ]
+                if part
+            ) or str(contact.get("name") or "").strip() or f"Kişi {index}"
+            card = ctk.CTkFrame(contacts_cards_frame, fg_color="#f8fafc", corner_radius=10)
+            card.pack(fill="x", pady=(0, 10))
+            card.grid_columnconfigure(1, weight=1)
+            ctk.CTkLabel(
+                card,
+                text=name,
+                font=ctk.CTkFont(family="Inter", size=14, weight="bold"),
+                text_color="#111827",
+            ).grid(row=0, column=0, columnspan=2, sticky="w", padx=14, pady=(12, 6))
+            _contact_card_row(card, 1, "Ünvan", contact.get("title"))
+            _contact_card_row(card, 2, "Email", contact.get("email"))
+            _contact_card_row(card, 3, "Email Durumu", contact.get("email_status"))
+            if contact.get("linkedin_url"):
+                _contact_card_row(card, 4, "LinkedIn", contact.get("linkedin_url"))
 
     def segmentation_source_text():
         reason = detail().get("short_reasoning") or ""
@@ -356,7 +399,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         if detail().get("product_category") in PRODUCT_CATEGORIES:
             segment_product_var.set(detail().get("product_category"))
         update_textbox("email_explanation", email_explanation_text())
-        update_textbox("contacts", contacts_text())
+        render_contact_cards()
         update_textbox("segmentation_source", segmentation_source_text())
         update_textbox("apollo_source", apollo_source_text())
         update_textbox("personalization", personalization_text())
@@ -529,6 +572,12 @@ def _panel(parent):
     return ctk.CTkFrame(parent, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
 
 
+def _tab_content(parent):
+    frame = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+    frame.pack(fill="both", expand=True, padx=10, pady=10)
+    return frame
+
+
 def _section_title(parent, text):
     ctk.CTkLabel(
         parent,
@@ -590,6 +639,27 @@ def _clickable_kv_var(parent, label, command, button_text="Aç"):
     _bind_select_all(value_entry)
     _inline_action_button(row, button_text, command).pack(side="left", padx=(8, 0))
     return var
+
+
+def _contact_card_row(parent, row_index, label, value):
+    ctk.CTkLabel(parent, text=f"{label}:", width=110, anchor="w", text_color="#64748b").grid(
+        row=row_index,
+        column=0,
+        sticky="nw",
+        padx=(14, 8),
+        pady=(2, 8),
+    )
+    entry = ctk.CTkEntry(
+        parent,
+        text_color="#111827",
+        fg_color="#ffffff",
+        border_width=0,
+        height=28,
+    )
+    entry.grid(row=row_index, column=1, sticky="ew", padx=(0, 14), pady=(2, 8))
+    entry.insert(0, str(value or "-"))
+    entry.configure(state="readonly")
+    _bind_select_all(entry)
 
 
 def _bind_select_all(widget):
