@@ -2482,8 +2482,8 @@ def search_apollo_ai_leads(
     if payload.country and payload.country not in organization_locations:
         organization_locations.append(payload.country)
     search_payload = {
-        "person_titles": payload.person_titles,
-        "organization_locations": organization_locations,
+        "person_titles[]": payload.person_titles,
+        "organization_locations[]": organization_locations,
         "q_keywords": " ".join(payload.keywords or []),
         "page": max(int(payload.page or 1), 1),
         "per_page": min(max(int(payload.per_page or 25), 1), 100),
