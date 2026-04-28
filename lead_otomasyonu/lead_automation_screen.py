@@ -494,7 +494,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
         note = ctk.CTkLabel(
             form,
-            text="Bu ekran manuel keyword veya unvan istemez. Seçilen segmentin Apollo Search Recipe bilgisi backend'den çalıştırılır, sonuçlar enrich + score edilip Onay Bekliyor durumunda dashboard'a eklenir.",
+            text="Bu ekran manuel keyword veya unvan istemez. Seçilen segment için önce SerpAPI ile firma/domain adayları bulunur, sonra Apollo ile karar verici ve email datası aranır. Sonuçlar Onay Bekliyor durumunda dashboard'a eklenir.",
             text_color="#64748b",
             wraplength=500,
             justify="left",
@@ -524,7 +524,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                     result = search_apollo_segment_leads(token, payload)
                     created = int(result.get("created") or 0)
                     skipped = int(result.get("skipped_duplicates") or 0)
-                    win.after(0, lambda: messagebox.showinfo("Segmentten Lead Bul", f"{created} lead eklendi. {skipped} tekrar kayıt atlandı.", parent=win))
+                    domains = int(result.get("found_domains") or 0)
+                    win.after(0, lambda: messagebox.showinfo("Segmentten Lead Bul", f"{domains} firma/domain adayı bulundu. {created} lead eklendi. {skipped} tekrar kayıt atlandı.", parent=win))
                     win.after(0, load_from_api)
                     win.after(0, dialog.destroy)
                 except Exception as exc:

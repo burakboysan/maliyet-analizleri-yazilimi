@@ -288,6 +288,45 @@ COUNTRY_LOCALIZATION_GROUPS = {
 }
 
 
+SERPAPI_COUNTRY_CODES = {
+    "germany": "de",
+    "austria": "at",
+    "switzerland": "ch",
+    "france": "fr",
+    "belgium": "be",
+    "luxembourg": "lu",
+    "italy": "it",
+    "spain": "es",
+    "portugal": "pt",
+    "netherlands": "nl",
+    "the netherlands": "nl",
+    "turkey": "tr",
+    "türkiye": "tr",
+    "united arab emirates": "ae",
+    "uae": "ae",
+    "saudi arabia": "sa",
+    "qatar": "qa",
+    "kuwait": "kw",
+    "egypt": "eg",
+    "morocco": "ma",
+    "tunisia": "tn",
+    "algeria": "dz",
+}
+
+
+SERPAPI_BLOCKED_DOMAINS = {
+    "apollo.io",
+    "facebook.com",
+    "instagram.com",
+    "linkedin.com",
+    "m.facebook.com",
+    "maps.google.com",
+    "twitter.com",
+    "x.com",
+    "youtube.com",
+}
+
+
 LOCALIZED_TITLE_KEYWORDS = {
     "de": ["Geschäftsführer", "Vertriebsleiter", "Leiter Vertrieb", "Technischer Leiter", "Projektleiter"],
     "fr": ["Directeur Général", "Directeur Commercial", "Responsable Commercial", "Directeur Technique", "Chef de Projet"],
@@ -2281,6 +2320,13 @@ def _apollo_api_key() -> str:
     return api_key
 
 
+def _serpapi_api_key() -> str:
+    api_key = os.getenv("SERPAPI_API_KEY", "").strip() or _read_env_file_value("SERPAPI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=503, detail="SERPAPI_API_KEY sunucuda tanımlı değil.")
+    return api_key
+
+
 def _apollo_post(path: str, payload: dict[str, Any] | None = None, query: dict[str, Any] | None = None) -> dict[str, Any]:
     base_url = "https://api.apollo.io/api/v1"
     url = f"{base_url}{path}"
@@ -2339,6 +2385,35 @@ def _apollo_get(path: str, query: dict[str, Any] | None = None) -> dict[str, Any
         raise HTTPException(status_code=502, detail=f"Apollo API erişilemedi: {exc.reason}") from exc
 
 
+def _serpapi_get(query: dict[str, Any]) -> dict[str, Any]:
+    params = {
+        "engine": "google",
+        "api_key": _serpapi_api_key(),
+        "num": 10,
+        **{key: value for key, value in query.items() if value not in (None, "")},
+    }
+    url = "https://serpapi.com/search.json?" + parse.urlencode(params, doseq=True)
+    req = request.Request(
+        url,
+        method="GET",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "BomaksanLeadAutomation/1.0",
+        },
+    )
+    try:
+        with request.urlopen(req, timeout=45) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        lowered = detail.casefold()
+        if any(token in lowered for token in ["limit", "quota", "credits", "account"]):
+            detail = f"SerpAPI kredi/limit/plan hatası olabilir: {detail}"
+        raise HTTPException(status_code=exc.code, detail=f"SerpAPI hatası: {detail}") from exc
+    except error.URLError as exc:
+        raise HTTPException(status_code=502, detail=f"SerpAPI erişilemedi: {exc.reason}") from exc
+
+
 def _bulk_enrich_people(people: list[dict[str, Any]], domain: str) -> list[dict[str, Any]]:
     details = []
     for person in people[:10]:
@@ -2371,6 +2446,79 @@ def _company_domain(website: str | None) -> str:
         return ""
     raw = raw.replace("https://", "").replace("http://", "").split("/")[0]
     return raw.replace("www.", "")
+
+
+def _domain_from_url(url: str | None) -> str:
+    raw = _normalize(url)
+    if not raw:
+        return ""
+    if not raw.startswith(("http://", "https://")):
+        raw = f"https://{raw}"
+    try:
+        parsed = parse.urlparse(raw)
+    except Exception:
+        return ""
+    domain = (parsed.netloc or "").split("@")[-1].split(":")[0].casefold()
+    if domain.startswith("www."):
+        domain = domain[4:]
+    return domain
+
+
+def _is_searchable_company_domain(domain: str) -> bool:
+    if not domain or "." not in domain:
+        return False
+    if domain in SERPAPI_BLOCKED_DOMAINS:
+        return False
+    if any(domain == blocked or domain.endswith(f".{blocked}") for blocked in SERPAPI_BLOCKED_DOMAINS):
+        return False
+    blocked_fragments = ["google.", "bing.", "yahoo.", "wikipedia.org", "marketplace", "directory", "yellowpages"]
+    return not any(fragment in domain for fragment in blocked_fragments)
+
+
+def _serpapi_country_code(country: str) -> str:
+    return SERPAPI_COUNTRY_CODES.get(_casefold(country), "")
+
+
+def _serpapi_segment_queries(recipe: dict[str, Any], country: str) -> list[str]:
+    sales_channel = str(recipe.get("sales_channel") or "")
+    product_category = str(recipe.get("product_category") or "")
+    company_keywords = _json_list(recipe.get("company_keywords"))
+    localized_keywords = _localized_search_keywords(product_category, sales_channel, country)
+    fallback_keywords = PRODUCT_FALLBACK_KEYWORDS.get(product_category, [])
+    channel_keywords = CHANNEL_FALLBACK_KEYWORDS.get(sales_channel, [])
+    base_terms = _dedupe_strings(company_keywords[:6] + localized_keywords[:6] + fallback_keywords + channel_keywords[:3])
+    queries = []
+    country_part = country or ""
+    for term in base_terms[:12]:
+        queries.append(f"{term} {country_part} company -jobs -linkedin -facebook -youtube")
+    return _dedupe_strings(queries)
+
+
+def _serpapi_find_domains(recipe: dict[str, Any], country: str, limit: int) -> list[dict[str, str]]:
+    domains = []
+    seen_domains = set()
+    gl = _serpapi_country_code(country)
+    for search_query in _serpapi_segment_queries(recipe, country):
+        response = _serpapi_get({"q": search_query, "gl": gl, "hl": "en"})
+        for result in response.get("organic_results") or []:
+            link = _normalize(result.get("link"))
+            domain = _domain_from_url(link)
+            if not _is_searchable_company_domain(domain) or domain in seen_domains:
+                continue
+            seen_domains.add(domain)
+            domains.append(
+                {
+                    "domain": domain,
+                    "website": f"https://{domain}",
+                    "company_name": _normalize(result.get("title")).split("|")[0].split("-")[0].strip() or domain,
+                    "snippet": _normalize(result.get("snippet")),
+                    "serp_query": search_query,
+                    "serp_link": link,
+                }
+            )
+            if len(domains) >= limit:
+                return domains
+    return domains
 
 
 def _split_name(full_name: str | None) -> tuple[str, str]:
@@ -2562,7 +2710,10 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
         },
     )
     _save_segmentation(db, lead_id, analysis)
-    _log_action(db, lead_id, "apollo_search_import", "Apollo search sonucu lead olarak eklendi.", current_user.id)
+    if str(search_meta.get("attempt") or "").startswith("serpapi:"):
+        _log_action(db, lead_id, "serpapi_apollo_import", "SerpAPI domain keşfi ve Apollo kişi araması sonucu lead olarak eklendi.", current_user.id)
+    else:
+        _log_action(db, lead_id, "apollo_search_import", "Apollo search sonucu lead olarak eklendi.", current_user.id)
     row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
     return _lead_response(db, row)
 
@@ -2617,6 +2768,32 @@ def _find_existing_apollo_lead(db: Session, person: dict[str, Any], company_name
         if row:
             return int(row[0])
     return None
+
+
+def _apollo_people_for_serp_domain(domain_result: dict[str, str], recipe: dict[str, Any], country: str, per_domain: int) -> list[dict[str, Any]]:
+    domain = _normalize(domain_result.get("domain"))
+    if not domain:
+        return []
+    titles = _dedupe_strings((_json_list(recipe.get("person_titles")) or DEFAULT_TITLES) + _localized_person_titles(country))
+    people_query = {
+        "person_titles[]": titles,
+        "q_organization_domains_list[]": [domain],
+        "organization_locations[]": [country] if country else [],
+        "page": 1,
+        "per_page": min(max(int(per_domain or 3), 1), 10),
+    }
+    response = _apollo_post("/mixed_people/api_search", payload={}, query=people_query)
+    people = response.get("people") or response.get("contacts") or []
+    if people:
+        return people
+    organization = {
+        "name": domain_result.get("company_name") or domain,
+        "website_url": domain_result.get("website") or f"https://{domain}",
+        "primary_domain": domain,
+        "country": country,
+        "short_description": domain_result.get("snippet") or "",
+    }
+    return [{"organization": organization}]
 
 
 @router.post("/ai-leads/apollo/search")
@@ -2757,19 +2934,23 @@ def search_apollo_by_segment(
         people = []
         seen_people = set()
         seen_companies = set()
-        attempts = _segment_search_attempts(recipe, country, limit)
-        start_page = max(int(payload.page or 1), 1)
-        for attempt in attempts:
-            people_query = dict(attempt)
-            people_query["page"] = start_page
-            people_query["per_page"] = min(max(limit * 3, int(people_query.get("per_page") or limit)), 100)
-            attempt_name = str(people_query.pop("name", "search"))
-            attempt_keyword = _normalize(people_query.get("q_keywords"))
-            people_response = _apollo_post("/mixed_people/api_search", payload={}, query=people_query)
-            attempt_people = people_response.get("people") or people_response.get("contacts") or []
-            if attempt_people:
-                selected_attempt = attempt_name if not selected_attempt else f"{selected_attempt}, {attempt_name}"
+        serp_domains = _serpapi_find_domains(recipe, country, max(limit * 3, limit))
+        selected_attempt = "serpapi_domain_discovery"
+        for domain_result in serp_domains:
+            domain = _normalize(domain_result.get("domain"))
+            attempt_people = _apollo_people_for_serp_domain(domain_result, recipe, country, per_domain=3)
+            if payload.enrich and any(person.get("id") or person.get("first_name") or person.get("name") for person in attempt_people):
+                attempt_people = _bulk_enrich_people(attempt_people, domain)
             for person in attempt_people:
+                organization = person.get("organization") or {}
+                serp_organization = {
+                    "name": domain_result.get("company_name") or domain,
+                    "website_url": domain_result.get("website") or f"https://{domain}",
+                    "primary_domain": domain,
+                    "country": country,
+                    "short_description": domain_result.get("snippet") or "",
+                }
+                person["organization"] = {**serp_organization, **organization}
                 person_key = _apollo_person_key(person)
                 company_key = _apollo_company_key(person)
                 if person_key in seen_people or company_key in seen_companies:
@@ -2777,8 +2958,8 @@ def search_apollo_by_segment(
                 person["__search_metadata"] = {
                     "run_id": run_id,
                     "recipe": recipe["segment_name"],
-                    "attempt": attempt_name,
-                    "keyword": attempt_keyword,
+                    "attempt": f"serpapi:{domain}",
+                    "keyword": domain_result.get("serp_query"),
                     "country": country,
                 }
                 seen_people.add(person_key)
@@ -2789,8 +2970,6 @@ def search_apollo_by_segment(
             found_contacts = len(people)
             if len(people) >= limit:
                 break
-        if payload.enrich and people:
-            people = _bulk_enrich_people(people, "")
         for person in people:
             person["__forced_segment"] = {
                 "sales_channel": recipe["sales_channel"],
@@ -2839,6 +3018,7 @@ def search_apollo_by_segment(
             "created": len(created),
             "skipped_duplicates": skipped_duplicates,
             "verified_emails": verified_emails,
+            "found_domains": len(serp_domains),
             "search_attempt": selected_attempt,
             "rows": created,
         }
