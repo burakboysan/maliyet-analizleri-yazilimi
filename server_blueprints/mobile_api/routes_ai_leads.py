@@ -730,7 +730,6 @@ def _ensure_tables(db: Session) -> None:
     _ensure_column(db, "ai_search_recipes", "targeting_notes", "TEXT")
     db.commit()
     _seed_search_recipes(db)
-    _apply_search_recipe_refinements(db)
 
 
 def _seed_search_recipes(db: Session) -> None:
