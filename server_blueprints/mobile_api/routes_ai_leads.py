@@ -146,10 +146,31 @@ SEARCH_RECIPES = [
         "sales_channel": "White Label / Resellers",
         "product_category": "Dust Collection",
         "priority": "High",
-        "company_keywords": ["dust collector distributor", "industrial filtration distributor", "dust extraction reseller", "air filtration equipment supplier"],
+        "company_keywords": [
+            "dust collection equipment distributor",
+            "dust collector reseller",
+            "industrial dust extraction distributor",
+            "industrial filtration equipment distributor",
+            "dust extraction equipment supplier",
+            "air filtration equipment distributor",
+            "baghouse filter distributor",
+            "cartridge dust collector distributor",
+            "industrial vacuum and dust extraction distributor",
+        ],
         "person_titles": DEFAULT_TITLES,
-        "positive_signals": ["dust collector", "industrial filtration", "distributor", "reseller"],
-        "negative_signals": ["vacuum cleaner", "consumer"],
+        "positive_signals": ["dust collector", "dust collection", "industrial filtration", "distributor", "reseller", "dealer", "industrial equipment supplier"],
+        "negative_signals": [
+            "pharmaceutical manufacturer",
+            "pharma manufacturing",
+            "abrasives manufacturer",
+            "grinding wheel manufacturer",
+            "end user",
+            "manufacturer only",
+            "consumer vacuum",
+            "residential air purifier",
+            "laboratory filtration",
+            "water filtration",
+        ],
     },
     {
         "segment_name": "Dust Collection x Clean Air Solution Partner",
@@ -505,6 +526,13 @@ def _ensure_tables(db: Session) -> None:
             apollo_person_id VARCHAR(100),
             apollo_organization_id VARCHAR(100),
             apollo_raw_json JSON,
+            apollo_search_run_id INT,
+            apollo_search_recipe VARCHAR(255),
+            apollo_search_attempt VARCHAR(255),
+            apollo_search_keyword TEXT,
+            apollo_search_country VARCHAR(100),
+            apollo_fit_filter_status VARCHAR(80),
+            apollo_fit_filter_reason TEXT,
             company_description TEXT,
             detected_activity TEXT,
             status ENUM(
@@ -684,6 +712,13 @@ def _ensure_tables(db: Session) -> None:
     _ensure_column(db, "ai_leads", "apollo_person_id", "VARCHAR(100)")
     _ensure_column(db, "ai_leads", "apollo_organization_id", "VARCHAR(100)")
     _ensure_column(db, "ai_leads", "apollo_raw_json", "JSON")
+    _ensure_column(db, "ai_leads", "apollo_search_run_id", "INT")
+    _ensure_column(db, "ai_leads", "apollo_search_recipe", "VARCHAR(255)")
+    _ensure_column(db, "ai_leads", "apollo_search_attempt", "VARCHAR(255)")
+    _ensure_column(db, "ai_leads", "apollo_search_keyword", "TEXT")
+    _ensure_column(db, "ai_leads", "apollo_search_country", "VARCHAR(100)")
+    _ensure_column(db, "ai_leads", "apollo_fit_filter_status", "VARCHAR(80)")
+    _ensure_column(db, "ai_leads", "apollo_fit_filter_reason", "TEXT")
     _ensure_column(db, "ai_lead_contacts", "email_status", "VARCHAR(80)")
     _ensure_column(db, "ai_lead_contacts", "enrichment_note", "TEXT")
     _ensure_column(db, "ai_lead_contacts", "apollo_person_id", "VARCHAR(100)")
@@ -696,6 +731,7 @@ def _ensure_tables(db: Session) -> None:
     _ensure_column(db, "ai_search_recipes", "targeting_notes", "TEXT")
     db.commit()
     _seed_search_recipes(db)
+    _apply_search_recipe_refinements(db)
 
 
 def _seed_search_recipes(db: Session) -> None:
@@ -719,6 +755,31 @@ def _seed_search_recipes(db: Session) -> None:
                 **{key: recipe[key] for key in ("segment_name", "sales_channel", "product_category", "priority")},
                 "company_keywords": json.dumps(recipe["company_keywords"], ensure_ascii=False),
                 "person_titles": json.dumps(recipe["person_titles"], ensure_ascii=False),
+                "positive_signals": json.dumps(recipe["positive_signals"], ensure_ascii=False),
+                "negative_signals": json.dumps(recipe["negative_signals"], ensure_ascii=False),
+            },
+        )
+    db.commit()
+
+
+def _apply_search_recipe_refinements(db: Session) -> None:
+    for recipe in SEARCH_RECIPES:
+        if recipe["segment_name"] != "Dust Collection x White Label / Resellers":
+            continue
+        db.execute(
+            text(
+                """
+                UPDATE ai_search_recipes
+                SET company_keywords = :company_keywords,
+                    positive_signals = :positive_signals,
+                    negative_signals = :negative_signals,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE segment_name = :segment_name
+                """
+            ),
+            {
+                "segment_name": recipe["segment_name"],
+                "company_keywords": json.dumps(recipe["company_keywords"], ensure_ascii=False),
                 "positive_signals": json.dumps(recipe["positive_signals"], ensure_ascii=False),
                 "negative_signals": json.dumps(recipe["negative_signals"], ensure_ascii=False),
             },
@@ -1463,6 +1524,127 @@ def _segment_search_attempts(recipe: dict[str, Any], country: str, limit: int) -
     return attempts
 
 
+def _apollo_person_haystack(person: dict[str, Any]) -> str:
+    organization = person.get("organization") or {}
+    values = [
+        organization.get("name"),
+        organization.get("short_description"),
+        organization.get("seo_description"),
+        organization.get("industry"),
+        organization.get("keywords"),
+        organization.get("estimated_num_employees"),
+        person.get("organization_name"),
+        person.get("title"),
+        person.get("headline"),
+        person.get("city"),
+        person.get("country"),
+    ]
+    return _casefold(" ".join(str(value) for value in values if value))
+
+
+def _apollo_fit_filter(person: dict[str, Any], recipe: dict[str, Any]) -> dict[str, str]:
+    segment_name = str(recipe.get("segment_name") or "")
+    sales_channel = str(recipe.get("sales_channel") or "")
+    product_category = str(recipe.get("product_category") or "")
+    haystack = _apollo_person_haystack(person)
+    negative_signals = [_casefold(item) for item in _json_list(recipe.get("negative_signals"))]
+    positive_signals = [_casefold(item) for item in _json_list(recipe.get("positive_signals"))]
+    matched_negative = [signal for signal in negative_signals if signal and signal in haystack]
+    matched_positive = [signal for signal in positive_signals if signal and signal in haystack]
+
+    partner_signals = [
+        "distributor",
+        "reseller",
+        "dealer",
+        "supplier",
+        "integrator",
+        "contractor",
+        "engineering",
+        "hvac",
+        "ventilation",
+        "industrial filtration",
+    ]
+    has_partner_signal = any(signal in haystack for signal in partner_signals)
+
+    generic_review_signals = [
+        "residential",
+        "consumer",
+        "home appliance",
+        "laboratory filtration",
+        "water filtration",
+    ]
+    generic_hits = [signal for signal in generic_review_signals if signal in haystack]
+
+    if segment_name == "Dust Collection x White Label / Resellers":
+        strict_negative_hits = [
+            signal
+            for signal in [
+                "pharmaceutical",
+                "pharma",
+                "medicine manufacturer",
+                "abrasive",
+                "abrasives",
+                "grinding wheel",
+                "cutting wheel",
+                "manufacturer only",
+                "water filtration",
+                "laboratory filtration",
+                "residential",
+                "consumer",
+            ]
+            if signal in haystack
+        ]
+        product_hits = [
+            signal
+            for signal in [
+                "dust collector",
+                "dust collection",
+                "dust extraction",
+                "industrial filtration",
+                "baghouse",
+                "cartridge filter",
+                "air filtration",
+            ]
+            if signal in haystack
+        ]
+        if strict_negative_hits and not has_partner_signal:
+            return {
+                "status": "Review Needed",
+                "lead_status": "Review Needed",
+                "reason": f"Zayıf fit sinyali: {', '.join(strict_negative_hits)}. Distribütör/reseller/supplier sinyali bulunamadı.",
+            }
+        if not has_partner_signal:
+            return {
+                "status": "Review Needed",
+                "lead_status": "Review Needed",
+                "reason": "White Label / Resellers segmenti için distributor/reseller/dealer/supplier sinyali bulunamadı.",
+            }
+        if not product_hits:
+            return {
+                "status": "Review Needed",
+                "lead_status": "Review Needed",
+                "reason": "Dust Collection segmenti için dust collector/dust extraction/industrial filtration sinyali zayıf.",
+            }
+
+    if matched_negative and not matched_positive:
+        return {
+            "status": "Review Needed",
+            "lead_status": "Review Needed",
+            "reason": f"Negatif sinyal yakalandı: {', '.join(matched_negative)}. Pozitif segment sinyali zayıf.",
+        }
+    if generic_hits and sales_channel != "Direct Sales":
+        return {
+            "status": "Review Needed",
+            "lead_status": "Review Needed",
+            "reason": f"Partner dışı olabilecek sinyal yakalandı: {', '.join(generic_hits)}.",
+        }
+    return {
+        "status": "Accepted",
+        "lead_status": "",
+        "reason": f"{product_category} x {sales_channel} için Apollo arama sinyalleri kabul edildi.",
+    }
+
+
 def _latest_action(db: Session, lead_id: int) -> dict[str, Any] | None:
     row = db.execute(
         text("SELECT * FROM ai_actions WHERE lead_id = :lead_id ORDER BY id DESC LIMIT 1"),
@@ -2083,6 +2265,8 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
     )
 
     forced_segment = person.get("__forced_segment") or {}
+    search_meta = person.get("__search_metadata") or {}
+    fit_filter = person.get("__fit_filter") or {}
     analysis = _analyze_values(
         {
             "company_name": company_name,
@@ -2106,18 +2290,24 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
             }
         )
         analysis["ai_score"] = _score(analysis["priority"], False, True, analysis["sales_channel"])
-    status_value = "Excluded" if analysis["is_excluded"] else "Segmented"
+    if fit_filter.get("reason"):
+        analysis["short_reasoning"] = f"{analysis.get('short_reasoning') or ''}\nFit filter: {fit_filter.get('reason')}".strip()
+    status_value = "Excluded" if analysis["is_excluded"] else (fit_filter.get("lead_status") or "Segmented")
     result = db.execute(
         text(
             """
             INSERT INTO ai_leads (
                 company_name, website, country, region, local_language, source, source_reference,
                 apollo_person_id, apollo_organization_id, apollo_raw_json,
+                apollo_search_run_id, apollo_search_recipe, apollo_search_attempt, apollo_search_keyword,
+                apollo_search_country, apollo_fit_filter_status, apollo_fit_filter_reason,
                 company_description, detected_activity, status, exclusion_status, exclusion_reason, created_by_user_id
             )
             VALUES (
                 :company_name, :website, :country, :region, :local_language, 'Apollo', :source_reference,
                 :apollo_person_id, :apollo_organization_id, :apollo_raw_json,
+                :apollo_search_run_id, :apollo_search_recipe, :apollo_search_attempt, :apollo_search_keyword,
+                :apollo_search_country, :apollo_fit_filter_status, :apollo_fit_filter_reason,
                 :company_description, :detected_activity, :status, :exclusion_status, :exclusion_reason, :user_id
             )
             """
@@ -2132,6 +2322,13 @@ def _create_lead_from_apollo_person(db: Session, person: dict[str, Any], current
             "apollo_person_id": person.get("id"),
             "apollo_organization_id": organization.get("id") or person.get("organization_id"),
             "apollo_raw_json": json.dumps(person, ensure_ascii=False),
+            "apollo_search_run_id": search_meta.get("run_id"),
+            "apollo_search_recipe": search_meta.get("recipe"),
+            "apollo_search_attempt": search_meta.get("attempt"),
+            "apollo_search_keyword": search_meta.get("keyword"),
+            "apollo_search_country": search_meta.get("country"),
+            "apollo_fit_filter_status": fit_filter.get("status"),
+            "apollo_fit_filter_reason": fit_filter.get("reason"),
             "company_description": activity,
             "detected_activity": activity,
             "status": status_value,
@@ -2373,6 +2570,7 @@ def search_apollo_by_segment(
             people_query["page"] = start_page
             people_query["per_page"] = min(max(limit * 3, int(people_query.get("per_page") or limit)), 100)
             attempt_name = str(people_query.pop("name", "search"))
+            attempt_keyword = _normalize(people_query.get("q_keywords"))
             people_response = _apollo_post("/mixed_people/api_search", payload={}, query=people_query)
             attempt_people = people_response.get("people") or people_response.get("contacts") or []
             if attempt_people:
@@ -2382,6 +2580,13 @@ def search_apollo_by_segment(
                 company_key = _apollo_company_key(person)
                 if person_key in seen_people or company_key in seen_companies:
                     continue
+                person["__search_metadata"] = {
+                    "run_id": run_id,
+                    "recipe": recipe["segment_name"],
+                    "attempt": attempt_name,
+                    "keyword": attempt_keyword,
+                    "country": country,
+                }
                 seen_people.add(person_key)
                 seen_companies.add(company_key)
                 people.append(person)
@@ -2400,6 +2605,7 @@ def search_apollo_by_segment(
                 "priority": recipe["priority"],
                 "suggested_sequence": _sequence_code(recipe["sales_channel"]),
             }
+            person["__fit_filter"] = _apollo_fit_filter(person, recipe)
             try:
                 lead = _create_lead_from_apollo_person(db, person, current_user)
                 created.append(lead)

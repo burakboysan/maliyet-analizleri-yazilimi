@@ -116,6 +116,11 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         info_vars[key] = _kv_var(segmentation_panel, label)
     textboxes["segmentation_source"] = _readonly_box(segmentation_panel, height=120)
 
+    apollo_source_panel = _panel(right)
+    apollo_source_panel.pack(fill="x", pady=(0, 12))
+    _section_title(apollo_source_panel, "Apollo Arama Kaynağı")
+    textboxes["apollo_source"] = _readonly_box(apollo_source_panel, height=170)
+
     personalization_panel = _panel(right)
     personalization_panel.pack(fill="x", pady=(0, 12))
     _section_title(personalization_panel, "Kişiselleştirme Açısı")
@@ -202,6 +207,30 @@ def lead_detay_ekrani(parent, lead, on_update=None):
             return f"Segmentasyon gerekçesi:\n{reason}"
         return "Henüz segmentasyon gerekçesi yok."
 
+    def apollo_source_text():
+        if not any(
+            detail().get(key)
+            for key in [
+                "apollo_search_recipe",
+                "apollo_search_attempt",
+                "apollo_search_keyword",
+                "apollo_search_run_id",
+                "apollo_fit_filter_status",
+            ]
+        ):
+            return "Bu lead eski kayıt olabilir veya manuel eklenmiş olabilir; Apollo arama kaynağı metadata'sı yok."
+        lines = [
+            f"Run ID: {detail().get('apollo_search_run_id') or '-'}",
+            f"Reçete: {detail().get('apollo_search_recipe') or '-'}",
+            f"Arama denemesi: {detail().get('apollo_search_attempt') or '-'}",
+            f"Keyword: {detail().get('apollo_search_keyword') or '-'}",
+            f"Ülke parametresi: {detail().get('apollo_search_country') or '-'}",
+            "",
+            f"Fit filtre durumu: {detail().get('apollo_fit_filter_status') or '-'}",
+            f"Fit filtre notu: {detail().get('apollo_fit_filter_reason') or '-'}",
+        ]
+        return "\n".join(lines)
+
     def personalization_text():
         research = current_research() or {}
         lines = []
@@ -269,6 +298,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         status_var.set(detail().get("ai_status") or detail().get("status") or status_var.get())
         update_textbox("email_explanation", email_explanation_text())
         update_textbox("segmentation_source", segmentation_source_text())
+        update_textbox("apollo_source", apollo_source_text())
         update_textbox("personalization", personalization_text())
         update_textbox("research", research_text())
         render_drafts(detail().get("email_drafts") or state["drafts"])
