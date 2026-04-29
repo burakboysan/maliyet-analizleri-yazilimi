@@ -480,6 +480,41 @@ SERPAPI_QUERY_NEGATIVE_TERMS = [
 ]
 
 
+SERPAPI_MANUAL_KEYWORD_LOCALIZATIONS = {
+    "dust collection distributor": {
+        "fr": ["distributeur dépoussiérage industriel", "distributeur aspiration poussières"],
+        "nl": ["stofafzuiging distributeur", "industriële stofafzuiging distributeur"],
+    },
+    "industrial filtration company": {
+        "fr": ["entreprise filtration industrielle", "société filtration industrielle"],
+        "nl": ["industriële filtratie bedrijf", "luchtfiltratie bedrijf"],
+    },
+    "fume extraction supplier": {
+        "fr": ["fournisseur extraction fumées", "fournisseur aspiration fumées soudage"],
+        "nl": ["rookafzuiging leverancier", "lasrookafzuiging leverancier"],
+    },
+    "dust collector supplier": {
+        "fr": ["fournisseur dépoussiéreur industriel", "fournisseur filtre à poussières"],
+        "nl": ["stofafzuiger leverancier", "stofcollector leverancier"],
+    },
+    "industrial ventilation supplier": {
+        "fr": ["fournisseur ventilation industrielle", "entreprise ventilation industrielle"],
+        "nl": ["industriële ventilatie leverancier", "industrieel ventilatiebedrijf"],
+    },
+}
+
+
+SERPAPI_LOCAL_BUSINESS_TERMS = {
+    "fr": ["entreprise", "société", "fournisseur", "distributeur", "industrie"],
+    "nl": ["bedrijf", "leverancier", "distributeur", "industrie"],
+    "de": ["unternehmen", "lieferant", "händler", "industrie"],
+    "it": ["azienda", "fornitore", "distributore", "industriale"],
+    "es": ["empresa", "proveedor", "distribuidor", "industrial"],
+    "pt": ["empresa", "fornecedor", "distribuidor", "industrial"],
+    "tr": ["firma", "tedarikçi", "distribütör", "endüstriyel"],
+}
+
+
 RESEARCH_NON_COMPANY_SIGNALS = [
     "trade fair",
     "exhibition",
@@ -3270,6 +3305,38 @@ def _serpapi_negative_query_suffix() -> str:
     return " ".join(f"-{term}" for term in SERPAPI_QUERY_NEGATIVE_TERMS)
 
 
+def _serpapi_manual_keyword_variants(keyword: str, country: str) -> list[str]:
+    value = _normalize(keyword)
+    variants = [value] if value else []
+    language_groups = _country_localization_groups(country)
+    localized = SERPAPI_MANUAL_KEYWORD_LOCALIZATIONS.get(value.casefold(), {})
+    for language in language_groups:
+        variants.extend(localized.get(language, []))
+    return _dedupe_strings(variants)
+
+
+def _serpapi_business_query_suffix(country: str) -> str:
+    terms = ["company", "supplier", "distributor"]
+    for language in _country_localization_groups(country):
+        terms.extend(SERPAPI_LOCAL_BUSINESS_TERMS.get(language, []))
+    terms = _dedupe_strings(terms)[:10]
+    return "(" + " OR ".join(terms) + ")"
+
+
+def _serpapi_manual_query(keyword: str, country: str, exact_match: bool) -> str:
+    variants = _serpapi_manual_keyword_variants(keyword, country)
+    if not variants:
+        return ""
+    if exact_match:
+        keyword_part = " OR ".join(f'"{variant.replace(chr(34), "").strip()}"' for variant in variants)
+    else:
+        keyword_part = " OR ".join(f'"{variant.replace(chr(34), "").strip()}"' if " " in variant else variant for variant in variants)
+    country_part = _normalize(country)
+    business_part = _serpapi_business_query_suffix(country)
+    negative_terms = _serpapi_negative_query_suffix()
+    return " ".join(part for part in [f"({keyword_part})", country_part, business_part, negative_terms] if part)
+
+
 def _company_name_from_serp_result(result: dict[str, Any], domain: str) -> str:
     domain_name = _company_name_from_domain(domain)
     title = _normalize(result.get("title"))
@@ -3290,8 +3357,6 @@ def _build_serpapi_domain_result(result: dict[str, Any], domain: str, country: s
     ]
     if _research_non_company_guard({"company_name": _company_name_from_domain(domain), "website": website}, research_pages):
         return None
-    if country and not _website_country_matches(country, domain, homepage_html, serp_text):
-        return None
     company_name = _company_name_from_website_html(homepage_html, domain) or _company_name_from_serp_result(result, domain)
     row = {
         "domain": domain,
@@ -3300,6 +3365,7 @@ def _build_serpapi_domain_result(result: dict[str, Any], domain: str, country: s
         "snippet": _normalize(result.get("snippet")),
         "serp_query": search_query,
         "serp_link": link,
+        "country_match": "yes" if _website_country_matches(country, domain, homepage_html, serp_text) else "unchecked",
     }
     if page_index is not None:
         row["serp_page"] = str(page_index + 1)
@@ -3533,17 +3599,14 @@ def _serpapi_find_domains_by_keywords(
     domains = []
     seen_domains = set()
     search_params = _serpapi_country_query_params(country)
-    country_part = country or ""
     page_count = min(max(int(pages or 1), 1), 10)
     exact_match = _casefold(search_mode) in {"exact", "narrow", "dar"}
-    negative_terms = _serpapi_negative_query_suffix()
     queries = [
-        f'"{keyword.replace(chr(34), "").strip()}" {country_part} company {negative_terms}'
-        if exact_match
-        else f"{keyword} {country_part} company {negative_terms}"
+        _serpapi_manual_query(keyword, country, exact_match)
         for keyword in _dedupe_strings(keywords)
         if _normalize(keyword)
     ]
+    queries = [query for query in _dedupe_strings(queries) if query]
     for search_query in queries:
         for page_index in range(page_count):
             try:
@@ -3955,7 +4018,7 @@ def _create_unassigned_lead_from_serp_domain(
             "apollo_search_keyword": domain_result.get("serp_query"),
             "apollo_search_country": country,
             "apollo_fit_filter_status": "SerpAPI Candidate",
-            "apollo_fit_filter_reason": "Firma/domain SerpAPI ile bulundu; ürün x satış kanalı etiketi kullanıcı tarafından manuel atanmalıdır.",
+            "apollo_fit_filter_reason": f"Firma/domain SerpAPI ile bulundu; ülke sinyali: {domain_result.get('country_match') or 'unchecked'}. Ürün x satış kanalı etiketi kullanıcı tarafından manuel atanmalıdır.",
             "company_description": snippet,
             "detected_activity": snippet,
             "user_id": current_user.id,
