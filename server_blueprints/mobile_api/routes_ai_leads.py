@@ -1497,6 +1497,58 @@ def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
     }
 
 
+def _lead_list_response(row: Any) -> dict[str, Any]:
+    lead = _lead_row_to_dict(row)
+    contact = {
+        "first_name": lead.get("contact_first_name") or "",
+        "last_name": lead.get("contact_last_name") or "",
+        "title": lead.get("contact_title_value") or "",
+        "email": lead.get("contact_email_value") or "",
+        "email_status": lead.get("contact_email_status") or "",
+        "enrichment_note": lead.get("contact_enrichment_note") or "",
+    }
+    segmentation = {
+        "sales_channel": lead.get("seg_sales_channel") or "",
+        "product_category": lead.get("seg_product_category") or "",
+        "segment_name": lead.get("seg_segment_name") or "",
+        "priority": lead.get("seg_priority") or "",
+        "ai_score": lead.get("seg_ai_score") or 0,
+        "suggested_sequence": lead.get("seg_suggested_sequence") or "",
+        "short_reasoning": lead.get("seg_short_reasoning") or "",
+        "personalization_angle": lead.get("seg_personalization_angle") or "",
+    }
+    draft_count = int(lead.get("draft_count") or 0)
+    priority_value = segmentation.get("priority") or ("Excluded" if lead.get("exclusion_status") == "Excluded" else "")
+    if not segmentation.get("priority"):
+        if lead.get("status") == "Review Needed":
+            priority_value = "Low"
+        elif lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"):
+            priority_value = _priority_for_apollo_search(lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"))
+    return {
+        **lead,
+        "sales_channel": segmentation["sales_channel"],
+        "product_category": segmentation["product_category"],
+        "segment_name": segmentation["segment_name"],
+        "priority": priority_value,
+        "ai_score": segmentation["ai_score"],
+        "contact_name": _contact_name(contact),
+        "contact_title": contact["title"],
+        "contact_email": contact["email"],
+        "email_status": contact["email_status"],
+        "enrichment_note": contact["enrichment_note"],
+        "suggested_sequence": segmentation["suggested_sequence"],
+        "ai_status": lead.get("status"),
+        "approval_status": "Awaiting Approval" if lead.get("status") in {"Segmented", "Draft Generated"} else "",
+        "last_action": lead.get("last_action_summary") or "",
+        "short_reasoning": segmentation["short_reasoning"],
+        "personalization_angle": segmentation["personalization_angle"],
+        "research_status": lead.get("research_status_value") or "Not Researched",
+        "research_summary": lead.get("research_company_overview") or "",
+        "draft_count": draft_count,
+        "email_sequence_stage": _email_sequence_stage(lead, contact, draft_count),
+    }
+
+
 def _email_sequence_stage(lead: dict[str, Any], contact: dict[str, Any], draft_count: int) -> str:
     status = str(lead.get("status") or "")
     email_status = str(contact.get("email_status") or "").casefold()
@@ -2681,13 +2733,61 @@ def list_ai_leads(
     rows = db.execute(
         text(
             f"""
-            SELECT l.*
+            SELECT
+                l.*,
+                s.sales_channel AS seg_sales_channel,
+                s.product_category AS seg_product_category,
+                s.segment_name AS seg_segment_name,
+                s.priority AS seg_priority,
+                s.ai_score AS seg_ai_score,
+                s.suggested_sequence AS seg_suggested_sequence,
+                s.short_reasoning AS seg_short_reasoning,
+                s.personalization_angle AS seg_personalization_angle,
+                c.first_name AS contact_first_name,
+                c.last_name AS contact_last_name,
+                c.title AS contact_title_value,
+                c.email AS contact_email_value,
+                c.email_status AS contact_email_status,
+                c.enrichment_note AS contact_enrichment_note,
+                r.status AS research_status_value,
+                r.company_overview AS research_company_overview,
+                COALESCE(d.draft_count, 0) AS draft_count,
+                a.output_summary AS last_action_summary
             FROM ai_leads l
             LEFT JOIN ai_segmentation_results s ON s.id = (
                 SELECT s2.id
                 FROM ai_segmentation_results s2
                 WHERE s2.lead_id = l.id
                 ORDER BY s2.id DESC
+                LIMIT 1
+            )
+            LEFT JOIN ai_lead_contacts c ON c.id = (
+                SELECT c2.id
+                FROM ai_lead_contacts c2
+                WHERE c2.lead_id = l.id
+                ORDER BY
+                    CASE WHEN LOWER(COALESCE(c2.email_status, '')) = 'verified' THEN 0 ELSE 1 END,
+                    CASE WHEN COALESCE(c2.email, '') != '' THEN 0 ELSE 1 END,
+                    c2.id ASC
+                LIMIT 1
+            )
+            LEFT JOIN ai_lead_research r ON r.id = (
+                SELECT r2.id
+                FROM ai_lead_research r2
+                WHERE r2.lead_id = l.id
+                ORDER BY r2.id DESC
+                LIMIT 1
+            )
+            LEFT JOIN (
+                SELECT lead_id, COUNT(*) AS draft_count
+                FROM ai_email_drafts
+                GROUP BY lead_id
+            ) d ON d.lead_id = l.id
+            LEFT JOIN ai_actions a ON a.id = (
+                SELECT a2.id
+                FROM ai_actions a2
+                WHERE a2.lead_id = l.id
+                ORDER BY a2.id DESC
                 LIMIT 1
             )
             WHERE {' AND '.join(clauses)}
@@ -2697,7 +2797,7 @@ def list_ai_leads(
         ),
         {**params, "limit": int(limit), "offset": int(offset)},
     ).all()
-    return [_lead_response(db, row) for row in rows]
+    return [_lead_list_response(row) for row in rows]
 
 
 @router.post("/ai-leads")
