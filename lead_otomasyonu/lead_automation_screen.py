@@ -6,7 +6,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, enrich_ai_lead_from_hunter, generate_ai_email_sequence, get_ai_lead_provider_status, import_ai_leads_csv, list_ai_leads, search_apollo_ai_leads, search_hunter_companies, search_serpapi_domains
+from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, enrich_ai_lead_from_hunter, generate_ai_email_sequence, get_ai_lead_provider_status, get_ai_lead_stats, import_ai_leads_csv, list_ai_leads_page, search_apollo_ai_leads, search_hunter_companies, search_serpapi_domains
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
@@ -42,6 +42,12 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "leads": [],
         "filtered": [],
         "api_mode": False,
+        "limit": 100,
+        "offset": 0,
+        "has_more": False,
+        "loading": False,
+        "filter_after_id": None,
+        "stats": None,
     }
 
     root = ctk.CTkFrame(win, fg_color="transparent")
@@ -217,6 +223,15 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     x_scroll.grid(row=1, column=0, sticky="ew")
 
     def refresh_metrics():
+        stats = state.get("stats") or {}
+        if stats:
+            metric_vars["total"].set(str(int(stats.get("total") or 0)))
+            metric_vars["pending"].set(str(int(stats.get("pending") or 0)))
+            metric_vars["high"].set(str(int(stats.get("high") or 0)))
+            metric_vars["excluded"].set(str(int(stats.get("excluded") or 0)))
+            metric_vars["drafts"].set(str(int(stats.get("drafts") or 0)))
+            metric_vars["approval"].set(str(int(stats.get("approval") or 0)))
+            return
         leads = state["leads"]
         metric_vars["total"].set(str(len(leads)))
         metric_vars["pending"].set(str(sum(1 for item in leads if item.get("ai_status") in {"New", "Pending AI Analysis"})))
@@ -226,6 +241,10 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         metric_vars["approval"].set(str(sum(1 for item in leads if item.get("approval_status") in {"Awaiting Approval", "Review Needed"})))
 
     def apply_filters(*_args):
+        if state.get("api_mode"):
+            state["filtered"] = list(state["leads"])
+            render_table()
+            return
         query = search_var.get().strip().casefold()
         channel = channel_var.get()
         product = product_var.get()
@@ -432,49 +451,104 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def load_from_api():
+    def api_filters():
+        filters = {
+            "limit": state["limit"],
+            "search": search_var.get().strip(),
+        }
+        if channel_var.get() != "Tüm Kanallar":
+            filters["sales_channel"] = channel_var.get()
+        if product_var.get() != "Tüm Ürünler":
+            filters["product_category"] = product_var.get()
+        if priority_var.get() != "Tüm Öncelikler":
+            filters["priority"] = priority_var.get()
+        return filters
+
+    def load_from_api(reset=True):
         token = get_app_token()
         if not token:
             state["leads"] = []
             state["api_mode"] = False
+            state["stats"] = None
             win.after(0, apply_filters)
             status_var.set("API oturumu bulunamadı; lead listesi yüklenemedi.")
             return
-        load_message = "Lead listesi yükleniyor..."
+        if state.get("loading"):
+            return
+        state["loading"] = True
+        if reset:
+            state["offset"] = 0
+            state["has_more"] = False
+        load_message = "Lead listesi yükleniyor..." if reset else "Sonraki leadler yükleniyor..."
         load_status_var.set(load_message)
         load_progress_frame.grid()
         load_progress.start()
         status_var.set(load_message)
+        if "load_more_button" in state:
+            state["load_more_button"].configure(state="disabled", text="Yükleniyor...")
 
         def hide_load_progress(message=None):
+            state["loading"] = False
             load_progress.stop()
             load_progress.set(0)
             load_progress_frame.grid_remove()
             load_status_var.set("")
+            if "load_more_button" in state:
+                button_text = "Daha Fazla Yükle" if state.get("has_more") else "Tüm Liste Yüklendi"
+                state["load_more_button"].configure(state=("normal" if state.get("has_more") else "disabled"), text=button_text)
             if message is not None:
                 status_var.set(message)
 
         def worker():
             try:
-                leads = list_ai_leads(token)
-                state["leads"] = leads
+                filters = api_filters()
+                filters["offset"] = state["offset"]
+                response = list_ai_leads_page(token, filters)
+                leads = response.get("rows") or []
+                state["leads"] = leads if reset else state["leads"] + leads
+                state["offset"] = int(filters["offset"]) + len(leads)
+                state["has_more"] = bool(response.get("has_more"))
+                if reset:
+                    state["stats"] = None
                 state["api_mode"] = True
-                win.after(0, lambda count=len(leads): hide_load_progress(f"Canlı API verisi yüklendi: {count} lead."))
+                loaded_count = len(state["leads"])
+                total_count = int((state.get("stats") or {}).get("total") or loaded_count)
+                win.after(0, lambda loaded=loaded_count, total=total_count: hide_load_progress(f"Lead listesi yüklendi: {loaded}/{total} lead."))
                 win.after(0, apply_filters)
+                if reset:
+                    try:
+                        stats = get_ai_lead_stats(token, api_filters())
+                        state["stats"] = stats or {}
+                        loaded_count = len(state["leads"])
+                        total_count = int((state.get("stats") or {}).get("total") or loaded_count)
+                        win.after(0, apply_filters)
+                        win.after(0, lambda loaded=loaded_count, total=total_count: status_var.set(f"Lead listesi yüklendi: {loaded}/{total} lead."))
+                    except Exception:
+                        pass
             except ApiClientError as exc:
                 state["leads"] = []
                 state["api_mode"] = False
+                state["stats"] = None
                 win.after(0, apply_filters)
                 message = f"API hazır değil veya erişilemiyor; lead listesi yüklenemedi. Detay: {exc}"
                 win.after(0, lambda msg=message: hide_load_progress(msg))
             except Exception as exc:
                 state["leads"] = []
                 state["api_mode"] = False
+                state["stats"] = None
                 win.after(0, apply_filters)
                 message = f"Lead verisi yüklenemedi. Detay: {exc}"
                 win.after(0, lambda msg=message: hide_load_progress(msg))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def schedule_filter_reload(*_args):
+        if state.get("filter_after_id"):
+            try:
+                win.after_cancel(state["filter_after_id"])
+            except Exception:
+                pass
+        state["filter_after_id"] = win.after(450, lambda: load_from_api(reset=True))
 
     def apollo_search():
         token = get_app_token()
@@ -1097,12 +1171,14 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     ctk.CTkButton(bottom_actions, text="Hunter Firma Bul", width=155, command=hunter_company_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Apollo Search", width=130, command=apollo_search, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Entegrasyon Durumu", width=165, command=show_provider_status, fg_color="#ffffff", text_color="#334155", border_width=1, border_color="#94a3b8").pack(side="left", padx=8)
+    state["load_more_button"] = ctk.CTkButton(bottom_actions, text="Daha Fazla Yükle", width=145, command=lambda: load_from_api(reset=False), fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb", state="disabled")
+    state["load_more_button"].pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Sil", width=90, command=delete_selected_lead, fg_color="#ffffff", text_color="#dc2626", border_width=1, border_color="#dc2626").pack(side="left", padx=(8, 0))
 
-    search_var.trace_add("write", apply_filters)
-    channel_var.trace_add("write", apply_filters)
-    product_var.trace_add("write", apply_filters)
-    priority_var.trace_add("write", apply_filters)
+    search_var.trace_add("write", schedule_filter_reload)
+    channel_var.trace_add("write", schedule_filter_reload)
+    product_var.trace_add("write", schedule_filter_reload)
+    priority_var.trace_add("write", schedule_filter_reload)
     tree.bind("<Double-1>", open_detail)
 
     apply_filters()

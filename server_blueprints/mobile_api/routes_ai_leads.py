@@ -2703,8 +2703,80 @@ def list_ai_sequences(
     ]
 
 
+@router.get("/ai-leads/stats")
+def get_ai_lead_stats(
+    search: Optional[str] = Query(default=None),
+    country: Optional[str] = Query(default=None),
+    sales_channel: Optional[str] = Query(default=None),
+    product_category: Optional[str] = Query(default=None),
+    priority: Optional[str] = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    clauses = ["1=1"]
+    params: dict[str, Any] = {}
+    if country:
+        clauses.append("l.country = :country")
+        params["country"] = country
+    if sales_channel:
+        clauses.append("s.sales_channel = :sales_channel")
+        params["sales_channel"] = sales_channel
+    if product_category:
+        clauses.append("s.product_category = :product_category")
+        params["product_category"] = product_category
+    if priority:
+        clauses.append("s.priority = :priority")
+        params["priority"] = priority
+    if search:
+        clauses.append(
+            """
+            (
+                l.company_name LIKE :search
+                OR l.country LIKE :search
+                OR l.website LIKE :search
+                OR s.segment_name LIKE :search
+                OR s.sales_channel LIKE :search
+                OR s.product_category LIKE :search
+            )
+            """
+        )
+        params["search"] = f"%{search}%"
+    row = db.execute(
+        text(
+            f"""
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN l.status IN ('New', 'Pending AI Analysis') THEN 1 ELSE 0 END) AS pending,
+                SUM(CASE WHEN s.priority IN ('High', 'Very High') THEN 1 ELSE 0 END) AS high,
+                SUM(CASE WHEN s.priority = 'Excluded' OR l.status = 'Excluded' OR l.exclusion_status = 'Excluded' THEN 1 ELSE 0 END) AS excluded,
+                SUM(CASE WHEN COALESCE(d.draft_count, 0) > 0 OR l.status = 'Draft Generated' THEN 1 ELSE 0 END) AS drafts,
+                SUM(CASE WHEN l.status IN ('Segmented', 'Draft Generated', 'Review Needed') THEN 1 ELSE 0 END) AS approval
+            FROM ai_leads l
+            LEFT JOIN ai_segmentation_results s ON s.id = (
+                SELECT s2.id
+                FROM ai_segmentation_results s2
+                WHERE s2.lead_id = l.id
+                ORDER BY s2.id DESC
+                LIMIT 1
+            )
+            LEFT JOIN (
+                SELECT lead_id, COUNT(*) AS draft_count
+                FROM ai_email_drafts
+                GROUP BY lead_id
+            ) d ON d.lead_id = l.id
+            WHERE {' AND '.join(clauses)}
+            """
+        ),
+        params,
+    ).first()
+    values = _lead_row_to_dict(row) if row else {}
+    return {key: int(values.get(key) or 0) for key in ("total", "pending", "high", "excluded", "drafts", "approval")}
+
+
 @router.get("/ai-leads")
 def list_ai_leads(
+    search: Optional[str] = Query(default=None),
     country: Optional[str] = Query(default=None),
     sales_channel: Optional[str] = Query(default=None),
     product_category: Optional[str] = Query(default=None),
@@ -2729,6 +2801,23 @@ def list_ai_leads(
     if priority:
         clauses.append("s.priority = :priority")
         params["priority"] = priority
+    if search:
+        clauses.append(
+            """
+            (
+                l.company_name LIKE :search
+                OR l.country LIKE :search
+                OR l.website LIKE :search
+                OR s.segment_name LIKE :search
+                OR s.sales_channel LIKE :search
+                OR s.product_category LIKE :search
+                OR c.email LIKE :search
+                OR c.first_name LIKE :search
+                OR c.last_name LIKE :search
+            )
+            """
+        )
+        params["search"] = f"%{search}%"
 
     rows = db.execute(
         text(
@@ -2749,10 +2838,10 @@ def list_ai_leads(
                 c.email AS contact_email_value,
                 c.email_status AS contact_email_status,
                 c.enrichment_note AS contact_enrichment_note,
-                r.status AS research_status_value,
-                r.company_overview AS research_company_overview,
                 COALESCE(d.draft_count, 0) AS draft_count,
-                a.output_summary AS last_action_summary
+                '' AS research_status_value,
+                '' AS research_company_overview,
+                '' AS last_action_summary
             FROM ai_leads l
             LEFT JOIN ai_segmentation_results s ON s.id = (
                 SELECT s2.id
@@ -2771,25 +2860,11 @@ def list_ai_leads(
                     c2.id ASC
                 LIMIT 1
             )
-            LEFT JOIN ai_lead_research r ON r.id = (
-                SELECT r2.id
-                FROM ai_lead_research r2
-                WHERE r2.lead_id = l.id
-                ORDER BY r2.id DESC
-                LIMIT 1
-            )
             LEFT JOIN (
                 SELECT lead_id, COUNT(*) AS draft_count
                 FROM ai_email_drafts
                 GROUP BY lead_id
             ) d ON d.lead_id = l.id
-            LEFT JOIN ai_actions a ON a.id = (
-                SELECT a2.id
-                FROM ai_actions a2
-                WHERE a2.lead_id = l.id
-                ORDER BY a2.id DESC
-                LIMIT 1
-            )
             WHERE {' AND '.join(clauses)}
             ORDER BY l.updated_at DESC, l.id DESC
             LIMIT :limit OFFSET :offset
@@ -2797,7 +2872,13 @@ def list_ai_leads(
         ),
         {**params, "limit": int(limit), "offset": int(offset)},
     ).all()
-    return [_lead_list_response(row) for row in rows]
+    return {
+        "rows": [_lead_list_response(row) for row in rows],
+        "limit": int(limit),
+        "offset": int(offset),
+        "count": len(rows),
+        "has_more": len(rows) == int(limit),
+    }
 
 
 @router.post("/ai-leads")

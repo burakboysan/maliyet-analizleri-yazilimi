@@ -379,27 +379,51 @@ def create_mobile_price_list_entry(token, payload):
     )
 
 
+def list_ai_leads_page(token, filters=None):
+    query = {}
+    for key, value in (filters or {}).items():
+        if value not in (None, ""):
+            query[str(key)] = str(value)
+    path = "/desktop/ai-leads"
+    if query:
+        path += "?" + parse.urlencode(query)
+    response = request_json("GET", path, headers=auth_headers(token), timeout=30)
+    if isinstance(response, dict):
+        return response
+    rows = response or []
+    return {"rows": rows, "has_more": False, "count": len(rows)}
+
+
 def list_ai_leads(token, filters=None):
     query = {}
     for key, value in (filters or {}).items():
         if value not in (None, ""):
             query[str(key)] = str(value)
-    page_size = int(query.pop("limit", 500) or 500)
+    page_size = int(query.get("limit", 500) or 500)
     page_size = max(1, min(page_size, 1000))
     max_rows = int(query.pop("max_rows", 25000) or 25000)
     rows = []
-    offset = int(query.pop("offset", 0) or 0)
+    offset = int(query.get("offset", 0) or 0)
     while len(rows) < max_rows:
         page_query = {**query, "limit": str(page_size), "offset": str(offset)}
-        path = "/desktop/ai-leads?" + parse.urlencode(page_query)
-        response = request_json("GET", path, headers=auth_headers(token), timeout=60)
-        page_rows = response.get("rows") if isinstance(response, dict) else response
-        page_rows = page_rows or []
+        response = list_ai_leads_page(token, page_query)
+        page_rows = response.get("rows") or []
         rows.extend(page_rows)
         if len(page_rows) < page_size:
             break
         offset += page_size
     return rows[:max_rows]
+
+
+def get_ai_lead_stats(token, filters=None):
+    query = {}
+    for key, value in (filters or {}).items():
+        if value not in (None, ""):
+            query[str(key)] = str(value)
+    path = "/desktop/ai-leads/stats"
+    if query:
+        path += "?" + parse.urlencode(query)
+    return request_json("GET", path, headers=auth_headers(token), timeout=30) or {}
 
 
 def search_apollo_ai_leads(token, payload):
