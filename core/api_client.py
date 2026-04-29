@@ -514,6 +514,13 @@ def update_ai_lead_segment(token, lead_id, payload):
     return request_json("PUT", f"/desktop/ai-leads/{int(lead_id)}/segment", payload=payload, headers=auth_headers(token))
 
 
+def bulk_update_ai_lead_segment(token, lead_ids, payload):
+    normalized_ids = [int(lead_id) for lead_id in list(lead_ids or [])]
+    body = {"lead_ids": normalized_ids}
+    body.update(payload or {})
+    return request_json("POST", "/desktop/ai-leads/bulk-segment", payload=body, headers=auth_headers(token), timeout=90) or {}
+
+
 def update_ai_lead_status(token, lead_id, status, note=None, website=None):
     return request_json(
         "PUT",

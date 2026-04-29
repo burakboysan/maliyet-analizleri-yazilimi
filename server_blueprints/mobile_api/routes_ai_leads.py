@@ -764,6 +764,15 @@ class AiSegmentUpdateRequest(BaseModel):
     personalization_angle: Optional[str] = None
 
 
+class AiBulkSegmentUpdateRequest(BaseModel):
+    lead_ids: List[int]
+    sales_channel: str
+    product_category: str
+    priority: Optional[str] = None
+    short_reasoning: Optional[str] = None
+    personalization_angle: Optional[str] = None
+
+
 class AiExcludeRequest(BaseModel):
     reason: str
 
@@ -5482,6 +5491,80 @@ def analyze_ai_lead(
     _log_action(db, lead_id, "analyze", analysis["short_reasoning"], current_user.id)
     db.commit()
     return analysis
+
+
+@router.post("/ai-leads/bulk-segment")
+def bulk_update_ai_lead_segment(
+    payload: AiBulkSegmentUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: UserTable = Depends(require_authenticated_user),
+):
+    _ensure_tables(db)
+    lead_ids = []
+    seen_ids = set()
+    for raw_id in payload.lead_ids or []:
+        lead_id = int(raw_id or 0)
+        if lead_id > 0 and lead_id not in seen_ids:
+            seen_ids.add(lead_id)
+            lead_ids.append(lead_id)
+    if not lead_ids:
+        raise HTTPException(status_code=400, detail="Güncellenecek lead seçilmedi.")
+    if payload.sales_channel not in SALES_CHANNELS:
+        raise HTTPException(status_code=400, detail="Geçersiz satış kanalı.")
+    if payload.product_category not in PRODUCT_CATEGORIES:
+        raise HTTPException(status_code=400, detail="Geçersiz ürün / hizmet.")
+
+    priority = payload.priority or _priority_for_segment(payload.product_category, payload.sales_channel)
+    analysis = {
+        "sales_channel": payload.sales_channel,
+        "product_category": payload.product_category,
+        "segment_name": _segment_name(payload.product_category, payload.sales_channel),
+        "priority": priority,
+        "ai_score": 0,
+        "partner_type": payload.sales_channel,
+        "end_user_fit_signals": "",
+        "key_match_signals": "Bulk manual segment override",
+        "risks_or_uncertainties": "",
+        "personalization_angle": payload.personalization_angle or "",
+        "short_reasoning": payload.short_reasoning or "Kullanıcı seçili leadlerin segmentini toplu güncelledi.",
+        "suggested_sequence": _sequence_code(payload.sales_channel),
+    }
+
+    updated_ids = []
+    missing_ids = []
+    try:
+        for lead_id in lead_ids:
+            row = db.execute(text("SELECT id FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+            if not row:
+                missing_ids.append(lead_id)
+                continue
+            _save_segmentation(db, lead_id, analysis)
+            db.execute(
+                text(
+                    """
+                    UPDATE ai_leads
+                    SET status = 'Segmented',
+                        exclusion_status = 'Active',
+                        exclusion_reason = NULL
+                    WHERE id = :id
+                    """
+                ),
+                {"id": lead_id},
+            )
+            _log_action(db, lead_id, "bulk_segment_override", analysis["short_reasoning"], current_user.id)
+            updated_ids.append(lead_id)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    return {
+        "status": "ok",
+        "updated": len(updated_ids),
+        "updated_ids": updated_ids,
+        "missing_ids": missing_ids,
+        "segment": analysis,
+    }
 
 
 @router.put("/ai-leads/{lead_id}/segment")

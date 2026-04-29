@@ -6,7 +6,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, enrich_ai_lead_from_hunter, generate_ai_email_sequence, get_ai_lead_provider_status, get_ai_lead_stats, import_ai_leads_csv, list_ai_leads_page, search_apollo_ai_leads, search_hunter_companies, search_serpapi_domains
+from core.api_client import ApiClientError, bulk_update_ai_lead_segment, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, enrich_ai_lead_from_hunter, generate_ai_email_sequence, get_ai_lead_provider_status, get_ai_lead_stats, import_ai_leads_csv, list_ai_leads_page, search_apollo_ai_leads, search_hunter_companies, search_serpapi_domains
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
@@ -1030,6 +1030,102 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def bulk_change_segment():
+        token = get_app_token()
+        leads = selected_leads()
+        if not token:
+            messagebox.showerror("Segment Değiştir", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+        if not leads:
+            messagebox.showwarning("Segment Değiştir", "Lütfen segmenti değiştirilecek leadleri seçin.", parent=win)
+            return
+
+        first_lead = leads[0]
+        dialog = ctk.CTkToplevel(win)
+        dialog.title("Toplu Segment Değiştir")
+        dialog.geometry("460x300")
+        dialog.configure(fg_color="#f5f5f5")
+        dialog.transient(win)
+        dialog.grab_set()
+
+        form = ctk.CTkFrame(dialog, fg_color="#ffffff", corner_radius=14)
+        form.pack(fill="both", expand=True, padx=18, pady=18)
+        form.grid_columnconfigure(1, weight=1)
+
+        channel_var_bulk = ctk.StringVar(value=first_lead.get("sales_channel") or SALES_CHANNELS[0])
+        product_var_bulk = ctk.StringVar(value=first_lead.get("product_category") or PRODUCT_CATEGORIES[0])
+        status_var_bulk = ctk.StringVar(value=f"{len(leads)} lead seçildi.")
+
+        ctk.CTkLabel(form, text="Satış Kanalı", text_color="#475569").grid(row=0, column=0, sticky="w", padx=16, pady=(18, 8))
+        ctk.CTkComboBox(form, values=SALES_CHANNELS, variable=channel_var_bulk, width=240).grid(row=0, column=1, sticky="ew", padx=16, pady=(18, 8))
+        ctk.CTkLabel(form, text="Ürün / Hizmet", text_color="#475569").grid(row=1, column=0, sticky="w", padx=16, pady=8)
+        ctk.CTkComboBox(form, values=PRODUCT_CATEGORIES, variable=product_var_bulk, width=240).grid(row=1, column=1, sticky="ew", padx=16, pady=8)
+        ctk.CTkLabel(form, textvariable=status_var_bulk, text_color="#64748b", anchor="w").grid(row=2, column=0, columnspan=2, sticky="ew", padx=16, pady=(12, 8))
+
+        actions_row = ctk.CTkFrame(form, fg_color="transparent")
+        actions_row.grid(row=3, column=0, columnspan=2, sticky="e", padx=16, pady=(22, 16))
+        save_button = ctk.CTkButton(actions_row, text="Kaydet", width=120, fg_color="#d32f2f", hover_color="#b91c1c")
+        save_button.pack(side="right")
+        ctk.CTkButton(actions_row, text="Vazgeç", width=100, command=dialog.destroy, fg_color="#ffffff", text_color="#334155", border_width=1, border_color="#cbd5e1").pack(side="right", padx=(0, 8))
+
+        def save_bulk_segment():
+            sales_channel = channel_var_bulk.get().strip()
+            product_category = product_var_bulk.get().strip()
+            if sales_channel not in SALES_CHANNELS or product_category not in PRODUCT_CATEGORIES:
+                messagebox.showwarning("Segment Değiştir", "Lütfen geçerli satış kanalı ve ürün/hizmet seçin.", parent=dialog)
+                return
+            lead_ids = [lead.get("id") for lead in leads if lead.get("id")]
+            if not lead_ids:
+                messagebox.showwarning("Segment Değiştir", "Seçili leadlerde geçerli kayıt ID'si bulunamadı.", parent=dialog)
+                return
+            prompt = f"Seçili {len(lead_ids)} lead için segment {product_category} x {sales_channel} olarak güncellensin mi?"
+            if not messagebox.askyesno("Segment Değiştir", prompt, parent=dialog):
+                return
+            save_button.configure(state="disabled", text="Kaydediliyor...")
+            status_var_bulk.set("Toplu segment güncelleniyor...")
+
+            def worker():
+                try:
+                    result = bulk_update_ai_lead_segment(
+                        token,
+                        lead_ids,
+                        {
+                            "sales_channel": sales_channel,
+                            "product_category": product_category,
+                            "short_reasoning": "Kullanıcı seçili leadlerin segmentini toplu güncelledi.",
+                        },
+                    )
+                    updated_ids = {str(item) for item in result.get("updated_ids") or []}
+                    priority = priority_for_segment(product_category, sales_channel)
+                    sequence = get_sequence_code(sales_channel)
+                    segment_name = build_segment_name(product_category, sales_channel)
+                    for lead in state["leads"]:
+                        if str(lead.get("id")) in updated_ids:
+                            lead["sales_channel"] = sales_channel
+                            lead["product_category"] = product_category
+                            lead["segment_name"] = segment_name
+                            lead["priority"] = priority
+                            lead["suggested_sequence"] = sequence
+                            lead["ai_status"] = "Segmented"
+                            lead["approval_status"] = "Awaiting Approval"
+                            lead["last_action"] = "Segment toplu güncellendi."
+                    updated = int(result.get("updated") or len(updated_ids))
+                    missing = len(result.get("missing_ids") or [])
+                    message = f"{updated} lead için satış kanalı ve ürün/hizmet güncellendi."
+                    if missing:
+                        message += f" {missing} lead bulunamadı."
+                    win.after(0, apply_filters)
+                    win.after(0, dialog.destroy)
+                    win.after(0, lambda msg=message: messagebox.showinfo("Segment Değiştir", msg, parent=win))
+                except Exception as exc:
+                    win.after(0, lambda err=str(exc): messagebox.showerror("Segment Değiştir", f"Toplu segment güncellenemedi: {err}", parent=dialog))
+                    win.after(0, lambda: save_button.configure(state="normal", text="Kaydet"))
+                    win.after(0, lambda: status_var_bulk.set(f"{len(leads)} lead seçildi."))
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        save_button.configure(command=save_bulk_segment)
+
     def create_sequence_for_selected():
         token = get_app_token()
         lead = selected_lead()
@@ -1174,6 +1270,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     hunter_email_button.pack(side="left", padx=(0, 8))
     ai_research_button = ctk.CTkButton(filter_actions, text="AI Araştır", width=120, command=research_selected, fg_color="#ffffff", text_color="#7c3aed", border_width=1, border_color="#7c3aed")
     ai_research_button.pack(side="left", padx=(0, 8))
+    ctk.CTkButton(filter_actions, text="Segment Değiştir", width=145, command=bulk_change_segment, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=(0, 8))
     ctk.CTkButton(filter_actions, text="Sekans Oluştur", width=145, command=create_sequence_for_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left")
 
     bottom_actions = ctk.CTkFrame(root, fg_color="transparent")
