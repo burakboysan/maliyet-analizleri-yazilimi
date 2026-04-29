@@ -138,6 +138,14 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     bulk_enrich_status_var = ctk.StringVar(value="")
     ctk.CTkLabel(bulk_enrich_frame, textvariable=bulk_enrich_status_var, text_color="#64748b", width=260, anchor="w").grid(row=0, column=1, sticky="e")
     bulk_enrich_frame.grid_remove()
+    import_progress_frame = ctk.CTkFrame(filters, fg_color="transparent")
+    import_progress_frame.grid(row=4, column=0, columnspan=7, sticky="ew", padx=16, pady=(0, 12))
+    import_progress_frame.grid_columnconfigure(0, weight=1)
+    import_progress = ctk.CTkProgressBar(import_progress_frame, mode="indeterminate")
+    import_progress.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+    import_status_var = ctk.StringVar(value="")
+    ctk.CTkLabel(import_progress_frame, textvariable=import_status_var, text_color="#64748b", width=300, anchor="w").grid(row=0, column=1, sticky="e")
+    import_progress_frame.grid_remove()
 
     table_card = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
     table_card.grid(row=3, column=0, sticky="nsew")
@@ -375,7 +383,20 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             messagebox.showerror("Apollo Import", f"Dosya okunamadı: {exc}", parent=win)
             return
 
-        status_var.set(f"{len(paths)} lead listesi içe aktarılıyor...")
+        def show_import_progress(message):
+            import_status_var.set(message)
+            import_progress_frame.grid()
+            import_progress.start()
+            status_var.set(message)
+
+        def hide_import_progress():
+            import_progress.stop()
+            import_progress.set(0)
+            import_progress_frame.grid_remove()
+            import_status_var.set("")
+            status_var.set("")
+
+        show_import_progress(f"{len(paths)} dosyadan {summary['rows']} satır içe aktarılıyor...")
 
         def worker():
             try:
@@ -400,7 +421,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             except Exception as exc:
                 win.after(0, lambda err=str(exc): messagebox.showerror("Lead Import", f"İçe aktarma başarısız: {err}", parent=win))
             finally:
-                win.after(0, lambda: status_var.set(""))
+                win.after(0, hide_import_progress)
 
         threading.Thread(target=worker, daemon=True).start()
 
