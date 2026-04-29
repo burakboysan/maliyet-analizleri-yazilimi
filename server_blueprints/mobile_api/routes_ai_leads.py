@@ -1611,7 +1611,7 @@ def _fetch_public_page(url: str) -> dict[str, str]:
         method="GET",
     )
     try:
-        with request.urlopen(req, timeout=12) as response:
+        with request.urlopen(req, timeout=6) as response:
             content_type = response.headers.get("Content-Type", "")
             if "text/html" not in content_type and "application/xhtml" not in content_type:
                 return {}
@@ -1651,7 +1651,7 @@ def _website_research_pages(website: str) -> list[dict[str, str]]:
         if url and text_value and url not in seen:
             seen.add(url)
             pages.append(page)
-        if len(pages) >= 5:
+        if len(pages) >= 3:
             break
     return pages
 
@@ -1926,6 +1926,52 @@ def _extract_response_text(payload: Any) -> str:
     return ""
 
 
+def _openai_error_detail(raw_detail: str) -> str:
+    try:
+        payload = json.loads(raw_detail)
+    except Exception:
+        payload = {}
+    if isinstance(payload, dict):
+        error_payload = payload.get("error") or {}
+        if isinstance(error_payload, dict):
+            message = _normalize(error_payload.get("message"))
+            error_type = _normalize(error_payload.get("type"))
+            code = _normalize(error_payload.get("code"))
+            parts = [part for part in [message, error_type, code] if part]
+            if parts:
+                return " | ".join(parts)[:500]
+    return _normalize(raw_detail)[:500]
+
+
+def _openai_responses_request(body: dict[str, Any], api_key: str) -> dict[str, Any]:
+    last_error = ""
+    for attempt, timeout_value in enumerate([35, 55], start=1):
+        req = request.Request(
+            "https://api.openai.com/v1/responses",
+            data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "BomaksanLeadResearch/1.0",
+            },
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=timeout_value) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except error.HTTPError as exc:
+            detail = _openai_error_detail(exc.read().decode("utf-8", errors="ignore"))
+            last_error = f"OpenAI HTTP {exc.code}: {detail}"
+            if exc.code not in {408, 409, 429, 500, 502, 503, 504} or attempt >= 2:
+                break
+        except Exception as exc:
+            last_error = f"OpenAI servisine ulaşılamadı: {exc}"
+            if attempt >= 2:
+                break
+    raise HTTPException(status_code=502, detail=last_error or "OpenAI araştırma servisi geçici olarak yanıt vermedi.")
+
+
 def _lead_research_schema() -> dict[str, Any]:
     return {
         "type": "object",
@@ -2018,24 +2064,7 @@ def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pa
             }
         },
     }
-    req = request.Request(
-        "https://api.openai.com/v1/responses",
-        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with request.urlopen(req, timeout=35) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="ignore")
-        raise HTTPException(status_code=502, detail=f"OpenAI araştırma hatası: {detail[:500]}") from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"OpenAI araştırma servisine ulaşılamadı: {exc}") from exc
+    payload = _openai_responses_request(body, api_key)
 
     parsed_text = _extract_response_text(payload)
     try:
