@@ -206,6 +206,12 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         items = detail().get("research") or []
         return items[0] if items else None
 
+    def has_existing_research():
+        research = current_research()
+        if research:
+            return True
+        return bool(detail().get("research_status") or detail().get("research_summary"))
+
     def sequence_eligibility_text():
         email = detail().get("contact_email")
         status = str(detail().get("email_status") or "").casefold()
@@ -496,6 +502,9 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         token = get_app_token()
         if not token:
             messagebox.showerror("AI Araştır", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
+        if has_existing_research():
+            messagebox.showinfo("AI Araştır", "AI Araştırması zaten yapıldı.", parent=win)
             return
         research_state["running"] = True
         research_state["message_index"] = 0

@@ -915,6 +915,15 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         if not leads:
             messagebox.showwarning("AI Araştır", "Lütfen araştırılacak leadleri seçin.", parent=win)
             return
+        skipped_existing = [
+            lead
+            for lead in leads
+            if lead.get("research_status") or lead.get("research_summary")
+        ]
+        leads = [lead for lead in leads if lead not in skipped_existing]
+        if not leads:
+            messagebox.showinfo("AI Araştır", "AI Araştırması zaten yapıldı.", parent=win)
+            return
         total = len(leads)
         bulk_research_progress.set(0)
         bulk_research_status_var.set(f"AI araştırma başlıyor: 0/{total}")
@@ -957,6 +966,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             win.after(0, apply_filters)
             win.after(0, finish_research_progress)
             message = f"{completed} lead için AI araştırma tamamlandı."
+            if skipped_existing:
+                message += f" {len(skipped_existing)} lead zaten araştırıldığı için atlandı."
             if failed:
                 message += f" {failed} lead araştırılamadı."
                 if last_error:
