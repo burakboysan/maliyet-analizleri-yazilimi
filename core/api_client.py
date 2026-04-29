@@ -384,11 +384,22 @@ def list_ai_leads(token, filters=None):
     for key, value in (filters or {}).items():
         if value not in (None, ""):
             query[str(key)] = str(value)
-    path = "/desktop/ai-leads"
-    if query:
-        path += "?" + parse.urlencode(query)
-    response = request_json("GET", path, headers=auth_headers(token))
-    return response or []
+    page_size = int(query.pop("limit", 500) or 500)
+    page_size = max(1, min(page_size, 1000))
+    max_rows = int(query.pop("max_rows", 25000) or 25000)
+    rows = []
+    offset = int(query.pop("offset", 0) or 0)
+    while len(rows) < max_rows:
+        page_query = {**query, "limit": str(page_size), "offset": str(offset)}
+        path = "/desktop/ai-leads?" + parse.urlencode(page_query)
+        response = request_json("GET", path, headers=auth_headers(token), timeout=60)
+        page_rows = response.get("rows") if isinstance(response, dict) else response
+        page_rows = page_rows or []
+        rows.extend(page_rows)
+        if len(page_rows) < page_size:
+            break
+        offset += page_size
+    return rows[:max_rows]
 
 
 def search_apollo_ai_leads(token, payload):

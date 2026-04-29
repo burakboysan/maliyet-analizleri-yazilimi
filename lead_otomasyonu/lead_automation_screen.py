@@ -434,11 +434,10 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         def worker():
             try:
                 leads = list_ai_leads(token)
-                if leads:
-                    state["leads"] = leads
-                    state["api_mode"] = True
-                    win.after(0, lambda: status_var.set("Canlı API verisi yüklendi."))
-                    win.after(0, apply_filters)
+                state["leads"] = leads
+                state["api_mode"] = True
+                win.after(0, lambda count=len(leads): status_var.set(f"Canlı API verisi yüklendi: {count} lead."))
+                win.after(0, apply_filters)
             except ApiClientError as exc:
                 message = f"API hazır değil veya erişilemiyor; mock veri kullanılıyor. Detay: {exc}"
                 win.after(0, lambda msg=message: status_var.set(msg))

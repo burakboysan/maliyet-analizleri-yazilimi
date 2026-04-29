@@ -2657,6 +2657,8 @@ def list_ai_leads(
     sales_channel: Optional[str] = Query(default=None),
     product_category: Optional[str] = Query(default=None),
     priority: Optional[str] = Query(default=None),
+    limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     current_user: UserTable = Depends(require_authenticated_user),
 ):
@@ -2690,10 +2692,10 @@ def list_ai_leads(
             )
             WHERE {' AND '.join(clauses)}
             ORDER BY l.updated_at DESC, l.id DESC
-            LIMIT 500
+            LIMIT :limit OFFSET :offset
             """
         ),
-        params,
+        {**params, "limit": int(limit), "offset": int(offset)},
     ).all()
     return [_lead_response(db, row) for row in rows]
 
