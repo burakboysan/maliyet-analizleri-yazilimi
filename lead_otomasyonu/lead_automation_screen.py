@@ -12,7 +12,6 @@ from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
 from lead_otomasyonu.segment_settings_screen import segment_ayarlari_ekrani
 from lead_otomasyonu.strategy_constants import (
-    MOCK_LEADS,
     PRIORITY_OPTIONS,
     PRODUCT_CATEGORIES,
     SALES_CHANNELS,
@@ -40,7 +39,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         pass
 
     state = {
-        "leads": [dict(item) for item in MOCK_LEADS],
+        "leads": [],
         "filtered": [],
         "api_mode": False,
     }
@@ -60,7 +59,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         font=ctk.CTkFont(family="Inter", size=28, weight="bold"),
         text_color="#212121",
     ).grid(row=0, column=0, sticky="w", padx=22, pady=(18, 4))
-    status_var = ctk.StringVar(value="MVP iskeleti mock veriyle hazır. API bağlandığında aynı ekran canlı veriyi kullanacak.")
+    status_var = ctk.StringVar(value="Canlı lead verisi yükleniyor.")
     ctk.CTkLabel(
         header,
         textvariable=status_var,
@@ -436,7 +435,10 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     def load_from_api():
         token = get_app_token()
         if not token:
-            status_var.set("API oturumu bulunamadı; mock veri gösteriliyor.")
+            state["leads"] = []
+            state["api_mode"] = False
+            win.after(0, apply_filters)
+            status_var.set("API oturumu bulunamadı; lead listesi yüklenemedi.")
             return
         load_message = "Lead listesi yükleniyor..."
         load_status_var.set(load_message)
@@ -460,10 +462,16 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 win.after(0, lambda count=len(leads): hide_load_progress(f"Canlı API verisi yüklendi: {count} lead."))
                 win.after(0, apply_filters)
             except ApiClientError as exc:
-                message = f"API hazır değil veya erişilemiyor; mock veri kullanılıyor. Detay: {exc}"
+                state["leads"] = []
+                state["api_mode"] = False
+                win.after(0, apply_filters)
+                message = f"API hazır değil veya erişilemiyor; lead listesi yüklenemedi. Detay: {exc}"
                 win.after(0, lambda msg=message: hide_load_progress(msg))
             except Exception as exc:
-                message = f"Lead verisi yüklenemedi; mock veri kullanılıyor. Detay: {exc}"
+                state["leads"] = []
+                state["api_mode"] = False
+                win.after(0, apply_filters)
+                message = f"Lead verisi yüklenemedi. Detay: {exc}"
                 win.after(0, lambda msg=message: hide_load_progress(msg))
 
         threading.Thread(target=worker, daemon=True).start()
