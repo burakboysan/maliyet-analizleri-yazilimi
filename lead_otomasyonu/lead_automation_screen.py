@@ -146,6 +146,14 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     import_status_var = ctk.StringVar(value="")
     ctk.CTkLabel(import_progress_frame, textvariable=import_status_var, text_color="#64748b", width=300, anchor="w").grid(row=0, column=1, sticky="e")
     import_progress_frame.grid_remove()
+    load_progress_frame = ctk.CTkFrame(filters, fg_color="transparent")
+    load_progress_frame.grid(row=5, column=0, columnspan=7, sticky="ew", padx=16, pady=(0, 12))
+    load_progress_frame.grid_columnconfigure(0, weight=1)
+    load_progress = ctk.CTkProgressBar(load_progress_frame, mode="indeterminate")
+    load_progress.grid(row=0, column=0, sticky="ew", padx=(0, 12))
+    load_status_var = ctk.StringVar(value="")
+    ctk.CTkLabel(load_progress_frame, textvariable=load_status_var, text_color="#64748b", width=300, anchor="w").grid(row=0, column=1, sticky="e")
+    load_progress_frame.grid_remove()
 
     table_card = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
     table_card.grid(row=3, column=0, sticky="nsew")
@@ -430,20 +438,33 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         if not token:
             status_var.set("API oturumu bulunamadı; mock veri gösteriliyor.")
             return
+        load_message = "Lead listesi yükleniyor..."
+        load_status_var.set(load_message)
+        load_progress_frame.grid()
+        load_progress.start()
+        status_var.set(load_message)
+
+        def hide_load_progress(message=None):
+            load_progress.stop()
+            load_progress.set(0)
+            load_progress_frame.grid_remove()
+            load_status_var.set("")
+            if message is not None:
+                status_var.set(message)
 
         def worker():
             try:
                 leads = list_ai_leads(token)
                 state["leads"] = leads
                 state["api_mode"] = True
-                win.after(0, lambda count=len(leads): status_var.set(f"Canlı API verisi yüklendi: {count} lead."))
+                win.after(0, lambda count=len(leads): hide_load_progress(f"Canlı API verisi yüklendi: {count} lead."))
                 win.after(0, apply_filters)
             except ApiClientError as exc:
                 message = f"API hazır değil veya erişilemiyor; mock veri kullanılıyor. Detay: {exc}"
-                win.after(0, lambda msg=message: status_var.set(msg))
+                win.after(0, lambda msg=message: hide_load_progress(msg))
             except Exception as exc:
                 message = f"Lead verisi yüklenemedi; mock veri kullanılıyor. Detay: {exc}"
-                win.after(0, lambda msg=message: status_var.set(msg))
+                win.after(0, lambda msg=message: hide_load_progress(msg))
 
         threading.Thread(target=worker, daemon=True).start()
 
