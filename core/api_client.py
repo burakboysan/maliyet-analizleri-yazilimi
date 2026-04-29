@@ -464,7 +464,7 @@ def create_ai_lead(token, payload):
 
 
 def import_ai_leads_csv(token, rows):
-    return request_json("POST", "/desktop/ai-leads/import", payload={"rows": rows}, headers=auth_headers(token))
+    return request_json("POST", "/desktop/ai-leads/import", payload={"rows": rows}, headers=auth_headers(token), timeout=120)
 
 
 def analyze_ai_lead(token, lead_id):

@@ -2678,37 +2678,281 @@ def import_ai_leads(
     db: Session = Depends(get_db),
     current_user: UserTable = Depends(require_authenticated_user),
 ):
-    created = []
+    _ensure_tables(db)
+    affected_ids: set[int] = set()
+    created_leads = 0
+    updated_leads = 0
+    created_contacts = 0
+    updated_contacts = 0
+    skipped_invalid = 0
+    skipped_duplicates = 0
     for row in payload.rows:
-        company_name = _first_import_value(row, ["company_name", "Company", "Company Name", "company", "Firma"])
+        company_name = _first_import_value(row, ["company_name", "Company", "Company Name", "Company Name for Emails", "company", "Firma"])
         if not company_name:
+            skipped_invalid += 1
             continue
-        email = _first_import_value(row, ["email", "Email", "Email Address", "person_email", "contact_email"])
-        first_name = _first_import_value(row, ["first_name", "First Name"])
-        last_name = _first_import_value(row, ["last_name", "Last Name"])
-        full_name = _first_import_value(row, ["name", "Name", "Person Name"])
-        if full_name and not first_name:
-            first_name, last_name = _split_name(full_name)
-        create_payload = AiLeadCreateRequest(
-            company_name=company_name,
-            website=_first_import_value(row, ["website", "Website"]),
-            country=_first_import_value(row, ["country", "Country", "Ülke"]),
-            local_language=_first_import_value(row, ["language", "Language", "Dil"]),
-            source="CSV",
-            company_description=_first_import_value(row, ["description", "Company Description", "industry", "Industry", "Açıklama"]),
-            detected_activity=_first_import_value(row, ["detected_activity", "Activity", "industry", "Industry"]),
-            contact=AiLeadContactRequest(
-                first_name=first_name,
-                last_name=last_name,
-                title=_first_import_value(row, ["title", "Title", "Job Title"]),
-                email=email,
-                email_status=_first_import_value(row, ["email_status", "Email Status", "contact_email_status"]) or ("user managed" if email else "missing"),
-                linkedin_url=_first_import_value(row, ["linkedin_url", "LinkedIn", "Person Linkedin Url"]),
-                phone=_first_import_value(row, ["phone", "Phone"]),
+        website = _first_import_value(row, ["website", "Website"])
+        country = _first_import_value(row, ["country", "Country", "Company Country", "Ülke"])
+        domain = _company_domain(website)
+        lead_id = _find_existing_lead_by_domain(db, domain) if domain else None
+        if not lead_id:
+            lead_id = _find_existing_lead_by_company_country(db, company_name, country)
+        if lead_id:
+            skipped_duplicates += 1
+            updated = _update_import_lead_basics(db, lead_id, row)
+            updated_leads += 1 if updated else 0
+        else:
+            lead_id = _create_company_lead_from_import_row(db, row, current_user)
+            created_leads += 1
+        affected_ids.add(int(lead_id))
+        for contact in _contacts_from_import_row(row):
+            result = _insert_or_update_contact_from_import(db, int(lead_id), contact)
+            if result == "created":
+                created_contacts += 1
+            elif result == "updated":
+                updated_contacts += 1
+
+    db.commit()
+    rows = []
+    for lead_id in sorted(affected_ids, reverse=True)[:250]:
+        lead_row = db.execute(text("SELECT * FROM ai_leads WHERE id = :id"), {"id": lead_id}).first()
+        if lead_row:
+            rows.append(_lead_response(db, lead_row))
+    return {
+        "input_rows": len(payload.rows),
+        "created": created_leads,
+        "created_leads": created_leads,
+        "updated_leads": updated_leads,
+        "created_contacts": created_contacts,
+        "updated_contacts": updated_contacts,
+        "skipped_duplicates": skipped_duplicates,
+        "skipped_invalid": skipped_invalid,
+        "rows": rows,
+    }
+
+
+def _find_existing_lead_by_company_country(db: Session, company_name: str, country: str | None = None) -> int | None:
+    company_name = _normalize(company_name)
+    country = _normalize(country)
+    if not company_name:
+        return None
+    if country:
+        row = db.execute(
+            text(
+                """
+                SELECT id
+                FROM ai_leads
+                WHERE LOWER(company_name) = LOWER(:company_name)
+                  AND LOWER(COALESCE(country, '')) = LOWER(:country)
+                LIMIT 1
+                """
             ),
+            {"company_name": company_name, "country": country},
+        ).first()
+    else:
+        row = db.execute(
+            text("SELECT id FROM ai_leads WHERE LOWER(company_name) = LOWER(:company_name) LIMIT 1"),
+            {"company_name": company_name},
+        ).first()
+    return int(row[0]) if row else None
+
+
+def _create_company_lead_from_import_row(db: Session, row: dict[str, Any], current_user: UserTable) -> int:
+    company_name = _first_import_value(row, ["company_name", "Company", "Company Name", "Company Name for Emails", "company", "Firma"])
+    website = _first_import_value(row, ["website", "Website"])
+    country = _first_import_value(row, ["country", "Country", "Company Country", "Ülke"])
+    description = _first_import_value(row, ["description", "Company Description", "industry", "Industry", "Açıklama"])
+    detected_activity = _first_import_value(row, ["detected_activity", "Activity", "industry", "Industry", "Title"])
+    analysis_input = {
+        "company_name": company_name,
+        "website": website,
+        "country": country,
+        "local_language": _first_import_value(row, ["language", "Language", "Dil"]) or _language_for_country(country),
+        "company_description": description,
+        "detected_activity": detected_activity,
+    }
+    analysis = _analysis_from_import_row(row, analysis_input, has_contact=bool(_contacts_from_import_row(row)))
+    status_value = "Excluded" if analysis["is_excluded"] else "Awaiting Approval"
+    result = db.execute(
+        text(
+            """
+            INSERT INTO ai_leads (
+                company_name, website, country, region, local_language, source, source_reference,
+                company_description, detected_activity, status, exclusion_status, exclusion_reason, created_by_user_id
+            )
+            VALUES (
+                :company_name, :website, :country, :region, :local_language, 'CSV', :source_reference,
+                :company_description, :detected_activity, :status, :exclusion_status, :exclusion_reason, :user_id
+            )
+            """
+        ),
+        {
+            "company_name": company_name,
+            "website": website,
+            "country": analysis["country"] or country,
+            "region": "EMEA" if country else "",
+            "local_language": analysis["local_language"],
+            "source_reference": "Apollo CSV Import",
+            "company_description": description,
+            "detected_activity": detected_activity,
+            "status": status_value,
+            "exclusion_status": "Excluded" if analysis["is_excluded"] else "Active",
+            "exclusion_reason": analysis["exclusion_reason"],
+            "user_id": current_user.id,
+        },
+    )
+    lead_id = int(result.lastrowid)
+    _save_segmentation(db, lead_id, analysis)
+    _log_action(db, lead_id, "apollo_csv_import", "Apollo CSV import ile firma lead'i oluşturuldu.", current_user.id)
+    return lead_id
+
+
+def _update_import_lead_basics(db: Session, lead_id: int, row: dict[str, Any]) -> bool:
+    website = _first_import_value(row, ["website", "Website"])
+    country = _first_import_value(row, ["country", "Country", "Company Country", "Ülke"])
+    description = _first_import_value(row, ["description", "Company Description", "industry", "Industry", "Açıklama"])
+    db.execute(
+        text(
+            """
+            UPDATE ai_leads
+            SET website = COALESCE(NULLIF(website, ''), :website),
+                country = COALESCE(NULLIF(country, ''), :country),
+                local_language = COALESCE(NULLIF(local_language, ''), :local_language),
+                company_description = COALESCE(NULLIF(company_description, ''), :company_description)
+            WHERE id = :lead_id
+            """
+        ),
+        {
+            "lead_id": lead_id,
+            "website": website,
+            "country": country,
+            "local_language": _language_for_country(country),
+            "company_description": description,
+        },
+    )
+    return bool(website or country or description)
+
+
+def _contacts_from_import_row(row: dict[str, Any]) -> list[dict[str, Any]]:
+    contacts: list[dict[str, Any]] = []
+    first_name = _first_import_value(row, ["first_name", "First Name"])
+    last_name = _first_import_value(row, ["last_name", "Last Name"])
+    full_name = _first_import_value(row, ["name", "Name", "Person Name"])
+    if full_name and not first_name:
+        first_name, last_name = _split_name(full_name)
+    primary_email = _first_import_value(row, ["email", "Email", "Email Address", "person_email", "contact_email"])
+    if first_name or last_name or primary_email or _first_import_value(row, ["title", "Title", "Job Title"]):
+        contacts.append(
+            {
+                "first_name": first_name,
+                "last_name": last_name,
+                "title": _first_import_value(row, ["title", "Title", "Job Title"]),
+                "email": primary_email,
+                "email_status": _import_email_status(row, "Primary Email Source", primary_email),
+                "enrichment_note": _import_contact_note(row, "Primary Email Source"),
+                "linkedin_url": _first_import_value(row, ["linkedin_url", "LinkedIn", "Person Linkedin Url"]),
+                "phone": _first_import_value(row, ["phone", "Phone", "Company Phone"]),
+                "apollo_person_id": None,
+                "apollo_raw_json": json.dumps({"provider": "Apollo CSV", "row": row, "email_slot": "primary"}, ensure_ascii=False),
+            }
         )
-        created.append(_create_ai_lead_from_import_row(db, create_payload, row, current_user))
-    return {"created": len(created), "rows": created}
+    for slot, source_key in [("Secondary Email", "Secondary Email Source"), ("Tertiary Email", "Tertiary Email Source")]:
+        email_value = _first_import_value(row, [slot])
+        if not email_value:
+            continue
+        contacts.append(
+            {
+                "first_name": "",
+                "last_name": "",
+                "title": "",
+                "email": email_value,
+                "email_status": _import_email_status(row, source_key, email_value),
+                "enrichment_note": _import_contact_note(row, source_key),
+                "linkedin_url": "",
+                "phone": _first_import_value(row, ["Company Phone"]),
+                "apollo_person_id": None,
+                "apollo_raw_json": json.dumps({"provider": "Apollo CSV", "row": row, "email_slot": slot}, ensure_ascii=False),
+            }
+        )
+    return contacts
+
+
+def _import_email_status(row: dict[str, Any], source_key: str, email_value: str) -> str:
+    source = _first_import_value(row, [source_key, "email_status", "Email Status", "contact_email_status"])
+    if source:
+        return source
+    return "user managed" if email_value else "missing"
+
+
+def _import_contact_note(row: dict[str, Any], source_key: str) -> str:
+    source = _first_import_value(row, [source_key])
+    return f"Apollo CSV import. Email kaynağı: {source}." if source else "Apollo CSV import."
+
+
+def _insert_or_update_contact_from_import(db: Session, lead_id: int, contact: dict[str, Any]) -> str:
+    email_value = _normalize(contact.get("email"))
+    existing = None
+    if email_value:
+        existing = db.execute(
+            text("SELECT * FROM ai_lead_contacts WHERE lead_id = :lead_id AND email = :email LIMIT 1"),
+            {"lead_id": lead_id, "email": email_value},
+        ).first()
+    if not existing and (contact.get("first_name") or contact.get("last_name") or contact.get("title")):
+        existing = db.execute(
+            text(
+                """
+                SELECT *
+                FROM ai_lead_contacts
+                WHERE lead_id = :lead_id
+                  AND COALESCE(first_name, '') = :first_name
+                  AND COALESCE(last_name, '') = :last_name
+                  AND COALESCE(title, '') = :title
+                LIMIT 1
+                """
+            ),
+            {
+                "lead_id": lead_id,
+                "first_name": contact.get("first_name") or "",
+                "last_name": contact.get("last_name") or "",
+                "title": contact.get("title") or "",
+            },
+        ).first()
+    values = {"lead_id": lead_id, **contact}
+    if existing:
+        contact_id = _lead_row_to_dict(existing)["id"]
+        db.execute(
+            text(
+                """
+                UPDATE ai_lead_contacts
+                SET first_name = COALESCE(NULLIF(:first_name, ''), first_name),
+                    last_name = COALESCE(NULLIF(:last_name, ''), last_name),
+                    title = COALESCE(NULLIF(:title, ''), title),
+                    email = COALESCE(NULLIF(:email, ''), email),
+                    email_status = COALESCE(NULLIF(:email_status, ''), email_status),
+                    enrichment_note = :enrichment_note,
+                    linkedin_url = COALESCE(NULLIF(:linkedin_url, ''), linkedin_url),
+                    phone = COALESCE(NULLIF(:phone, ''), phone),
+                    apollo_raw_json = :apollo_raw_json
+                WHERE id = :contact_id
+                """
+            ),
+            {**values, "contact_id": contact_id},
+        )
+        return "updated"
+    db.execute(
+        text(
+            """
+            INSERT INTO ai_lead_contacts (
+                lead_id, first_name, last_name, title, email, email_status, enrichment_note, linkedin_url, phone, apollo_person_id, apollo_raw_json
+            )
+            VALUES (
+                :lead_id, :first_name, :last_name, :title, :email, :email_status, :enrichment_note, :linkedin_url, :phone, :apollo_person_id, :apollo_raw_json
+            )
+            """
+        ),
+        values,
+    )
+    return "created"
 
 
 def _create_ai_lead_from_import_row(

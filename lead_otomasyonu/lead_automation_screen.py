@@ -5,7 +5,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
-from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, enrich_ai_lead_from_hunter, generate_ai_email_sequence, get_ai_lead_provider_status, list_ai_leads, search_apollo_ai_leads, search_hunter_companies, search_serpapi_domains
+from core.api_client import ApiClientError, deep_research_ai_lead, delete_ai_lead, enrich_ai_lead_from_apollo, enrich_ai_lead_from_hunter, generate_ai_email_sequence, get_ai_lead_provider_status, import_ai_leads_csv, list_ai_leads, search_apollo_ai_leads, search_hunter_companies, search_serpapi_domains
 from core.session import get_app_token
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
 from lead_otomasyonu.lead_detail_screen import lead_detay_ekrani
@@ -332,71 +332,64 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         ctk.CTkButton(form, text="Kaydet", command=save, fg_color="#d32f2f", hover_color="#b91c1c").grid(row=9, column=1, sticky="e", padx=16, pady=18)
 
     def import_csv():
+        token = get_app_token()
+        if not token:
+            messagebox.showerror("Apollo Import", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
+            return
         path = filedialog.askopenfilename(
             parent=win,
-            title="Apollo CSV Seç",
-            filetypes=[("CSV Dosyası", "*.csv"), ("Tüm Dosyalar", "*.*")],
+            title="Apollo CSV/Excel Seç",
+            filetypes=[("Apollo Export", "*.csv *.xlsx"), ("CSV Dosyası", "*.csv"), ("Excel Dosyası", "*.xlsx"), ("Tüm Dosyalar", "*.*")],
         )
         if not path:
             return
         try:
-            with open(path, newline="", encoding="utf-8-sig") as file:
-                rows = list(csv.DictReader(file))
-            added = 0
-            for row in rows:
-                company = _first_value(row, ["company_name", "Company", "Company Name", "company", "Firma"])
-                if not company:
-                    continue
-                country = _first_value(row, ["country", "Country", "Ülke"])
-                email = _first_value(row, ["email", "Email", "Email Address", "person_email", "contact_email"])
-                email_status = _first_value(row, ["email_status", "Email Status", "contact_email_status"]) or ("user managed" if email else "missing")
-                first_name = _first_value(row, ["first_name", "First Name"])
-                last_name = _first_value(row, ["last_name", "Last Name"])
-                contact_name = _first_value(row, ["name", "Name", "Person Name"]) or " ".join(part for part in [first_name, last_name] if part)
-                activity = _first_value(row, ["description", "Company Description", "industry", "Industry", "Açıklama"])
-                partner_reason = _first_value(row, ["partner_fit_reason", "Partner Fit Reason"])
-                value_proposition = _first_value(row, ["value_proposition", "Value Proposition"])
-                recommended_campaign = _first_value(row, ["recommended_campaign", "Recommended Campaign"])
-                segment_hint = _first_value(row, ["segment", "Segment"])
-                combined_signal = " ".join(item for item in [activity, partner_reason, value_proposition, recommended_campaign, segment_hint] if item)
-                channel = _channel_from_apollo_row(row, combined_signal)
-                product = _product_from_apollo_row(row, combined_signal)
-                priority = _priority_from_icp(row) or priority_for_segment(product, channel)
-                score = _score_from_icp(row, priority)
-                state["leads"].append(
-                    {
-                        "id": _next_id(state["leads"]),
-                        "company_name": company,
-                        "contact_name": contact_name,
-                        "contact_title": _first_value(row, ["title", "Title", "Job Title"]),
-                        "contact_email": email,
-                        "email_status": email_status,
-                        "country": country,
-                        "local_language": _guess_language(country),
-                        "source": "CSV",
-                        "sales_channel": channel,
-                        "product_category": product,
-                        "segment_name": build_segment_name(product, channel),
-                        "priority": priority,
-                        "ai_score": score,
-                        "suggested_sequence": _sequence_from_campaign(recommended_campaign, channel),
-                        "ai_status": "Segmented",
-                        "approval_status": "Awaiting Approval",
-                        "last_action": "CSV import ile eklendi",
-                        "website": _first_value(row, ["website", "Website"]),
-                        "detected_activity": combined_signal or activity,
-                        "short_reasoning": partner_reason or "Apollo import sonrası ICP ve segment sinyalleriyle öneri oluşturuldu.",
-                        "personalization_angle": _first_value(row, ["personalized_opener", "Personalized Opener"]) or value_proposition or combined_signal,
-                        "value_proposition": value_proposition,
-                        "icp_tier": _first_value(row, ["icp_tier", "ICP Tier"]),
-                        "recommended_campaign": recommended_campaign,
-                    }
-                )
-                added += 1
-            apply_filters()
-            messagebox.showinfo("CSV Import", f"{added} lead eklendi.", parent=win)
+            rows = _read_import_rows(path)
+            summary = _summarize_import_rows(rows)
+            if not rows:
+                messagebox.showwarning("Apollo Import", "Dosyada içe aktarılacak satır bulunamadı.", parent=win)
+                return
+            prompt = (
+                f"{summary['rows']} satır bulundu.\n"
+                f"{summary['companies']} benzersiz firma görünüyor.\n"
+                f"{summary['emails']} email alanı dolu.\n"
+                f"{summary['people']} kişi adı/ünvanı bulunan satır var.\n\n"
+                "Bu dosya Lead Otomasyonu veritabanına aktarılsın mı?"
+            )
+            if not messagebox.askyesno("Apollo Import", prompt, parent=win):
+                return
         except Exception as exc:
-            messagebox.showerror("CSV Import", f"CSV okunamadı: {exc}", parent=win)
+            messagebox.showerror("Apollo Import", f"Dosya okunamadı: {exc}", parent=win)
+            return
+
+        status_var.set("Apollo export içe aktarılıyor...")
+
+        def worker():
+            try:
+                result = import_ai_leads_csv(token, rows) or {}
+                created = int(result.get("created_leads") or result.get("created") or 0)
+                updated = int(result.get("updated_leads") or 0)
+                contacts = int(result.get("created_contacts") or 0)
+                contact_updates = int(result.get("updated_contacts") or 0)
+                duplicates = int(result.get("skipped_duplicates") or 0)
+                invalid = int(result.get("skipped_invalid") or 0)
+                message = (
+                    f"{created} yeni firma lead'i oluşturuldu.\n"
+                    f"{updated} mevcut firma güncellendi.\n"
+                    f"{contacts} yeni kişi/email eklendi.\n"
+                    f"{contact_updates} kişi/email güncellendi.\n"
+                    f"{duplicates} tekrar firma mevcut kayıtla eşleştirildi."
+                )
+                if invalid:
+                    message += f"\n{invalid} satır firma adı olmadığı için atlandı."
+                win.after(0, load_from_api)
+                win.after(0, lambda msg=message: messagebox.showinfo("Apollo Import", msg, parent=win))
+            except Exception as exc:
+                win.after(0, lambda err=str(exc): messagebox.showerror("Apollo Import", f"İçe aktarma başarısız: {err}", parent=win))
+            finally:
+                win.after(0, lambda: status_var.set(""))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def load_from_api():
         token = get_app_token()
@@ -1024,7 +1017,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         threading.Thread(target=worker, daemon=True).start()
 
     ctk.CTkButton(actions, text="Yenile", width=110, command=load_from_api, fg_color="#ffffff", text_color="#d32f2f", border_width=1, border_color="#d32f2f").pack(side="left", padx=(0, 8))
-    ctk.CTkButton(actions, text="CSV Import", width=120, command=import_csv, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
+    ctk.CTkButton(actions, text="Apollo CSV İçe Aktar", width=165, command=import_csv, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Segment Ayarları", width=145, command=open_segment_settings, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
 
     apollo_email_button = ctk.CTkButton(filter_actions, text="Apollo Email Bulucu", width=165, command=enrich_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e")
@@ -1230,6 +1223,61 @@ def _form_country_selector(parent, label, variable, values, row, owner):
 
 def _next_id(leads):
     return max([int(item.get("id") or 0) for item in leads] or [0]) + 1
+
+
+def _read_import_rows(path):
+    lowered = str(path or "").casefold()
+    if lowered.endswith(".xlsx"):
+        try:
+            from openpyxl import load_workbook
+        except Exception as exc:
+            raise RuntimeError("Excel içe aktarma için openpyxl bulunamadı. Dosyayı CSV olarak dışa aktarabilirsiniz.") from exc
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        sheet = workbook.active
+        rows = list(sheet.iter_rows(values_only=True))
+        if not rows:
+            return []
+        headers = [str(value or "").strip() for value in rows[0]]
+        output = []
+        for values in rows[1:]:
+            item = {}
+            for index, header in enumerate(headers):
+                if not header:
+                    continue
+                value = values[index] if index < len(values) else ""
+                item[header] = "" if value is None else str(value).strip()
+            if any(item.values()):
+                output.append(item)
+        return output
+    encodings = ("utf-8-sig", "cp1254", "latin-1")
+    last_error = None
+    for encoding in encodings:
+        try:
+            with open(path, newline="", encoding=encoding) as file:
+                return [dict(row) for row in csv.DictReader(file) if any((value or "").strip() for value in row.values())]
+        except UnicodeDecodeError as exc:
+            last_error = exc
+    raise RuntimeError(f"CSV encoding okunamadı: {last_error}")
+
+
+def _summarize_import_rows(rows):
+    companies = set()
+    emails = 0
+    people = 0
+    for row in rows:
+        company = _first_value(row, ["company_name", "Company", "Company Name", "Company Name for Emails", "company", "Firma"])
+        country = _first_value(row, ["country", "Country", "Company Country", "Ülke"])
+        if company:
+            companies.add(f"{company.casefold()}|{country.casefold()}")
+        email_values = [
+            _first_value(row, ["email", "Email", "Email Address", "person_email", "contact_email"]),
+            _first_value(row, ["Secondary Email"]),
+            _first_value(row, ["Tertiary Email"]),
+        ]
+        emails += sum(1 for value in email_values if value)
+        if any(_first_value(row, keys) for keys in [["first_name", "First Name"], ["last_name", "Last Name"], ["name", "Name", "Person Name"], ["title", "Title", "Job Title"]]):
+            people += 1
+    return {"rows": len(rows), "companies": len(companies), "emails": emails, "people": people}
 
 
 def _first_value(row, keys):
