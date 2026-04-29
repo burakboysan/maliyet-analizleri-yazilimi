@@ -336,25 +336,37 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         if not token:
             messagebox.showerror("Apollo Import", "API oturumu bulunamadı. Lütfen yeniden giriş yapın.", parent=win)
             return
-        path = filedialog.askopenfilename(
+        paths = filedialog.askopenfilenames(
             parent=win,
             title="Apollo CSV/Excel Seç",
             filetypes=[("Apollo Export", "*.csv *.xlsx"), ("CSV Dosyası", "*.csv"), ("Excel Dosyası", "*.xlsx"), ("Tüm Dosyalar", "*.*")],
         )
-        if not path:
+        if not paths:
             return
         try:
-            rows = _read_import_rows(path)
+            rows = []
+            file_summaries = []
+            for path in paths:
+                file_rows = _read_import_rows(path)
+                for row in file_rows:
+                    row.setdefault("__import_file", _import_file_name(path))
+                rows.extend(file_rows)
+                file_summaries.append(f"{_import_file_name(path)}: {len(file_rows)} satır")
             summary = _summarize_import_rows(rows)
             if not rows:
-                messagebox.showwarning("Apollo Import", "Dosyada içe aktarılacak satır bulunamadı.", parent=win)
+                messagebox.showwarning("Apollo Import", "Seçilen dosyalarda içe aktarılacak satır bulunamadı.", parent=win)
                 return
+            file_note = "\n".join(file_summaries[:8])
+            if len(file_summaries) > 8:
+                file_note += f"\n... ve {len(file_summaries) - 8} dosya daha"
             prompt = (
-                f"{summary['rows']} satır bulundu.\n"
+                f"{len(paths)} dosya seçildi.\n"
+                f"{summary['rows']} toplam satır bulundu.\n"
                 f"{summary['companies']} benzersiz firma görünüyor.\n"
                 f"{summary['emails']} email alanı dolu.\n"
                 f"{summary['people']} kişi adı/ünvanı bulunan satır var.\n\n"
-                "Bu dosya Lead Otomasyonu veritabanına aktarılsın mı?"
+                f"{file_note}\n\n"
+                "Bu dosyalar Lead Otomasyonu veritabanına aktarılsın mı?"
             )
             if not messagebox.askyesno("Apollo Import", prompt, parent=win):
                 return
@@ -362,7 +374,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             messagebox.showerror("Apollo Import", f"Dosya okunamadı: {exc}", parent=win)
             return
 
-        status_var.set("Apollo export içe aktarılıyor...")
+        status_var.set(f"{len(paths)} Apollo export dosyası içe aktarılıyor...")
 
         def worker():
             try:
@@ -1258,6 +1270,11 @@ def _read_import_rows(path):
         except UnicodeDecodeError as exc:
             last_error = exc
     raise RuntimeError(f"CSV encoding okunamadı: {last_error}")
+
+
+def _import_file_name(path):
+    normalized = str(path or "").replace("\\", "/")
+    return normalized.rsplit("/", 1)[-1] or normalized
 
 
 def _summarize_import_rows(rows):
