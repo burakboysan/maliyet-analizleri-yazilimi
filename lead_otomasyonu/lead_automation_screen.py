@@ -152,6 +152,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     x_scroll = ttk.Scrollbar(table_wrap, orient="horizontal")
     columns = (
         "company_name",
+        "contact_name",
         "contact_email",
         "country",
         "sales_channel",
@@ -173,6 +174,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     headings = {
         "company_name": "Firma",
+        "contact_name": "Kişi",
         "contact_email": "Email",
         "country": "Ülke",
         "sales_channel": "Satış Kanalı",
@@ -181,11 +183,12 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "email_sequence_stage": "Email Sekans Aşaması",
     }
     widths = {
-        "company_name": 260,
-        "contact_email": 230,
+        "company_name": 240,
+        "contact_name": 170,
+        "contact_email": 220,
         "country": 120,
-        "sales_channel": 230,
-        "product_category": 170,
+        "sales_channel": 210,
+        "product_category": 160,
         "priority": 110,
         "email_sequence_stage": 190,
     }
@@ -213,7 +216,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         priority = priority_var.get()
         filtered = []
         for item in state["leads"]:
-            haystack = " ".join(str(item.get(key, "")) for key in ("company_name", "contact_email", "email_status", "enrichment_note", "country", "segment_name", "sales_channel", "product_category")).casefold()
+            haystack = " ".join(str(item.get(key, "")) for key in ("company_name", "contact_name", "contact_email", "email_status", "enrichment_note", "country", "segment_name", "sales_channel", "product_category")).casefold()
             if query and query not in haystack:
                 continue
             if channel != "Tüm Kanallar" and item.get("sales_channel") != channel:
