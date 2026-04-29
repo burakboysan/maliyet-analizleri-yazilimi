@@ -353,6 +353,7 @@ SERPAPI_BLOCKED_DOMAINS = {
     "globalsources.com",
     "go4worldbusiness.com",
     "hellotrade.com",
+    "holz-handwerk.de",
     "indeed.com",
     "indiamart.com",
     "instagram.com",
@@ -362,6 +363,7 @@ SERPAPI_BLOCKED_DOMAINS = {
     "machinio.com",
     "made-in-china.com",
     "maps.google.com",
+    "nuernbergmesse.de",
     "resale.info",
     "surplex.com",
     "thefabricator.com",
@@ -460,6 +462,17 @@ SERPAPI_QUERY_NEGATIVE_TERMS = [
     "shopping",
     "used machinery",
     "for sale",
+    "trade fair",
+    "exhibition",
+    "expo",
+    "conference",
+    "exhibitor",
+    "visitor",
+    "messe",
+    "fachmesse",
+    "aussteller",
+    "besucher",
+    "fuar",
     "jobs",
     "linkedin",
     "facebook",
@@ -2970,6 +2983,31 @@ def _serpapi_result_is_company_candidate(result: dict[str, Any], domain: str) ->
         return False
     if any(fragment in haystack for fragment in ["top companies", "company list", "list of companies", "supplier list", "shop now", "add to cart", "compare prices"]):
         return False
+    non_company_signals = _research_matches(f"{domain} {link} {haystack}", RESEARCH_NON_COMPANY_SIGNALS)
+    strong_non_company_signals = {
+        "trade fair",
+        "exhibition",
+        "exhibitor",
+        "exhibitors",
+        "visitor",
+        "visitors",
+        "tickets",
+        "floor plan",
+        "hall plan",
+        "messe",
+        "fachmesse",
+        "messezentrum",
+        "aussteller",
+        "besucher",
+        "fuar",
+        "katılımcı",
+        "ziyaretçi",
+        "directory",
+        "marketplace",
+        "supplier list",
+    }
+    if any(signal in strong_non_company_signals for signal in non_company_signals) or len(non_company_signals) >= 2:
+        return False
     domain_root = _company_name_from_domain(domain).casefold()
     generic_titles = {
         "about us",
@@ -3002,6 +3040,12 @@ def _build_serpapi_domain_result(result: dict[str, Any], domain: str, country: s
     serp_text = f"{result.get('title') or ''} {result.get('snippet') or ''} {link}"
     website = f"https://{domain}"
     homepage_html = _fetch_public_html(website)
+    research_pages = [
+        {"url": link or website, "text": serp_text},
+        {"url": website, "text": _clean_html_text(homepage_html)[:5000]},
+    ]
+    if _research_non_company_guard({"company_name": _company_name_from_domain(domain), "website": website}, research_pages):
+        return None
     if country and not _website_country_matches(country, domain, homepage_html, serp_text):
         return None
     company_name = _company_name_from_website_html(homepage_html, domain) or _company_name_from_serp_result(result, domain)
