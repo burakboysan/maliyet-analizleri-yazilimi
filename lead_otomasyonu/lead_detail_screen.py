@@ -30,6 +30,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     status_var = ctk.StringVar(value=lead.get("ai_status") or lead.get("status") or "New")
     status_note_var = ctk.StringVar()
     country_var = ctk.StringVar(value=lead.get("country") or "")
+    website_var = ctk.StringVar(value=lead.get("website") or "")
     segment_sales_channel_var = ctk.StringVar(value=lead.get("sales_channel") or SALES_CHANNELS[0])
     segment_product_var = ctk.StringVar(value=lead.get("product_category") or PRODUCT_CATEGORIES[0])
     segment_priority_var = ctk.StringVar(
@@ -79,7 +80,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
     ]:
         info_vars[key] = _kv_var(company_panel, label)
     _editable_kv_var(company_panel, "Ülke", country_var, "Lead ülkesini manuel düzeltebilirsiniz.")
-    info_vars["website"] = _clickable_kv_var(company_panel, "Web", lambda: open_website())
+    _editable_action_kv_var(company_panel, "Web", website_var, lambda: open_website(), "Lead web sitesini manuel düzeltebilirsiniz.", "Aç")
     info_vars["detected_activity"] = _kv_var(company_panel, "Aktivite")
 
     research_panel = _panel(company_tab)
@@ -181,7 +182,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         return state["detail"]
 
     def open_website():
-        website = str(detail().get("website") or "").strip()
+        website = str(website_var.get() or detail().get("website") or "").strip()
         if not website or website == "-":
             return
         if not website.lower().startswith(("http://", "https://")):
@@ -454,6 +455,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
             else:
                 var.set(str(detail().get(key) if detail().get(key) not in (None, "") else "-"))
         country_var.set(str(detail().get("country") or ""))
+        website_var.set(str(detail().get("website") or ""))
         status_var.set(detail().get("ai_status") or detail().get("status") or status_var.get())
         if detail().get("sales_channel") in SALES_CHANNELS:
             segment_sales_channel_var.set(detail().get("sales_channel"))
@@ -614,7 +616,7 @@ def lead_detay_ekrani(parent, lead, on_update=None):
         def worker():
             try:
                 update_ai_lead_segment(token, lead.get("id"), payload)
-                update_ai_lead_status(token, lead.get("id"), status_var.get(), status_note_var.get())
+                update_ai_lead_status(token, lead.get("id"), status_var.get(), status_note_var.get(), website_var.get())
                 response = get_ai_lead_detail(token, lead.get("id"))
                 state["detail"] = response
                 lead.update(response)
@@ -706,6 +708,24 @@ def _editable_kv_var(parent, label, variable, placeholder_text=""):
         placeholder_text=placeholder_text,
     )
     value_entry.pack(side="left", fill="x", expand=True)
+    return variable
+
+
+def _editable_action_kv_var(parent, label, variable, command, placeholder_text="", button_text="Aç"):
+    row = ctk.CTkFrame(parent, fg_color="transparent")
+    row.pack(fill="x", padx=18, pady=4)
+    ctk.CTkLabel(row, text=f"{label}:", width=130, anchor="w", text_color="#64748b").pack(side="left")
+    value_entry = ctk.CTkEntry(
+        row,
+        textvariable=variable,
+        text_color="#111827",
+        fg_color="#ffffff",
+        border_color="#cbd5e1",
+        height=32,
+        placeholder_text=placeholder_text,
+    )
+    value_entry.pack(side="left", fill="x", expand=True)
+    _inline_action_button(row, button_text, command).pack(side="left", padx=(8, 0))
     return variable
 
 

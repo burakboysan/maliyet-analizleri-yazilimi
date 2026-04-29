@@ -659,6 +659,7 @@ class AiExcludeRequest(BaseModel):
 class AiLeadStatusUpdateRequest(BaseModel):
     status: str
     note: Optional[str] = None
+    website: Optional[str] = None
 
 
 class AiEmailDraftRequest(BaseModel):
@@ -4666,13 +4667,17 @@ def update_ai_lead_status(
         raise HTTPException(status_code=400, detail="Geçersiz lead durumu.")
     exclusion_status = "Excluded" if status_value == "Excluded" else ("Review" if status_value == "Review Needed" else "Active")
     exclusion_reason = _normalize(payload.note) if status_value == "Excluded" else None
+    website = _normalize(payload.website)
+    if website and not website.lower().startswith(("http://", "https://")):
+        website = f"https://{website}"
     result = db.execute(
         text(
             """
             UPDATE ai_leads
             SET status = :status,
                 exclusion_status = :exclusion_status,
-                exclusion_reason = :exclusion_reason
+                exclusion_reason = :exclusion_reason,
+                website = CASE WHEN :website = '' THEN website ELSE :website END
             WHERE id = :lead_id
             """
         ),
@@ -4681,6 +4686,7 @@ def update_ai_lead_status(
             "status": status_value,
             "exclusion_status": exclusion_status,
             "exclusion_reason": exclusion_reason,
+            "website": website,
         },
     )
     if result.rowcount == 0:
