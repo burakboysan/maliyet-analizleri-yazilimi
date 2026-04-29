@@ -2818,6 +2818,45 @@ def list_ai_leads(
             """
         )
         params["search"] = f"%{search}%"
+    if not any([search, sales_channel, product_category, priority]):
+        total_count = db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total
+                FROM ai_leads l
+                WHERE {' AND '.join(clauses)}
+                """
+            ),
+            params,
+        ).scalar() or 0
+    else:
+        total_count = db.execute(
+            text(
+                f"""
+                SELECT COUNT(*) AS total
+                FROM ai_leads l
+                LEFT JOIN ai_segmentation_results s ON s.id = (
+                    SELECT s2.id
+                    FROM ai_segmentation_results s2
+                    WHERE s2.lead_id = l.id
+                    ORDER BY s2.id DESC
+                    LIMIT 1
+                )
+                LEFT JOIN ai_lead_contacts c ON c.id = (
+                    SELECT c2.id
+                    FROM ai_lead_contacts c2
+                    WHERE c2.lead_id = l.id
+                    ORDER BY
+                        CASE WHEN LOWER(COALESCE(c2.email_status, '')) = 'verified' THEN 0 ELSE 1 END,
+                        CASE WHEN COALESCE(c2.email, '') != '' THEN 0 ELSE 1 END,
+                        c2.id ASC
+                    LIMIT 1
+                )
+                WHERE {' AND '.join(clauses)}
+                """
+            ),
+            params,
+        ).scalar() or 0
 
     rows = db.execute(
         text(
@@ -2877,7 +2916,8 @@ def list_ai_leads(
         "limit": int(limit),
         "offset": int(offset),
         "count": len(rows),
-        "has_more": len(rows) == int(limit),
+        "total": int(total_count),
+        "has_more": int(offset) + len(rows) < int(total_count),
     }
 
 

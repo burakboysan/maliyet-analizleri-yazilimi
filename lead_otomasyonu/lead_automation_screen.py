@@ -509,7 +509,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 state["offset"] = int(filters["offset"]) + len(leads)
                 state["has_more"] = bool(response.get("has_more"))
                 if reset:
-                    state["stats"] = None
+                    total_from_page = int(response.get("total") or len(leads))
+                    state["stats"] = {"total": total_from_page}
                 state["api_mode"] = True
                 loaded_count = len(state["leads"])
                 total_count = int((state.get("stats") or {}).get("total") or loaded_count)
