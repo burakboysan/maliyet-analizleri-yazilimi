@@ -987,6 +987,31 @@ def _sequence_from_import_row(row: dict[str, Any], sales_channel: str) -> str:
     return _sequence_code(sales_channel)
 
 
+IMPORT_COMPANY_KEYS = [
+    "company_name",
+    "Company",
+    "Company Name",
+    "Company Name for Emails",
+    "company",
+    "Firma",
+    "Sirket",
+    "Account Name",
+    "Organization Name",
+]
+IMPORT_WEBSITE_KEYS = ["website", "Website", "Web Site", "Websitesi", "Company Website", "Organization Website", "Domain", "Website URL", "Url"]
+IMPORT_COUNTRY_KEYS = ["country", "Country", "Company Country", "Ulke", "Location", "Company Location", "HQ Country"]
+IMPORT_DESCRIPTION_KEYS = ["description", "Company Description", "industry", "Industry", "Aciklama", "Sektor", "Stage"]
+IMPORT_ACTIVITY_KEYS = ["detected_activity", "Activity", "industry", "Industry", "Title", "Job Title", "Stage"]
+IMPORT_FIRST_NAME_KEYS = ["first_name", "First Name", "Ad"]
+IMPORT_LAST_NAME_KEYS = ["last_name", "Last Name", "Soyad"]
+IMPORT_FULL_NAME_KEYS = ["name", "Name", "Person Name", "Contact Name", "Full Name", "Kisi Adi"]
+IMPORT_TITLE_KEYS = ["title", "Title", "Job Title", "Position", "Unvan", "Role", "Gorev"]
+IMPORT_EMAIL_KEYS = ["email", "Email", "Email Address", "E-mail", "Eposta", "Mail", "Primary Email", "Work Email", "person_email", "contact_email"]
+IMPORT_LINKEDIN_KEYS = ["linkedin_url", "LinkedIn", "Linkedin", "LinkedIn URL", "Person Linkedin Url"]
+IMPORT_PHONE_KEYS = ["phone", "Phone", "Company Phone", "Phone Number", "Telefon", "Mobile"]
+IMPORT_SOURCE_FILE_KEYS = ["__import_file", "Import File", "Source File"]
+
+
 def _score(priority: str, excluded: bool, has_contact: bool, sales_channel: str) -> int:
     return 0
 
@@ -1378,6 +1403,7 @@ def _analysis_from_import_row(row: dict[str, Any], lead: dict[str, Any], has_con
             value_proposition,
             recommended_campaign,
             segment_hint,
+            _first_import_value(row, IMPORT_SOURCE_FILE_KEYS),
         ]
         if item
     )
@@ -2751,12 +2777,12 @@ def import_ai_leads(
     skipped_invalid = 0
     skipped_duplicates = 0
     for row in payload.rows:
-        company_name = _first_import_value(row, ["company_name", "Company", "Company Name", "Company Name for Emails", "company", "Firma"])
+        company_name = _first_import_value(row, IMPORT_COMPANY_KEYS)
         if not company_name:
             skipped_invalid += 1
             continue
-        website = _first_import_value(row, ["website", "Website"])
-        country = _first_import_value(row, ["country", "Country", "Company Country", "Ülke"])
+        website = _first_import_value(row, IMPORT_WEBSITE_KEYS)
+        country = _first_import_value(row, IMPORT_COUNTRY_KEYS) or _country_from_import_source(row)
         domain = _company_domain(website)
         lead_id = _find_existing_lead_by_domain(db, domain) if domain else None
         if not lead_id:
@@ -2822,11 +2848,11 @@ def _find_existing_lead_by_company_country(db: Session, company_name: str, count
 
 
 def _create_company_lead_from_import_row(db: Session, row: dict[str, Any], current_user: UserTable) -> int:
-    company_name = _first_import_value(row, ["company_name", "Company", "Company Name", "Company Name for Emails", "company", "Firma"])
-    website = _first_import_value(row, ["website", "Website"])
-    country = _first_import_value(row, ["country", "Country", "Company Country", "Ülke"])
-    description = _first_import_value(row, ["description", "Company Description", "industry", "Industry", "Açıklama"])
-    detected_activity = _first_import_value(row, ["detected_activity", "Activity", "industry", "Industry", "Title"])
+    company_name = _first_import_value(row, IMPORT_COMPANY_KEYS)
+    website = _first_import_value(row, IMPORT_WEBSITE_KEYS)
+    country = _first_import_value(row, IMPORT_COUNTRY_KEYS) or _country_from_import_source(row)
+    description = _first_import_value(row, IMPORT_DESCRIPTION_KEYS)
+    detected_activity = _first_import_value(row, IMPORT_ACTIVITY_KEYS)
     analysis_input = {
         "company_name": company_name,
         "website": website,
@@ -2856,7 +2882,7 @@ def _create_company_lead_from_import_row(db: Session, row: dict[str, Any], curre
             "country": analysis["country"] or country,
             "region": "EMEA" if country else "",
             "local_language": analysis["local_language"],
-            "source_reference": "Apollo CSV Import",
+            "source_reference": _import_source_reference(row),
             "company_description": description,
             "detected_activity": detected_activity,
             "status": status_value,
@@ -2867,14 +2893,14 @@ def _create_company_lead_from_import_row(db: Session, row: dict[str, Any], curre
     )
     lead_id = int(result.lastrowid)
     _save_segmentation(db, lead_id, analysis)
-    _log_action(db, lead_id, "apollo_csv_import", "Apollo CSV import ile firma lead'i oluşturuldu.", current_user.id)
+    _log_action(db, lead_id, "csv_import", "CSV/Excel import ile firma lead'i oluşturuldu.", current_user.id)
     return lead_id
 
 
 def _update_import_lead_basics(db: Session, lead_id: int, row: dict[str, Any]) -> bool:
-    website = _first_import_value(row, ["website", "Website"])
-    country = _first_import_value(row, ["country", "Country", "Company Country", "Ülke"])
-    description = _first_import_value(row, ["description", "Company Description", "industry", "Industry", "Açıklama"])
+    website = _first_import_value(row, IMPORT_WEBSITE_KEYS)
+    country = _first_import_value(row, IMPORT_COUNTRY_KEYS) or _country_from_import_source(row)
+    description = _first_import_value(row, IMPORT_DESCRIPTION_KEYS)
     db.execute(
         text(
             """
@@ -2899,25 +2925,25 @@ def _update_import_lead_basics(db: Session, lead_id: int, row: dict[str, Any]) -
 
 def _contacts_from_import_row(row: dict[str, Any]) -> list[dict[str, Any]]:
     contacts: list[dict[str, Any]] = []
-    first_name = _first_import_value(row, ["first_name", "First Name"])
-    last_name = _first_import_value(row, ["last_name", "Last Name"])
-    full_name = _first_import_value(row, ["name", "Name", "Person Name"])
+    first_name = _first_import_value(row, IMPORT_FIRST_NAME_KEYS)
+    last_name = _first_import_value(row, IMPORT_LAST_NAME_KEYS)
+    full_name = _first_import_value(row, IMPORT_FULL_NAME_KEYS)
     if full_name and not first_name:
         first_name, last_name = _split_name(full_name)
-    primary_email = _first_import_value(row, ["email", "Email", "Email Address", "person_email", "contact_email"])
-    if first_name or last_name or primary_email or _first_import_value(row, ["title", "Title", "Job Title"]):
+    primary_email = _first_import_value(row, IMPORT_EMAIL_KEYS)
+    if first_name or last_name or primary_email or _first_import_value(row, IMPORT_TITLE_KEYS):
         contacts.append(
             {
                 "first_name": first_name,
                 "last_name": last_name,
-                "title": _first_import_value(row, ["title", "Title", "Job Title"]),
+                "title": _first_import_value(row, IMPORT_TITLE_KEYS),
                 "email": primary_email,
                 "email_status": _import_email_status(row, "Primary Email Source", primary_email),
                 "enrichment_note": _import_contact_note(row, "Primary Email Source"),
-                "linkedin_url": _first_import_value(row, ["linkedin_url", "LinkedIn", "Person Linkedin Url"]),
-                "phone": _first_import_value(row, ["phone", "Phone", "Company Phone"]),
+                "linkedin_url": _first_import_value(row, IMPORT_LINKEDIN_KEYS),
+                "phone": _first_import_value(row, IMPORT_PHONE_KEYS),
                 "apollo_person_id": None,
-                "apollo_raw_json": json.dumps({"provider": "Apollo CSV", "row": row, "email_slot": "primary"}, ensure_ascii=False),
+                "apollo_raw_json": json.dumps({"provider": "CSV Import", "row": row, "email_slot": "primary"}, ensure_ascii=False),
             }
         )
     for slot, source_key in [("Secondary Email", "Secondary Email Source"), ("Tertiary Email", "Tertiary Email Source")]:
@@ -2933,9 +2959,9 @@ def _contacts_from_import_row(row: dict[str, Any]) -> list[dict[str, Any]]:
                 "email_status": _import_email_status(row, source_key, email_value),
                 "enrichment_note": _import_contact_note(row, source_key),
                 "linkedin_url": "",
-                "phone": _first_import_value(row, ["Company Phone"]),
+                "phone": _first_import_value(row, IMPORT_PHONE_KEYS),
                 "apollo_person_id": None,
-                "apollo_raw_json": json.dumps({"provider": "Apollo CSV", "row": row, "email_slot": slot}, ensure_ascii=False),
+                "apollo_raw_json": json.dumps({"provider": "CSV Import", "row": row, "email_slot": slot}, ensure_ascii=False),
             }
         )
     return contacts
@@ -2950,7 +2976,7 @@ def _import_email_status(row: dict[str, Any], source_key: str, email_value: str)
 
 def _import_contact_note(row: dict[str, Any], source_key: str) -> str:
     source = _first_import_value(row, [source_key])
-    return f"Apollo CSV import. Email kaynağı: {source}." if source else "Apollo CSV import."
+    return f"CSV import. Email kaynağı: {source}." if source else "CSV import."
 
 
 def _insert_or_update_contact_from_import(db: Session, lead_id: int, contact: dict[str, Any]) -> str:
@@ -3081,7 +3107,40 @@ def _first_import_value(row: dict[str, Any], keys: list[str]) -> str:
         value = row.get(key)
         if value:
             return _normalize(value)
+    normalized = {_import_key_fingerprint(key): value for key, value in row.items() if key}
+    for key in keys:
+        value = normalized.get(_import_key_fingerprint(key))
+        if value:
+            return _normalize(value)
     return ""
+
+
+def _import_key_fingerprint(value: Any) -> str:
+    text_value = _casefold(value)
+    text_value = text_value.translate(str.maketrans({"ı": "i", "ğ": "g", "ü": "u", "ş": "s", "ö": "o", "ç": "c"}))
+    return re.sub(r"[^a-z0-9]+", "", text_value)
+
+
+def _country_from_import_source(row: dict[str, Any]) -> str:
+    source_file = _first_import_value(row, IMPORT_SOURCE_FILE_KEYS)
+    haystack = _casefold(source_file).replace("_", " ").replace("-", " ")
+    display_names = {
+        "czech republic": "Czech Republic",
+        "united arab emirates": "United Arab Emirates",
+        "uae": "United Arab Emirates",
+        "turkiye": "Turkey",
+        "turkey": "Turkey",
+    }
+    country_keys = sorted(set(SERPAPI_COUNTRY_CODES.keys()) | set(COUNTRY_LOCALIZATION_GROUPS.keys()) | set(display_names.keys()), key=len, reverse=True)
+    for country_key in country_keys:
+        if country_key in haystack:
+            return display_names.get(country_key, " ".join(part.capitalize() for part in country_key.split()))
+    return ""
+
+
+def _import_source_reference(row: dict[str, Any]) -> str:
+    source_file = _first_import_value(row, IMPORT_SOURCE_FILE_KEYS)
+    return f"CSV Import: {source_file}" if source_file else "CSV Import"
 
 
 def _apollo_api_key() -> str:

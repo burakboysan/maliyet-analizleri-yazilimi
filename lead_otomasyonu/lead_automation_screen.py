@@ -1,4 +1,5 @@
 import csv
+import re
 import threading
 from tkinter import filedialog, messagebox, ttk
 import tkinter as tk
@@ -338,8 +339,8 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             return
         paths = filedialog.askopenfilenames(
             parent=win,
-            title="Apollo CSV/Excel Seç",
-            filetypes=[("Apollo Export", "*.csv *.xlsx"), ("CSV Dosyası", "*.csv"), ("Excel Dosyası", "*.xlsx"), ("Tüm Dosyalar", "*.*")],
+            title="Lead CSV/Excel Seç",
+            filetypes=[("Lead Listeleri", "*.csv *.xlsx"), ("CSV Dosyası", "*.csv"), ("Excel Dosyası", "*.xlsx"), ("Tüm Dosyalar", "*.*")],
         )
         if not paths:
             return
@@ -354,7 +355,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 file_summaries.append(f"{_import_file_name(path)}: {len(file_rows)} satır")
             summary = _summarize_import_rows(rows)
             if not rows:
-                messagebox.showwarning("Apollo Import", "Seçilen dosyalarda içe aktarılacak satır bulunamadı.", parent=win)
+                messagebox.showwarning("Lead Import", "Seçilen dosyalarda içe aktarılacak satır bulunamadı.", parent=win)
                 return
             file_note = "\n".join(file_summaries[:8])
             if len(file_summaries) > 8:
@@ -374,7 +375,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             messagebox.showerror("Apollo Import", f"Dosya okunamadı: {exc}", parent=win)
             return
 
-        status_var.set(f"{len(paths)} Apollo export dosyası içe aktarılıyor...")
+        status_var.set(f"{len(paths)} lead listesi içe aktarılıyor...")
 
         def worker():
             try:
@@ -395,9 +396,9 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 if invalid:
                     message += f"\n{invalid} satır firma adı olmadığı için atlandı."
                 win.after(0, load_from_api)
-                win.after(0, lambda msg=message: messagebox.showinfo("Apollo Import", msg, parent=win))
+                win.after(0, lambda msg=message: messagebox.showinfo("Lead Import", msg, parent=win))
             except Exception as exc:
-                win.after(0, lambda err=str(exc): messagebox.showerror("Apollo Import", f"İçe aktarma başarısız: {err}", parent=win))
+                win.after(0, lambda err=str(exc): messagebox.showerror("Lead Import", f"İçe aktarma başarısız: {err}", parent=win))
             finally:
                 win.after(0, lambda: status_var.set(""))
 
@@ -1029,7 +1030,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         threading.Thread(target=worker, daemon=True).start()
 
     ctk.CTkButton(actions, text="Yenile", width=110, command=load_from_api, fg_color="#ffffff", text_color="#d32f2f", border_width=1, border_color="#d32f2f").pack(side="left", padx=(0, 8))
-    ctk.CTkButton(actions, text="Apollo CSV İçe Aktar", width=165, command=import_csv, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
+    ctk.CTkButton(actions, text="Lead Listesi İçe Aktar", width=175, command=import_csv, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
     ctk.CTkButton(actions, text="Segment Ayarları", width=145, command=open_segment_settings, fg_color="#ffffff", text_color="#2563eb", border_width=1, border_color="#2563eb").pack(side="left", padx=8)
 
     apollo_email_button = ctk.CTkButton(filter_actions, text="Apollo Email Bulucu", width=165, command=enrich_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e")
@@ -1237,6 +1238,14 @@ def _next_id(leads):
     return max([int(item.get("id") or 0) for item in leads] or [0]) + 1
 
 
+IMPORT_COMPANY_KEYS = [
+    "company_name", "Company", "Company Name", "Company Name for Emails", "company", "Firma", "Sirket", "Account Name", "Organization Name"
+]
+IMPORT_COUNTRY_KEYS = ["country", "Country", "Company Country", "Ulke", "Location", "Company Location", "HQ Country"]
+IMPORT_EMAIL_KEYS = ["email", "Email", "Email Address", "E-mail", "Eposta", "Mail", "Primary Email", "Work Email", "person_email", "contact_email"]
+IMPORT_PERSON_KEYS = ["first_name", "First Name", "last_name", "Last Name", "name", "Name", "Person Name", "Contact Name", "Full Name", "title", "Title", "Job Title", "Position", "Unvan", "Role"]
+
+
 def _read_import_rows(path):
     lowered = str(path or "").casefold()
     if lowered.endswith(".xlsx"):
@@ -1250,8 +1259,12 @@ def _read_import_rows(path):
         if not rows:
             return []
         headers = [str(value or "").strip() for value in rows[0]]
+        data_rows = rows[1:]
+        if not _looks_like_import_header(headers):
+            headers = _headerless_import_headers(rows[0])
+            data_rows = rows
         output = []
-        for values in rows[1:]:
+        for values in data_rows:
             item = {}
             for index, header in enumerate(headers):
                 if not header:
@@ -1266,7 +1279,15 @@ def _read_import_rows(path):
     for encoding in encodings:
         try:
             with open(path, newline="", encoding=encoding) as file:
-                return [dict(row) for row in csv.DictReader(file) if any((value or "").strip() for value in row.values())]
+                sample = file.read(4096)
+                file.seek(0)
+                reader = csv.DictReader(file, delimiter=_detect_csv_delimiter(sample))
+                output = []
+                for row in reader:
+                    item = {str(key).strip(): ("" if value is None else str(value).strip()) for key, value in row.items() if key}
+                    if any(item.values()):
+                        output.append(item)
+                return output
         except UnicodeDecodeError as exc:
             last_error = exc
     raise RuntimeError(f"CSV encoding okunamadı: {last_error}")
@@ -1282,17 +1303,17 @@ def _summarize_import_rows(rows):
     emails = 0
     people = 0
     for row in rows:
-        company = _first_value(row, ["company_name", "Company", "Company Name", "Company Name for Emails", "company", "Firma"])
-        country = _first_value(row, ["country", "Country", "Company Country", "Ülke"])
+        company = _first_value(row, IMPORT_COMPANY_KEYS)
+        country = _first_value(row, IMPORT_COUNTRY_KEYS)
         if company:
             companies.add(f"{company.casefold()}|{country.casefold()}")
         email_values = [
-            _first_value(row, ["email", "Email", "Email Address", "person_email", "contact_email"]),
+            _first_value(row, IMPORT_EMAIL_KEYS),
             _first_value(row, ["Secondary Email"]),
             _first_value(row, ["Tertiary Email"]),
         ]
         emails += sum(1 for value in email_values if value)
-        if any(_first_value(row, keys) for keys in [["first_name", "First Name"], ["last_name", "Last Name"], ["name", "Name", "Person Name"], ["title", "Title", "Job Title"]]):
+        if _first_value(row, IMPORT_PERSON_KEYS):
             people += 1
     return {"rows": len(rows), "companies": len(companies), "emails": emails, "people": people}
 
@@ -1302,7 +1323,42 @@ def _first_value(row, keys):
         value = row.get(key)
         if value:
             return str(value).strip()
+    normalized = {_import_key_fingerprint(key): value for key, value in row.items() if key}
+    for key in keys:
+        value = normalized.get(_import_key_fingerprint(key))
+        if value:
+            return str(value).strip()
     return ""
+
+
+def _import_key_fingerprint(value):
+    text = str(value or "").strip().casefold()
+    text = text.translate(str.maketrans({"ı": "i", "ğ": "g", "ü": "u", "ş": "s", "ö": "o", "ç": "c"}))
+    return re.sub(r"[^a-z0-9]+", "", text)
+
+
+def _looks_like_import_header(headers):
+    keys = IMPORT_COMPANY_KEYS + IMPORT_COUNTRY_KEYS + IMPORT_EMAIL_KEYS + IMPORT_PERSON_KEYS + ["website", "Website", "Stage"]
+    known = {_import_key_fingerprint(key) for key in keys}
+    return any(_import_key_fingerprint(header) in known for header in headers)
+
+
+def _headerless_import_headers(first_row):
+    width = len(first_row or [])
+    defaults = ["Company Name", "Stage", "Website", "Email", "Title", "Country"]
+    return defaults[:width] + [f"Column {index + 1}" for index in range(len(defaults), width)]
+
+
+def _detect_csv_delimiter(sample):
+    first_line = (sample or "").splitlines()[0] if sample else ""
+    candidates = [",", ";", "\t", "|"]
+    delimiter, count = max(((item, first_line.count(item)) for item in candidates), key=lambda item: item[1])
+    if count > 0:
+        return delimiter
+    try:
+        return csv.Sniffer().sniff(sample, delimiters=",;\t|").delimiter
+    except Exception:
+        return ","
 
 
 def _guess_channel(text):
