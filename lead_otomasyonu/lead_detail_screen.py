@@ -208,9 +208,11 @@ def lead_detay_ekrani(parent, lead, on_update=None):
 
     def has_existing_research():
         research = current_research()
-        if research:
+        if research and (research.get("company_overview") or str(research.get("status") or "").strip().casefold() == "completed"):
             return True
-        return bool(detail().get("research_status") or detail().get("research_summary"))
+        status = str(detail().get("research_status") or "").strip().casefold()
+        summary = str(detail().get("research_summary") or "").strip()
+        return bool(summary) or status == "completed"
 
     def sequence_eligibility_text():
         email = detail().get("contact_email")

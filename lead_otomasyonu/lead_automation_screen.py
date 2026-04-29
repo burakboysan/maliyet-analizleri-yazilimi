@@ -240,6 +240,11 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         leads = selected_leads()
         return leads[0] if leads else None
 
+    def has_completed_research(lead):
+        status = str(lead.get("research_status") or "").strip().casefold()
+        summary = str(lead.get("research_summary") or "").strip()
+        return bool(summary) or status == "completed"
+
     def selected_leads():
         selected_ids = {str(item_id) for item_id in tree.selection()}
         if not selected_ids:
@@ -918,7 +923,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         skipped_existing = [
             lead
             for lead in leads
-            if lead.get("research_status") or lead.get("research_summary")
+            if has_completed_research(lead)
         ]
         leads = [lead for lead in leads if lead not in skipped_existing]
         if not leads:
