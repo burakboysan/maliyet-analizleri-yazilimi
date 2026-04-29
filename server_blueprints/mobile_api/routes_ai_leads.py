@@ -315,11 +315,31 @@ SERPAPI_COUNTRY_CODES = {
 
 
 SERPAPI_BLOCKED_DOMAINS = {
+    "1688.com",
+    "alibaba.com",
+    "aliexpress.com",
+    "amazon.com",
+    "amazon.de",
+    "amazon.fr",
+    "amazon.it",
+    "amazon.nl",
+    "amazon.pl",
+    "amazon.sa",
+    "amazon.se",
+    "amazon.tr",
+    "amazon.ae",
     "apollo.io",
     "bomaksan.com",
     "bomaksan.com.tr",
     "castingarea.com",
     "companiesfromeurope.com",
+    "directindustry.com",
+    "ebay.com",
+    "ebay.de",
+    "ebay.fr",
+    "ebay.it",
+    "ebay.pl",
+    "ebay.co.uk",
     "europages.co.uk",
     "europages.com",
     "europages.dk",
@@ -327,50 +347,123 @@ SERPAPI_BLOCKED_DOMAINS = {
     "europages.it",
     "europages.pt",
     "europages.ro",
+    "exporthub.com",
     "facebook.com",
-    "kompass.com",
+    "glassdoor.com",
+    "globalsources.com",
+    "go4worldbusiness.com",
+    "hellotrade.com",
+    "indeed.com",
+    "indiamart.com",
     "instagram.com",
+    "kompass.com",
     "linkedin.com",
     "m.facebook.com",
+    "machinio.com",
+    "made-in-china.com",
     "maps.google.com",
+    "resale.info",
+    "surplex.com",
+    "thefabricator.com",
+    "thomasnet.com",
+    "tradeindia.com",
+    "trustpilot.com",
     "twitter.com",
     "x.com",
+    "yellowpages.com",
+    "yelp.com",
     "youtube.com",
 }
 
 
+SERPAPI_BLOCKED_DOMAIN_FRAGMENTS = [
+    "alibaba.",
+    "aliexpress.",
+    "amazon.",
+    "directory",
+    "ebay.",
+    "facebook.",
+    "google.",
+    "linkedin.",
+    "marketplace",
+    "yellowpages",
+]
+
+
 SERPAPI_BLOCKED_TITLE_FRAGMENTS = [
+    "add to cart",
     "blog",
+    "buy ",
     "catalog",
     "directory",
+    "e-commerce",
+    "ecommerce",
+    "for sale",
     "exhibition",
     "gallery",
     "historia",
     "join ",
+    "marketplace",
     "manufacturers in europe",
     "news",
     "pdf",
+    "price",
+    "shopping",
     "suppliers list",
     "top 10",
     "top 20",
     "trade fair",
+    "used machinery",
     "video",
     "webinar",
 ]
 
 
 SERPAPI_BLOCKED_PATH_FRAGMENTS = [
+    "/cart",
+    "/category",
     "/blog",
     "/catalog",
+    "/collections",
     "/directory",
     "/events",
     "/gallery",
+    "/marketplace",
     "/news",
+    "/product/",
+    "/products/",
     "/pdf",
     "/press",
+    "/shop",
+    "/shopping",
     "/suppliers/",
     "/video",
     ".pdf",
+]
+
+
+SERPAPI_QUERY_NEGATIVE_TERMS = [
+    "amazon",
+    "ebay",
+    "alibaba",
+    "aliexpress",
+    "indiamart",
+    "made-in-china",
+    "directindustry",
+    "europages",
+    "kompass",
+    "thomasnet",
+    "tradeindia",
+    "exporthub",
+    "yellowpages",
+    "marketplace",
+    "shopping",
+    "used machinery",
+    "for sale",
+    "jobs",
+    "linkedin",
+    "facebook",
+    "youtube",
 ]
 
 
@@ -2666,7 +2759,7 @@ def _is_searchable_company_domain(domain: str) -> bool:
         return False
     if any(domain == blocked or domain.endswith(f".{blocked}") for blocked in SERPAPI_BLOCKED_DOMAINS):
         return False
-    blocked_fragments = ["google.", "bing.", "yahoo.", "wikipedia.org", "marketplace", "directory", "yellowpages"]
+    blocked_fragments = ["bing.", "yahoo.", "wikipedia.org", *SERPAPI_BLOCKED_DOMAIN_FRAGMENTS]
     return not any(fragment in domain for fragment in blocked_fragments)
 
 
@@ -2690,7 +2783,7 @@ def _serpapi_result_is_company_candidate(result: dict[str, Any], domain: str) ->
         return False
     if any(fragment in link for fragment in SERPAPI_BLOCKED_PATH_FRAGMENTS):
         return False
-    if any(fragment in haystack for fragment in ["top companies", "company list", "list of companies", "supplier list"]):
+    if any(fragment in haystack for fragment in ["top companies", "company list", "list of companies", "supplier list", "shop now", "add to cart", "compare prices"]):
         return False
     domain_root = _company_name_from_domain(domain).casefold()
     generic_titles = {
@@ -2704,6 +2797,10 @@ def _serpapi_result_is_company_candidate(result: dict[str, Any], domain: str) ->
     if title in generic_titles and len(domain_root) < 4:
         return False
     return True
+
+
+def _serpapi_negative_query_suffix() -> str:
+    return " ".join(f"-{term}" for term in SERPAPI_QUERY_NEGATIVE_TERMS)
 
 
 def _company_name_from_serp_result(result: dict[str, Any], domain: str) -> str:
@@ -2921,8 +3018,9 @@ def _serpapi_segment_queries(recipe: dict[str, Any], country: str) -> list[str]:
     base_terms = _dedupe_strings(company_keywords[:6] + localized_keywords[:6] + fallback_keywords + channel_keywords[:3])
     queries = []
     country_part = country or ""
+    negative_terms = _serpapi_negative_query_suffix()
     for term in base_terms[:12]:
-        queries.append(f"{term} {country_part} company -jobs -linkedin -facebook -youtube")
+        queries.append(f"{term} {country_part} company {negative_terms}")
     return _dedupe_strings(queries)
 
 
@@ -2962,10 +3060,11 @@ def _serpapi_find_domains_by_keywords(
     country_part = country or ""
     page_count = min(max(int(pages or 1), 1), 10)
     exact_match = _casefold(search_mode) in {"exact", "narrow", "dar"}
+    negative_terms = _serpapi_negative_query_suffix()
     queries = [
-        f'"{keyword.replace(chr(34), "").strip()}" {country_part} company -jobs -linkedin -facebook -youtube'
+        f'"{keyword.replace(chr(34), "").strip()}" {country_part} company {negative_terms}'
         if exact_match
-        else f"{keyword} {country_part} company -jobs -linkedin -facebook -youtube"
+        else f"{keyword} {country_part} company {negative_terms}"
         for keyword in _dedupe_strings(keywords)
         if _normalize(keyword)
     ]
