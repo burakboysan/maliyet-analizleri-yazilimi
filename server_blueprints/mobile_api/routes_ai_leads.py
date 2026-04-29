@@ -695,6 +695,7 @@ class SerpApiSearchRequest(BaseModel):
     keywords: List[str] = []
     pages: int = 1
     search_mode: str = "broad"
+    search_engine: str = "google"
 
 
 class HunterCompanySearchRequest(BaseModel):
@@ -2674,9 +2675,10 @@ def _apollo_get(path: str, query: dict[str, Any] | None = None) -> dict[str, Any
         raise HTTPException(status_code=502, detail=f"Apollo API erişilemedi: {exc.reason}") from exc
 
 
-def _serpapi_get(query: dict[str, Any]) -> dict[str, Any]:
+def _serpapi_get(query: dict[str, Any], engine: str = "google") -> dict[str, Any]:
+    engine_value = "bing" if _casefold(engine) == "bing" else "google"
     params = {
-        "engine": "google",
+        "engine": engine_value,
         "api_key": _serpapi_api_key(),
         "num": 10,
         **{key: value for key, value in query.items() if value not in (None, "")},
@@ -2701,6 +2703,28 @@ def _serpapi_get(query: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=exc.code, detail=f"SerpAPI hatası: {detail}") from exc
     except error.URLError as exc:
         raise HTTPException(status_code=502, detail=f"SerpAPI erişilemedi: {exc.reason}") from exc
+
+
+def _serpapi_account_status(api_key: str) -> dict[str, Any]:
+    if not api_key:
+        return {}
+    url = "https://serpapi.com/account.json?" + parse.urlencode({"api_key": api_key})
+    req = request.Request(
+        url,
+        method="GET",
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "BomaksanLeadAutomation/1.0",
+        },
+    )
+    try:
+        with request.urlopen(req, timeout=25) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise HTTPException(status_code=502, detail=f"SerpAPI Account API hatası: {detail[:500]}") from exc
+    except error.URLError as exc:
+        raise HTTPException(status_code=502, detail=f"SerpAPI Account API erişilemedi: {exc.reason}") from exc
 
 
 def _bulk_enrich_people(people: list[dict[str, Any]], domain: str) -> list[dict[str, Any]]:
@@ -3053,6 +3077,7 @@ def _serpapi_find_domains_by_keywords(
     country: str,
     pages: int,
     search_mode: str = "broad",
+    search_engine: str = "google",
     warnings: list[str] | None = None,
 ) -> list[dict[str, str]]:
     domains = []
@@ -3072,10 +3097,10 @@ def _serpapi_find_domains_by_keywords(
     for search_query in queries:
         for page_index in range(page_count):
             try:
-                response = _serpapi_get({"q": search_query, **search_params, "start": page_index * 10})
+                response = _serpapi_get({"q": search_query, **search_params, "start": page_index * 10}, engine=search_engine)
             except HTTPException as exc:
                 if warnings is not None:
-                    warnings.append(f"{search_query} | sayfa {page_index + 1}: {exc.detail}")
+                    warnings.append(f"{search_engine} | {search_query} | sayfa {page_index + 1}: {exc.detail}")
                 continue
             for result in response.get("organic_results") or []:
                 link = _normalize(result.get("link"))
@@ -3084,7 +3109,7 @@ def _serpapi_find_domains_by_keywords(
                     continue
                 if not _serpapi_result_is_company_candidate(result, domain):
                     continue
-                domain_row = _build_serpapi_domain_result(result, domain, country, search_query, page_index)
+                domain_row = _build_serpapi_domain_result(result, domain, country, f"{search_engine}:{search_query}", page_index)
                 if not domain_row:
                     continue
                 seen_domains.add(domain)
@@ -3981,9 +4006,20 @@ def search_serpapi_domains(
         raise HTTPException(status_code=400, detail="En az bir SerpAPI keyword girilmelidir.")
     pages = min(max(int(payload.pages or 1), 1), 10)
     search_mode = "exact" if _casefold(payload.search_mode) in {"exact", "narrow", "dar"} else "broad"
+    engine_choice = _casefold(payload.search_engine)
+    engines = ["google", "bing"] if engine_choice in {"google+bing", "both", "all"} else (["bing"] if engine_choice == "bing" else ["google"])
     country = _normalize(payload.country)
     warnings = []
-    domains = _serpapi_find_domains_by_keywords(keywords, country, pages, search_mode, warnings)
+    domains = []
+    seen_domains = set()
+    for engine in engines:
+        engine_domains = _serpapi_find_domains_by_keywords(keywords, country, pages, search_mode, engine, warnings)
+        for domain_result in engine_domains:
+            domain = _normalize(domain_result.get("domain")).casefold()
+            if not domain or domain in seen_domains:
+                continue
+            seen_domains.add(domain)
+            domains.append(domain_result)
     created = []
     skipped_duplicates = 0
     for domain_result in domains:
@@ -3998,6 +4034,7 @@ def search_serpapi_domains(
         "country": country,
         "pages": pages,
         "search_mode": search_mode,
+        "search_engine": "+".join(engines),
         "warnings": warnings[:10],
         "warning_count": len(warnings),
         "found_domains": len(domains),
@@ -4022,6 +4059,32 @@ def get_ai_lead_provider_status(
         serpapi_key = _serpapi_api_key()
     except HTTPException:
         serpapi_key = ""
+    serpapi_status: dict[str, Any] = {
+        "configured": bool(serpapi_key),
+        "status": "configured" if serpapi_key else "not_configured",
+        "message": "SERPAPI_API_KEY tanımlı." if serpapi_key else "SERPAPI_API_KEY sunucuda tanımlı değil.",
+        "key_hint": f"...{serpapi_key[-4:]}" if serpapi_key else "",
+    }
+    if serpapi_key:
+        try:
+            account = _serpapi_account_status(serpapi_key)
+            serpapi_status.update(
+                {
+                    "status": "ok",
+                    "message": "SerpAPI hesabı doğrulandı.",
+                    "account_email": account.get("account_email") or "",
+                    "plan_name": account.get("plan_name") or "",
+                    "searches_per_month": account.get("searches_per_month"),
+                    "plan_searches_left": account.get("plan_searches_left"),
+                    "extra_credits": account.get("extra_credits"),
+                    "total_searches_left": account.get("total_searches_left"),
+                    "this_month_usage": account.get("this_month_usage"),
+                    "last_hour_searches": account.get("last_hour_searches"),
+                    "account_rate_limit_per_hour": account.get("account_rate_limit_per_hour"),
+                }
+            )
+        except HTTPException as exc:
+            serpapi_status.update({"status": "error", "message": str(exc.detail)})
 
     hunter_key = _hunter_api_key()
     hunter_status: dict[str, Any] = {
@@ -4067,12 +4130,7 @@ def get_ai_lead_provider_status(
             "message": "APOLLO_API_KEY tanımlı." if apollo_key else "APOLLO_API_KEY sunucuda tanımlı değil.",
             "key_hint": f"...{apollo_key[-4:]}" if apollo_key else "",
         },
-        "serpapi": {
-            "configured": bool(serpapi_key),
-            "status": "configured" if serpapi_key else "not_configured",
-            "message": "SERPAPI_API_KEY tanımlı." if serpapi_key else "SERPAPI_API_KEY sunucuda tanımlı değil.",
-            "key_hint": f"...{serpapi_key[-4:]}" if serpapi_key else "",
-        },
+        "serpapi": serpapi_status,
         "hunter": hunter_status,
     }
 

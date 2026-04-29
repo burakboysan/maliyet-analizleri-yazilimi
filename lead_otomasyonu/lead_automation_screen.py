@@ -488,6 +488,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             "country": ctk.StringVar(value=TARGET_COUNTRIES[0] if TARGET_COUNTRIES else "Germany"),
             "pages": ctk.StringVar(value="1"),
             "search_mode": ctk.StringVar(value="Geniş Arama"),
+            "search_engine": ctk.StringVar(value="Google"),
         }
         keyword_tags = [
             "dust collection distributor",
@@ -498,12 +499,19 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         keyword_entry = _keyword_tag_editor(form, "Anahtar Kelimeler", keyword_tags, 1)
         _form_entry(form, "Arama Sayfası", vars_["pages"], 2)
 
-        ctk.CTkLabel(form, text="Arama Esnekliği", text_color="#475569").grid(row=3, column=0, sticky="w", padx=16, pady=8)
+        ctk.CTkLabel(form, text="Arama Motoru", text_color="#475569").grid(row=3, column=0, sticky="w", padx=16, pady=8)
+        ctk.CTkSegmentedButton(
+            form,
+            values=["Google", "Bing", "Google + Bing"],
+            variable=vars_["search_engine"],
+        ).grid(row=3, column=1, sticky="ew", padx=16, pady=8)
+
+        ctk.CTkLabel(form, text="Arama Esnekliği", text_color="#475569").grid(row=4, column=0, sticky="w", padx=16, pady=8)
         ctk.CTkSegmentedButton(
             form,
             values=["Geniş Arama", "Dar Arama"],
             variable=vars_["search_mode"],
-        ).grid(row=3, column=1, sticky="ew", padx=16, pady=8)
+        ).grid(row=4, column=1, sticky="ew", padx=16, pady=8)
 
         note = ctk.CTkLabel(
             form,
@@ -512,14 +520,14 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             wraplength=500,
             justify="left",
         )
-        note.grid(row=4, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 4))
+        note.grid(row=5, column=0, columnspan=2, sticky="w", padx=16, pady=(12, 4))
 
         progress = ctk.CTkProgressBar(form, mode="indeterminate")
-        progress.grid(row=5, column=0, columnspan=2, sticky="ew", padx=16, pady=(12, 2))
+        progress.grid(row=6, column=0, columnspan=2, sticky="ew", padx=16, pady=(12, 2))
         progress.set(0)
         progress.grid_remove()
         status_label = ctk.CTkLabel(form, text="", text_color="#64748b")
-        status_label.grid(row=6, column=0, columnspan=2, sticky="w", padx=16, pady=(2, 4))
+        status_label.grid(row=7, column=0, columnspan=2, sticky="w", padx=16, pady=(2, 4))
         search_state = {"running": False, "message_index": 0}
         progress_messages = [
             "Sihir konuşuyor, keywordler yola çıktı...",
@@ -552,6 +560,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 "keywords": keywords,
                 "pages": pages,
                 "search_mode": "exact" if vars_["search_mode"].get() == "Dar Arama" else "broad",
+                "search_engine": "google+bing" if vars_["search_engine"].get() == "Google + Bing" else vars_["search_engine"].get().casefold(),
             }
             search_state["running"] = True
             search_state["message_index"] = 0
@@ -593,7 +602,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             fg_color="#d32f2f",
             hover_color="#b91c1c",
         )
-        search_button.grid(row=7, column=1, sticky="e", padx=16, pady=18)
+        search_button.grid(row=8, column=1, sticky="e", padx=16, pady=18)
 
     def hunter_company_search():
         token = get_app_token()
@@ -708,6 +717,12 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 extra.append(f"Plan: {data.get('plan_name')}")
             if data.get("credits_available") is not None:
                 extra.append(f"Kalan kredi: {data.get('credits_available')}")
+            if data.get("total_searches_left") is not None:
+                extra.append(f"Kalan arama: {data.get('total_searches_left')}")
+            if data.get("this_month_usage") is not None:
+                extra.append(f"Bu ay kullanılan: {data.get('this_month_usage')}")
+            if data.get("account_rate_limit_per_hour") is not None:
+                extra.append(f"Saatlik limit: {data.get('account_rate_limit_per_hour')}")
             suffix = f" ({key_hint})" if key_hint else ""
             extra_text = f"\n  " + "\n  ".join(extra) if extra else ""
             return f"{label}: {status}{suffix}\n  {message}{extra_text}"
