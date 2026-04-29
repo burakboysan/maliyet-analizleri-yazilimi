@@ -467,6 +467,70 @@ SERPAPI_QUERY_NEGATIVE_TERMS = [
 ]
 
 
+RESEARCH_NON_COMPANY_SIGNALS = [
+    "trade fair",
+    "exhibition",
+    "expo",
+    "event",
+    "conference",
+    "summit",
+    "fairgrounds",
+    "exhibitor",
+    "exhibitors",
+    "visitor",
+    "visitors",
+    "tickets",
+    "ticket shop",
+    "floor plan",
+    "hall plan",
+    "organizer",
+    "organiser",
+    "messe",
+    "fachmesse",
+    "messezentrum",
+    "aussteller",
+    "besucher",
+    "tickets kaufen",
+    "veranstalter",
+    "konferenz",
+    "fuar",
+    "katılımcı",
+    "ziyaretçi",
+    "organizasyon",
+    "listeleme",
+    "directory",
+    "marketplace",
+    "supplier list",
+    "top 10",
+    "top 20",
+]
+
+
+RESEARCH_COMPANY_PROOF_SIGNALS = [
+    "manufacturer",
+    "manufacturing",
+    "producer",
+    "distributor",
+    "reseller",
+    "dealer",
+    "system integrator",
+    "integrator",
+    "engineering",
+    "solutions",
+    "products",
+    "services",
+    "produktion",
+    "hersteller",
+    "vertrieb",
+    "produkte",
+    "dienstleistungen",
+    "üretici",
+    "distribütör",
+    "bayi",
+    "entegratör",
+]
+
+
 SERPAPI_LANGUAGE_CODES = {
     "albania": "sq",
     "austria": "de",
@@ -1559,6 +1623,97 @@ def _research_sentence(text_value: str, keywords: list[str], fallback: str) -> s
     return fallback
 
 
+def _research_non_company_guard(lead: dict[str, Any], pages: list[dict[str, str]]) -> dict[str, Any]:
+    website = _normalize(lead.get("website"))
+    domain = _company_domain(website)
+    url_text = " ".join(_normalize(page.get("url")) for page in pages)
+    page_text = " ".join(_normalize(page.get("text"))[:5000] for page in pages)
+    combined = " ".join(item for item in [website, domain, url_text, page_text] if item)
+    detected = _research_matches(combined, RESEARCH_NON_COMPANY_SIGNALS)
+    proof = _research_matches(page_text, RESEARCH_COMPANY_PROOF_SIGNALS)
+    blocked_domain = bool(domain and (domain in SERPAPI_BLOCKED_DOMAINS or any(fragment in domain for fragment in SERPAPI_BLOCKED_DOMAIN_FRAGMENTS)))
+    title_like_name = any(fragment in _casefold(lead.get("company_name")) for fragment in SERPAPI_BLOCKED_TITLE_FRAGMENTS)
+
+    if not detected and not blocked_domain and not title_like_name:
+        return {}
+
+    event_terms = {
+        "trade fair",
+        "exhibition",
+        "expo",
+        "event",
+        "conference",
+        "summit",
+        "exhibitor",
+        "visitor",
+        "messe",
+        "fachmesse",
+        "messezentrum",
+        "aussteller",
+        "besucher",
+        "fuar",
+        "katılımcı",
+        "ziyaretçi",
+        "organizasyon",
+    }
+    event_hits = [signal for signal in detected if _casefold(signal) in event_terms]
+    directory_hits = [signal for signal in detected if signal not in event_hits]
+    proof_without_event = [signal for signal in proof if signal not in detected]
+
+    if event_hits or directory_hits or blocked_domain or title_like_name:
+        strong_event_terms = {"trade fair", "fachmesse", "messezentrum", "aussteller", "besucher", "fuar", "katılımcı", "ziyaretçi"}
+        strong_event = len(event_hits) >= 3 or any(_casefold(signal) in strong_event_terms for signal in event_hits)
+        if len(proof_without_event) >= 4 and not blocked_domain and not title_like_name and not strong_event:
+            return {}
+        source_type = "event_or_trade_fair" if event_hits else "directory_or_marketplace"
+        reason_bits = []
+        if event_hits:
+            reason_bits.append(f"event/fuar sinyalleri: {', '.join(event_hits[:6])}")
+        if directory_hits:
+            reason_bits.append(f"listeleme/marketplace sinyalleri: {', '.join(directory_hits[:6])}")
+        if blocked_domain:
+            reason_bits.append(f"bloklu kaynak domaini: {domain}")
+        if title_like_name:
+            reason_bits.append("lead firma adı sayfa başlığı/list title gibi görünüyor")
+        return {
+            "source_type": source_type,
+            "signals": detected[:12],
+            "reason": "; ".join(reason_bits),
+            "domain": domain,
+        }
+    return {}
+
+
+def _apply_non_company_research_guard(research: dict[str, Any], lead: dict[str, Any], guard: dict[str, Any]) -> dict[str, Any]:
+    if not guard:
+        return research
+    company_name = _normalize(lead.get("company_name")) or _normalize(lead.get("website")) or "Bu kayıt"
+    source_type = guard.get("source_type") or "non_company_source"
+    reason = guard.get("reason") or "web sitesi gerçek firma kaynağı gibi doğrulanamadı"
+    signal_text = ", ".join(guard.get("signals") or []) or "event/listeleme sinyali"
+    guarded = dict(research)
+    guarded.update(
+        {
+            "detected_company_name": "",
+            "company_overview": (
+                f"{company_name} kaydı gerçek bir ürün üreticisi/partner firma olarak doğrulanamadı. "
+                f"Web kaynağı {source_type.replace('_', ' ')} gibi görünüyor; bu yüzden lead manuel kontrol gerektirir."
+            ),
+            "products_services": "Ürün/hizmet eşleşmesi güvenilir değil; kaynak fuar, etkinlik, listeleme veya marketplace sayfası olabilir.",
+            "partner_fit_reason": "Partner adayı olarak kullanılmamalı; önce gerçek katılımcı/firma domaini ayrıştırılmalı.",
+            "bomaksan_match": "Doğrudan Bomaksan ürün/hizmet eşleşmesi kurulmadı; kayıt false-positive olabilir.",
+            "detected_signals": signal_text,
+            "served_industries": "Kaynak gerçek firma web sitesi olmadığı için sektör bilgisi güvenilir değil.",
+            "personalization_angle": "Email sekansı başlatmadan önce gerçek firma adı ve domaini manuel doğrulanmalı.",
+            "risk_notes": f"Yüksek false-positive riski. {reason}. AI bu kaydı üretici/distribütör olarak kabul etmedi.",
+            "confidence_score": min(float(guarded.get("confidence_score") or 0), 0.2),
+            "research_guard": "non_company_source",
+            "research_guard_reason": reason,
+        }
+    )
+    return guarded
+
+
 def _build_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pages: list[dict[str, str]]) -> dict[str, Any]:
     all_text = " ".join(page.get("text") or "" for page in pages)
     company_name = _normalize(lead.get("company_name"))
@@ -1778,10 +1933,15 @@ def _openai_lead_research(lead: dict[str, Any], segmentation: dict[str, Any], pa
         "segment_name": segmentation.get("segment_name"),
         "priority": segmentation.get("priority"),
     }
+    non_company_guard = _research_non_company_guard(lead, pages)
+    if non_company_guard:
+        context["precheck_warning"] = non_company_guard
     prompt = (
         "Bu firmayı Bomaksan için potansiyel endüstriyel hava filtrasyonu partneri olarak analiz et. "
         "Yanıtın JSON alan adları şemadaki gibi kalsın, ancak tüm açıklama içeriklerini Türkçe yaz. "
         "Verilen web sitesi metni ve lead bağlamı dışına çıkma; kanıt zayıfsa bunu Türkçe olarak açıkça belirt. "
+        "En kritik kural: web sitesi fuar, etkinlik, konferans, exhibitor/visitor sayfası, directory, marketplace, ürün listesi veya haber/listeleme sayfası ise bunu gerçek üretici/distribütör firma gibi yorumlama. "
+        "Böyle bir durumda partner_fit_reason ve risk_notes alanlarında false-positive olduğunu yaz, products_services alanında ürün üretimi/satışı doğrulanmadı de, bomaksan_match alanında doğrudan eşleşme kurma ve confidence_score değerini 0.20 veya altında tut. "
         "Önce web sitesi kanıtından gerçek firma/tüzel kişi veya marka adını belirle; gallery, products, blog, top lists gibi sayfa başlıklarını firma adı olarak kullanma. "
         "Firmanın genel merkez ülkesini yalnızca web sitesindeki açık adres, iletişim, impressum, legal footer veya şirket merkezi ifadesi gibi kanıta dayanarak belirle. "
         "LEAD_CONTEXT_JSON içindeki country alanı arama/ilk kayıt ülkesi olabilir; bunu tek başına genel merkez ülkesi kanıtı sayma. "
@@ -3022,6 +3182,8 @@ def _clean_company_name_candidate(candidate: str, domain: str) -> str:
     if len(value) < 3 or len(value) > 70:
         return ""
     if any(fragment in folded for fragment in SERPAPI_BLOCKED_TITLE_FRAGMENTS):
+        return ""
+    if any(fragment in folded for fragment in RESEARCH_NON_COMPANY_SIGNALS):
         return ""
     if any(word in folded for word in ["top ", "manufacturer", "supplier list", "video", "gallery", "directory"]):
         return ""
@@ -4513,6 +4675,7 @@ def deep_research_ai_lead(
             pages = [{"url": website, "text": fallback_text}]
         else:
             raise HTTPException(status_code=404, detail="Firma web sitesinden araştırma verisi alınamadı.")
+    non_company_guard = _research_non_company_guard(lead, pages)
     openai_error = ""
     try:
         research = _openai_lead_research(lead, segmentation, pages)
@@ -4531,9 +4694,10 @@ def deep_research_ai_lead(
         ).strip()
     else:
         research["openai_status"] = "completed"
+    research = _apply_non_company_research_guard(research, lead, non_company_guard)
     updated_company_name = _best_company_name_for_research(lead, research)
-    company_name_updated = _should_update_company_name(lead.get("company_name"), updated_company_name, website)
-    updated_country = _validated_research_country(research)
+    company_name_updated = False if non_company_guard else _should_update_company_name(lead.get("company_name"), updated_company_name, website)
+    updated_country = "" if non_company_guard else _validated_research_country(research)
     db.execute(
         text(
             """
@@ -4570,6 +4734,23 @@ def deep_research_ai_lead(
         text("UPDATE ai_leads SET status = 'Review Needed' WHERE id = :lead_id AND status IN ('New', 'Segmented', 'Awaiting Approval')"),
         {"lead_id": lead_id},
     )
+    if non_company_guard and segmentation.get("id"):
+        db.execute(
+            text(
+                """
+                UPDATE ai_segmentation_results
+                SET priority = 'Low',
+                    risks_or_uncertainties = :risk_notes,
+                    short_reasoning = :short_reasoning
+                WHERE id = :segmentation_id
+                """
+            ),
+            {
+                "segmentation_id": segmentation["id"],
+                "risk_notes": research["risk_notes"],
+                "short_reasoning": "AI araştırma kaynağı gerçek firma yerine fuar/listeleme/marketplace olabilir diye işaretledi.",
+            },
+        )
     if company_name_updated:
         db.execute(
             text("UPDATE ai_leads SET company_name = :company_name WHERE id = :lead_id"),
