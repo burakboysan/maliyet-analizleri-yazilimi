@@ -48,6 +48,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "loading": False,
         "filter_after_id": None,
         "stats": None,
+        "total_count": None,
     }
 
     root = ctk.CTkFrame(win, fg_color="transparent")
@@ -179,7 +180,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "country",
         "sales_channel",
         "product_category",
-        "priority",
+        "research_label",
         "email_sequence_stage",
     )
     tree = ttk.Treeview(
@@ -201,7 +202,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "country": "Ülke",
         "sales_channel": "Satış Kanalı",
         "product_category": "Ürün / Hizmet",
-        "priority": "Öncelik",
+        "research_label": "AI Araştırma",
         "email_sequence_stage": "Email Sekans Aşaması",
     }
     widths = {
@@ -211,7 +212,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         "country": 120,
         "sales_channel": 210,
         "product_category": 160,
-        "priority": 110,
+        "research_label": 130,
         "email_sequence_stage": 190,
     }
     for col in columns:
@@ -224,16 +225,20 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     def refresh_metrics():
         stats = state.get("stats") or {}
+        leads = state["leads"]
+        total_count = state.get("total_count")
+        if total_count is None:
+            total_count = int(stats.get("total") or len(leads))
+        metric_vars["total"].set(str(int(total_count or 0)))
+
         if stats:
-            metric_vars["total"].set(str(int(stats.get("total") or 0)))
             metric_vars["pending"].set(str(int(stats.get("pending") or 0)))
             metric_vars["high"].set(str(int(stats.get("high") or 0)))
             metric_vars["excluded"].set(str(int(stats.get("excluded") or 0)))
             metric_vars["drafts"].set(str(int(stats.get("drafts") or 0)))
             metric_vars["approval"].set(str(int(stats.get("approval") or 0)))
             return
-        leads = state["leads"]
-        metric_vars["total"].set(str(len(leads)))
+
         metric_vars["pending"].set(str(sum(1 for item in leads if item.get("ai_status") in {"New", "Pending AI Analysis"})))
         metric_vars["high"].set(str(sum(1 for item in leads if item.get("priority") in {"High", "Very High"})))
         metric_vars["excluded"].set(str(sum(1 for item in leads if item.get("priority") == "Excluded" or item.get("ai_status") == "Excluded")))
@@ -251,7 +256,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         priority = priority_var.get()
         filtered = []
         for item in state["leads"]:
-            haystack = " ".join(str(item.get(key, "")) for key in ("company_name", "contact_name", "contact_email", "email_status", "enrichment_note", "country", "segment_name", "sales_channel", "product_category")).casefold()
+            haystack = " ".join(str(item.get(key, "")) for key in ("company_name", "contact_name", "contact_email", "email_status", "enrichment_note", "country", "segment_name", "sales_channel", "product_category", "research_status", "research_label")).casefold()
             if query and query not in haystack:
                 continue
             if channel != "Tüm Kanallar" and item.get("sales_channel") != channel:
@@ -470,6 +475,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
             state["leads"] = []
             state["api_mode"] = False
             state["stats"] = None
+            state["total_count"] = 0
             win.after(0, apply_filters)
             status_var.set("API oturumu bulunamadı; lead listesi yüklenemedi.")
             return
@@ -510,18 +516,21 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 state["has_more"] = bool(response.get("has_more"))
                 if reset:
                     total_from_page = int(response.get("total") or len(leads))
-                    state["stats"] = {"total": total_from_page}
+                    state["total_count"] = total_from_page
+                    state["stats"] = None
                 state["api_mode"] = True
                 loaded_count = len(state["leads"])
-                total_count = int((state.get("stats") or {}).get("total") or loaded_count)
+                total_count = int(state.get("total_count") or loaded_count)
                 win.after(0, lambda loaded=loaded_count, total=total_count: hide_load_progress(f"Lead listesi yüklendi: {loaded}/{total} lead."))
                 win.after(0, apply_filters)
                 if reset:
                     try:
                         stats = get_ai_lead_stats(token, api_filters())
+                        if "total" in stats:
+                            state["total_count"] = int(stats.get("total") or state.get("total_count") or 0)
                         state["stats"] = stats or {}
                         loaded_count = len(state["leads"])
-                        total_count = int((state.get("stats") or {}).get("total") or loaded_count)
+                        total_count = int(state.get("total_count") or loaded_count)
                         win.after(0, apply_filters)
                         win.after(0, lambda loaded=loaded_count, total=total_count: status_var.set(f"Lead listesi yüklendi: {loaded}/{total} lead."))
                     except Exception:
@@ -530,6 +539,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 state["leads"] = []
                 state["api_mode"] = False
                 state["stats"] = None
+                state["total_count"] = 0
                 win.after(0, apply_filters)
                 message = f"API hazır değil veya erişilemiyor; lead listesi yüklenemedi. Detay: {exc}"
                 win.after(0, lambda msg=message: hide_load_progress(msg))
@@ -537,6 +547,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
                 state["leads"] = []
                 state["api_mode"] = False
                 state["stats"] = None
+                state["total_count"] = 0
                 win.after(0, apply_filters)
                 message = f"Lead verisi yüklenemedi. Detay: {exc}"
                 win.after(0, lambda msg=message: hide_load_progress(msg))
@@ -1553,6 +1564,15 @@ def _score_from_icp(row, priority):
 
 
 def _table_value(item, column):
+    if column == "research_label":
+        value = item.get("research_label")
+        if value:
+            return value
+        status = str(item.get("research_status") or "").strip().casefold()
+        summary = str(item.get("research_summary") or "").strip()
+        if item.get("research_done") or status == "completed" or summary:
+            return "AI Araştırıldı"
+        return "Araştırma Yok"
     if column == "email_sequence_stage":
         value = item.get("email_sequence_stage")
         if value:

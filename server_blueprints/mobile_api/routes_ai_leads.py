@@ -1472,6 +1472,8 @@ def _lead_response(db: Session, lead_row: Any) -> dict[str, Any]:
             priority_value = "Low"
         elif lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"):
             priority_value = _priority_for_apollo_search(lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"))
+    research_status = lead.get("research_status_value") or "Not Researched"
+    research_done = str(research_status or "").strip().casefold() == "completed"
     return {
         **lead,
         "sales_channel": segmentation.get("sales_channel") or "",
@@ -1524,6 +1526,8 @@ def _lead_list_response(row: Any) -> dict[str, Any]:
             priority_value = "Low"
         elif lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"):
             priority_value = _priority_for_apollo_search(lead.get("apollo_search_keyword") or lead.get("apollo_search_attempt"))
+    research_status = lead.get("research_status_value") or "Not Researched"
+    research_done = str(research_status or "").strip().casefold() == "completed"
     return {
         **lead,
         "sales_channel": segmentation["sales_channel"],
@@ -1542,7 +1546,9 @@ def _lead_list_response(row: Any) -> dict[str, Any]:
         "last_action": lead.get("last_action_summary") or "",
         "short_reasoning": segmentation["short_reasoning"],
         "personalization_angle": segmentation["personalization_angle"],
-        "research_status": lead.get("research_status_value") or "Not Researched",
+        "research_status": research_status,
+        "research_done": research_done,
+        "research_label": "AI Araştırıldı" if research_done else "Araştırma Yok",
         "research_summary": lead.get("research_company_overview") or "",
         "draft_count": draft_count,
         "email_sequence_stage": _email_sequence_stage(lead, contact, draft_count),
@@ -2878,7 +2884,15 @@ def list_ai_leads(
                 c.email_status AS contact_email_status,
                 c.enrichment_note AS contact_enrichment_note,
                 COALESCE(d.draft_count, 0) AS draft_count,
-                '' AS research_status_value,
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM ai_lead_research r2
+                        WHERE r2.lead_id = l.id
+                        LIMIT 1
+                    ) THEN 'Completed'
+                    ELSE 'Not Researched'
+                END AS research_status_value,
                 '' AS research_company_overview,
                 '' AS last_action_summary
             FROM ai_leads l
