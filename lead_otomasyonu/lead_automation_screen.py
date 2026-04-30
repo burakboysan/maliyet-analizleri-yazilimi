@@ -54,7 +54,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     root = ctk.CTkFrame(win, fg_color="transparent")
     root.pack(fill="both", expand=True, padx=20, pady=20)
     root.grid_columnconfigure(0, weight=1)
-    root.grid_rowconfigure(3, weight=1)
+    root.grid_rowconfigure(4, weight=1)
 
     header = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=16, border_width=1, border_color="#e5e7eb")
     header.grid(row=0, column=0, sticky="ew", pady=(0, 14))
@@ -105,8 +105,17 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     search_var = ctk.StringVar()
     channel_var = ctk.StringVar(value="Tüm Kanallar")
+    channel_tab_var = ctk.StringVar(value="ALL")
     product_var = ctk.StringVar(value="Tüm Ürünler")
     priority_var = ctk.StringVar(value="Tüm Öncelikler")
+    channel_tabs = {
+        "OEM": "OEM",
+        "WL/Reseller": "White Label / Resellers",
+        "CASP": "Clean Air Solution Partner",
+        "SISP": "System Integration Solution Partner",
+        "Direct Sales": "Direct Sales",
+        "ALL": "Tüm Kanallar",
+    }
 
     _filter_label(filters, "Arama", 0)
     search_entry = ctk.CTkEntry(filters, textvariable=search_var, width=220, placeholder_text="Firma, ülke veya segment")
@@ -161,8 +170,29 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     ctk.CTkLabel(load_progress_frame, textvariable=load_status_var, text_color="#64748b", width=300, anchor="w").grid(row=0, column=1, sticky="e")
     load_progress_frame.grid_remove()
 
+    tab_bar = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
+    tab_bar.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+    tab_bar.grid_columnconfigure(1, weight=1)
+    ctk.CTkLabel(tab_bar, text="Satış Kanalı", font=ctk.CTkFont(size=12, weight="bold"), text_color="#475569").grid(row=0, column=0, sticky="w", padx=(16, 10), pady=12)
+
+    def on_channel_tab(tab_name):
+        channel_var.set(channel_tabs.get(tab_name, "Tüm Kanallar"))
+
+    channel_segment = ctk.CTkSegmentedButton(
+        tab_bar,
+        values=list(channel_tabs.keys()),
+        variable=channel_tab_var,
+        command=on_channel_tab,
+        selected_color="#d32f2f",
+        selected_hover_color="#b91c1c",
+        unselected_color="#ffffff",
+        unselected_hover_color="#f1f5f9",
+        text_color="#334155",
+    )
+    channel_segment.grid(row=0, column=1, sticky="w", padx=(0, 16), pady=10)
+
     table_card = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
-    table_card.grid(row=3, column=0, sticky="nsew")
+    table_card.grid(row=4, column=0, sticky="nsew")
     table_card.grid_rowconfigure(0, weight=1)
     table_card.grid_columnconfigure(0, weight=1)
 
@@ -555,6 +585,10 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         threading.Thread(target=worker, daemon=True).start()
 
     def schedule_filter_reload(*_args):
+        selected_channel = channel_var.get()
+        active_tab = next((tab_name for tab_name, channel_name in channel_tabs.items() if channel_name == selected_channel), "ALL")
+        if channel_tab_var.get() != active_tab:
+            channel_tab_var.set(active_tab)
         if state.get("filter_after_id"):
             try:
                 win.after_cancel(state["filter_after_id"])
@@ -1274,7 +1308,7 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
     ctk.CTkButton(filter_actions, text="Sekans Oluştur", width=145, command=create_sequence_for_selected, fg_color="#ffffff", text_color="#0f766e", border_width=1, border_color="#0f766e").pack(side="left")
 
     bottom_actions = ctk.CTkFrame(root, fg_color="transparent")
-    bottom_actions.grid(row=4, column=0, sticky="e", pady=(14, 0))
+    bottom_actions.grid(row=5, column=0, sticky="e", pady=(14, 0))
     ctk.CTkButton(bottom_actions, text="Lead Ekle", width=125, command=add_manual_lead, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="SerpAPI Firma Bul", width=165, command=segment_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
     ctk.CTkButton(bottom_actions, text="Hunter Firma Bul", width=155, command=hunter_company_search, fg_color="#d32f2f", hover_color="#b91c1c").pack(side="left", padx=8)
