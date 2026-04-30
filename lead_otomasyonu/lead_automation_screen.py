@@ -172,24 +172,44 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
 
     tab_bar = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
     tab_bar.grid(row=3, column=0, sticky="ew", pady=(0, 10))
-    tab_bar.grid_columnconfigure(1, weight=1)
-    ctk.CTkLabel(tab_bar, text="Satış Kanalı", font=ctk.CTkFont(size=12, weight="bold"), text_color="#475569").grid(row=0, column=0, sticky="w", padx=(16, 10), pady=12)
+    tab_bar.grid_columnconfigure(0, weight=1)
+    tab_headers = ctk.CTkFrame(tab_bar, fg_color="transparent")
+    tab_headers.grid(row=0, column=0, sticky="w", padx=16, pady=12)
+    channel_tab_buttons = {}
 
     def on_channel_tab(tab_name):
+        channel_tab_var.set(tab_name)
+        for name, button in channel_tab_buttons.items():
+            if name == tab_name:
+                button.configure(
+                    fg_color=("#d32f2f", "#c62828"),
+                    text_color=("#ffffff", "#ffffff"),
+                    border_width=0,
+                )
+            else:
+                button.configure(
+                    fg_color=("#f5f5f5", "#2d2d2d"),
+                    text_color=("#333333", "#ffffff"),
+                    border_width=0,
+                )
         channel_var.set(channel_tabs.get(tab_name, "Tüm Kanallar"))
 
-    channel_segment = ctk.CTkSegmentedButton(
-        tab_bar,
-        values=list(channel_tabs.keys()),
-        variable=channel_tab_var,
-        command=on_channel_tab,
-        selected_color="#d32f2f",
-        selected_hover_color="#b91c1c",
-        unselected_color="#ffffff",
-        unselected_hover_color="#f1f5f9",
-        text_color="#334155",
-    )
-    channel_segment.grid(row=0, column=1, sticky="w", padx=(0, 16), pady=10)
+    for tab_name in channel_tabs.keys():
+        tab_button = ctk.CTkButton(
+            tab_headers,
+            text=tab_name,
+            command=lambda name=tab_name: on_channel_tab(name),
+            fg_color=("#f5f5f5", "#2d2d2d"),
+            text_color=("#333333", "#ffffff"),
+            hover_color=("#e0e0e0", "#3d3d3d"),
+            corner_radius=10,
+            height=40,
+            width=130 if tab_name in {"Direct Sales", "WL/Reseller"} else 105,
+            font=ctk.CTkFont(size=14, weight="bold"),
+        )
+        tab_button.pack(side="left", padx=(0, 10))
+        channel_tab_buttons[tab_name] = tab_button
+    on_channel_tab("ALL")
 
     table_card = ctk.CTkFrame(root, fg_color="#ffffff", corner_radius=14, border_width=1, border_color="#e5e7eb")
     table_card.grid(row=4, column=0, sticky="nsew")
@@ -589,6 +609,11 @@ def lead_otomasyonu_ekrani(parent=None, kullanici_rolu=None):
         active_tab = next((tab_name for tab_name, channel_name in channel_tabs.items() if channel_name == selected_channel), "ALL")
         if channel_tab_var.get() != active_tab:
             channel_tab_var.set(active_tab)
+        for name, button in channel_tab_buttons.items():
+            if name == active_tab:
+                button.configure(fg_color=("#d32f2f", "#c62828"), text_color=("#ffffff", "#ffffff"), border_width=0)
+            else:
+                button.configure(fg_color=("#f5f5f5", "#2d2d2d"), text_color=("#333333", "#ffffff"), border_width=0)
         if state.get("filter_after_id"):
             try:
                 win.after_cancel(state["filter_after_id"])
