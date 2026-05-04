@@ -21,6 +21,11 @@ from app.models import (
     ProductUpdateResponse,
     ProductResponse,
     ProductTreeItemResponse,
+    ProductTreeDeleteRequest,
+    ProductTreeDeleteResponse,
+    ProductTreeLaborUpdateRequest,
+    ProductTreeQuantityUpdateRequest,
+    ProductTreeRecalculateResponse,
     ProductTreeResponse,
 )
 
@@ -225,6 +230,22 @@ def _normalize_product_value(key: str, value: Any) -> Any:
         return Decimal(cleaned.replace(".", "").replace(",", ".") if "," in cleaned else cleaned)
     except (InvalidOperation, ValueError):
         raise HTTPException(status_code=422, detail=f"{FIELD_LABELS.get(key, key)} sayısal olmalı.")
+
+
+def _recalculate_product_cost(connection: MySQLConnection, product_id: int) -> tuple[bool, str | None]:
+    try:
+        from maliyet.cost_calculator import maliyet_hesapla
+
+        cursor = connection.cursor(dictionary=True, buffered=True)
+        maliyet_hesapla(product_id, cursor)
+        connection.commit()
+        return True, None
+    except Exception as exc:
+        try:
+            connection.rollback()
+        except Exception:
+            pass
+        return False, str(exc)
 
 
 def _get_product_detail_response(connection: MySQLConnection, product_id: int) -> ProductDetailResponse:
@@ -587,13 +608,7 @@ def update_product(
 
     cost_recalculated = False
     if payload.recalculate_cost:
-        try:
-            from maliyet.cost_calculator import maliyet_hesapla
-
-            maliyet_hesapla(product_id)
-            cost_recalculated = True
-        except Exception as exc:
-            recalculation_error = str(exc)
+        cost_recalculated, recalculation_error = _recalculate_product_cost(connection, product_id)
 
     return ProductUpdateResponse(
         product_id=product_id,
@@ -724,13 +739,7 @@ def copy_product(
 
     cost_recalculated = False
     recalculation_error: str | None = None
-    try:
-        from maliyet.cost_calculator import maliyet_hesapla
-
-        maliyet_hesapla(new_product_id)
-        cost_recalculated = True
-    except Exception as exc:
-        recalculation_error = str(exc)
+    cost_recalculated, recalculation_error = _recalculate_product_cost(connection, new_product_id)
 
     return ProductCopyResponse(
         source_product_id=product_id,
@@ -739,6 +748,143 @@ def copy_product(
         cost_recalculated=cost_recalculated,
         recalculation_error=recalculation_error,
         detail=_get_product_detail_response(connection, new_product_id),
+    )
+
+
+@router.patch("/tree-items/{item_id}", response_model=ProductTreeItemResponse)
+def update_product_tree_item_quantity_route(
+    item_id: int,
+    payload: ProductTreeQuantityUpdateRequest,
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    if not _is_master_user(current_user):
+        raise HTTPException(status_code=403, detail="Ürün ağacı düzenleme yetkiniz yok.")
+
+    quantity = _to_decimal(payload.miktar)
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute("SELECT id FROM urun_agaci WHERE id = %s LIMIT 1", (item_id,))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Ürün ağacı kaydı bulunamadı.")
+
+    try:
+        cursor.execute("UPDATE urun_agaci SET miktar = %s WHERE id = %s", (quantity, item_id))
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Miktar güncellenemedi: {exc}") from exc
+
+    cursor.execute(
+        """
+        SELECT id, malzeme_kodu, malzeme_adi, miktar
+        FROM urun_agaci
+        WHERE id = %s
+        """,
+        (item_id,),
+    )
+    return _tree_item(cursor.fetchone())
+
+
+@router.post("/tree-items/delete", response_model=ProductTreeDeleteResponse)
+def delete_product_tree_items_route(
+    payload: ProductTreeDeleteRequest,
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    if not _is_master_user(current_user):
+        raise HTTPException(status_code=403, detail="Ürün ağacı düzenleme yetkiniz yok.")
+
+    item_ids = list(dict.fromkeys(int(item_id) for item_id in payload.item_ids if int(item_id) > 0))
+    if not item_ids:
+        raise HTTPException(status_code=422, detail="Silinecek kayıt seçilmedi.")
+
+    try:
+        cursor = connection.cursor()
+        placeholders = ", ".join(["%s"] * len(item_ids))
+        cursor.execute(f"DELETE FROM urun_agaci WHERE id IN ({placeholders})", tuple(item_ids))
+        deleted_count = int(cursor.rowcount or 0)
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Silme işlemi tamamlanamadı: {exc}") from exc
+
+    return ProductTreeDeleteResponse(deleted_count=deleted_count, message=f"{deleted_count} ürün ağacı kaydı silindi.")
+
+
+@router.put("/{product_id}/tree/labor", response_model=ProductTreeRecalculateResponse)
+def save_product_tree_labor(
+    product_id: int,
+    payload: ProductTreeLaborUpdateRequest,
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    if not _is_master_user(current_user):
+        raise HTTPException(status_code=403, detail="Ürün ağacı düzenleme yetkiniz yok.")
+
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute("SELECT id FROM urunler WHERE id = %s LIMIT 1", (product_id,))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı.")
+
+    try:
+        cursor.execute("DELETE FROM urun_iscilik WHERE urun_id = %s", (product_id,))
+        for row in payload.labor_rows:
+            labor_type = row.iscilik_tipi.strip()
+            if labor_type not in LABOR_TYPES:
+                continue
+            master_hours = _to_decimal(row.usta_saat)
+            assistant_hours = _to_decimal(row.yardimci_saat)
+            if master_hours <= 0 and assistant_hours <= 0:
+                continue
+            cursor.execute(
+                """
+                INSERT INTO urun_iscilik (urun_id, iscilik_tipi, usta_saat, yardimci_saat)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (product_id, labor_type, master_hours, assistant_hours),
+            )
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        raise HTTPException(status_code=500, detail=f"İşçilik saatleri kaydedilemedi: {exc}") from exc
+
+    cost_recalculated = False
+    recalculation_error = None
+    if payload.recalculate_cost:
+        cost_recalculated, recalculation_error = _recalculate_product_cost(connection, product_id)
+
+    return ProductTreeRecalculateResponse(
+        product_id=product_id,
+        cost_recalculated=cost_recalculated,
+        recalculation_error=recalculation_error,
+        detail=_get_product_detail_response(connection, product_id),
+    )
+
+
+@router.post("/{product_id}/tree/recalculate", response_model=ProductTreeRecalculateResponse)
+def recalculate_product_tree_cost(
+    product_id: int,
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    if not _is_master_user(current_user):
+        raise HTTPException(status_code=403, detail="Ürün ağacı düzenleme yetkiniz yok.")
+
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute("SELECT id FROM urunler WHERE id = %s LIMIT 1", (product_id,))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı.")
+
+    cost_recalculated, recalculation_error = _recalculate_product_cost(connection, product_id)
+    return ProductTreeRecalculateResponse(
+        product_id=product_id,
+        cost_recalculated=cost_recalculated,
+        recalculation_error=recalculation_error,
+        detail=_get_product_detail_response(connection, product_id),
     )
 
 

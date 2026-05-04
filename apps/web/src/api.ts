@@ -131,6 +131,18 @@ export type ProductCostRevisionResponse = {
   message: string;
 };
 
+export type ProductTreeDeleteResponse = {
+  deleted_count: number;
+  message: string;
+};
+
+export type ProductTreeRecalculateResponse = {
+  product_id: number;
+  cost_recalculated: boolean;
+  recalculation_error?: string | null;
+  detail: ProductDetail;
+};
+
 export type ProductTree = {
   product_id: number;
   stats: Record<string, number>;
@@ -307,4 +319,60 @@ export async function reviseProductCosts(token: string, productIds: number[]): P
     throw new Error(await parseError(response));
   }
   return (await response.json()) as ProductCostRevisionResponse;
+}
+
+export async function updateProductTreeItemQuantity(token: string, itemId: number, miktar: number): Promise<ProductTreeItem> {
+  const response = await fetch(`${API_BASE_URL}/products/tree-items/${itemId}`, {
+    method: "PATCH",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ miktar }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductTreeItem;
+}
+
+export async function deleteProductTreeItems(token: string, itemIds: number[]): Promise<ProductTreeDeleteResponse> {
+  const response = await fetch(`${API_BASE_URL}/products/tree-items/delete`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ item_ids: itemIds }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductTreeDeleteResponse;
+}
+
+export async function saveProductTreeLabor(token: string, productId: number, laborRows: ProductLabor[]): Promise<ProductTreeRecalculateResponse> {
+  const response = await fetch(`${API_BASE_URL}/products/${productId}/tree/labor`, {
+    method: "PUT",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ labor_rows: laborRows, recalculate_cost: true }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductTreeRecalculateResponse;
+}
+
+export async function recalculateProductTreeCost(token: string, productId: number): Promise<ProductTreeRecalculateResponse> {
+  const response = await fetch(`${API_BASE_URL}/products/${productId}/tree/recalculate`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductTreeRecalculateResponse;
 }

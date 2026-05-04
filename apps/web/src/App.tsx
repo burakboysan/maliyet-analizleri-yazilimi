@@ -13,6 +13,7 @@ import {
   LogOut,
   PackagePlus,
   RefreshCw,
+  Save,
   Search,
   ShieldCheck,
   SlidersHorizontal,
@@ -26,6 +27,7 @@ import type { ReactNode } from "react";
 import {
   copyProduct,
   deleteProduct,
+  deleteProductTreeItems,
   fetchMaterials,
   fetchMe,
   fetchModules,
@@ -34,8 +36,11 @@ import {
   fetchProducts,
   fetchProductTree,
   login,
+  recalculateProductTreeCost,
   reviseProductCosts,
+  saveProductTreeLabor,
   updateProduct,
+  updateProductTreeItemQuantity,
   type MaterialInfo,
   type ModuleInfo,
   type ProductDetail,
@@ -43,6 +48,7 @@ import {
   type ProductLabor,
   type ProductInfo,
   type ProductTree,
+  type ProductTreeItem,
   type UserInfo,
 } from "./api";
 
@@ -138,6 +144,20 @@ const dropdownDetailFields = new Set([
   "fan_basinc_birimi",
   "fan_kumanda_tipi",
 ]);
+const laborTypes = [
+  "Plazma/Lazer",
+  "Makas",
+  "Testere",
+  "Abkant",
+  "Silindir",
+  "Delik Delme",
+  "Kaynak",
+  "Argon",
+  "Montaj",
+  "Boya",
+  "Elektrik",
+  "Ambalaj/Yükleme",
+];
 
 function formatValue(value?: string | number | null) {
   if (value === null || value === undefined || value === "") {
@@ -183,10 +203,13 @@ export function App() {
   const [productDetail, setProductDetail] = useState<ProductDetail | null>(null);
   const [productEditOptions, setProductEditOptions] = useState<ProductEditOptions | null>(null);
   const [productTree, setProductTree] = useState<ProductTree | null>(null);
+  const [isTreeOpen, setIsTreeOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isLoadingTree, setIsLoadingTree] = useState(false);
   const [isSavingDetail, setIsSavingDetail] = useState(false);
+  const [isSavingTree, setIsSavingTree] = useState(false);
   const [isProductActionRunning, setIsProductActionRunning] = useState(false);
   const [view, setView] = useState<AppView>("dashboard");
   const [dataError, setDataError] = useState<string | null>(null);
@@ -318,6 +341,35 @@ export function App() {
     } catch (err) {
       setDataError(err instanceof Error ? err.message : "Ürün ağacı yüklenemedi.");
     }
+  }
+
+  async function handleOpenProductTree(product?: ProductInfo) {
+    const targetProduct = product ?? selectedProduct;
+    if (!targetProduct) {
+      setNotice("Ürün ağacını açmak için önce tablodan bir ürün seçin.");
+      return;
+    }
+    setSelectedProduct(targetProduct);
+    setIsTreeOpen(true);
+    setIsLoadingTree(true);
+    setDataError(null);
+    try {
+      setProductTree(await fetchProductTree(token, targetProduct.id));
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Ürün ağacı yüklenemedi.");
+      setIsTreeOpen(false);
+    } finally {
+      setIsLoadingTree(false);
+    }
+  }
+
+  async function refreshProductTree(productId = selectedProduct?.id) {
+    if (!productId) {
+      return null;
+    }
+    const nextTree = await fetchProductTree(token, productId);
+    setProductTree(nextTree);
+    return nextTree;
   }
 
   async function handleOpenProductDetail(product?: ProductInfo, mode: "view" | "edit" = "view") {
@@ -476,6 +528,101 @@ export function App() {
     }
   }
 
+  async function handleUpdateTreeQuantity(item: ProductTreeItem) {
+    if (!item.id || !selectedProduct) {
+      return;
+    }
+    const value = window.prompt("Yeni miktarı girin:", String(item.miktar ?? 0).replace(".", ","));
+    if (value === null) {
+      return;
+    }
+    const parsedValue = Number(value.replace(",", "."));
+    if (!Number.isFinite(parsedValue)) {
+      setNotice("Lütfen geçerli bir miktar girin.");
+      return;
+    }
+    setIsSavingTree(true);
+    setDataError(null);
+    try {
+      await updateProductTreeItemQuantity(token, item.id, parsedValue);
+      await refreshProductTree(selectedProduct.id);
+      setNotice("Miktar güncellendi.");
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Miktar güncellenemedi.");
+    } finally {
+      setIsSavingTree(false);
+    }
+  }
+
+  async function handleDeleteTreeItems(itemIds: number[]) {
+    if (!selectedProduct || !itemIds.length) {
+      return;
+    }
+    const confirmed = window.confirm(`Seçili ${itemIds.length} kaydı ürün ağacından silmek istediğinize emin misiniz?`);
+    if (!confirmed) {
+      return;
+    }
+    setIsSavingTree(true);
+    setDataError(null);
+    try {
+      const response = await deleteProductTreeItems(token, itemIds);
+      await refreshProductTree(selectedProduct.id);
+      setNotice(response.message);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Ürün ağacı kaydı silinemedi.");
+    } finally {
+      setIsSavingTree(false);
+    }
+  }
+
+  async function handleSaveTreeLabor(laborRows: ProductLabor[]) {
+    if (!selectedProduct) {
+      return;
+    }
+    setIsSavingTree(true);
+    setDataError(null);
+    try {
+      const response = await saveProductTreeLabor(token, selectedProduct.id, laborRows);
+      await refreshProductTree(selectedProduct.id);
+      const productRows = await fetchProducts(token, productSearch);
+      setProducts(productRows);
+      setSelectedProduct(productRows.find((product) => product.id === selectedProduct.id) ?? selectedProduct);
+      setNotice(
+        response.recalculation_error
+          ? `İşçilik kaydedildi, ancak maliyet hesaplanamadı: ${response.recalculation_error}`
+          : "İşçilik saatleri kaydedildi ve maliyet yeniden hesaplandı.",
+      );
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "İşçilik saatleri kaydedilemedi.");
+    } finally {
+      setIsSavingTree(false);
+    }
+  }
+
+  async function handleSaveProductTree() {
+    if (!selectedProduct) {
+      return;
+    }
+    setIsSavingTree(true);
+    setDataError(null);
+    try {
+      const response = await recalculateProductTreeCost(token, selectedProduct.id);
+      const productRows = await fetchProducts(token, productSearch);
+      setProducts(productRows);
+      setSelectedProduct(productRows.find((product) => product.id === selectedProduct.id) ?? selectedProduct);
+      setIsTreeOpen(false);
+      setNotice(
+        response.recalculation_error
+          ? `Ürün ağacı kaydedildi, ancak maliyet hesaplanamadı: ${response.recalculation_error}`
+          : "Ürün ağacı kaydedildi ve maliyet yeniden hesaplandı.",
+      );
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Ürün ağacı kaydedilemedi.");
+    } finally {
+      setIsSavingTree(false);
+    }
+  }
+
   function handleProductAction(action: string) {
     if (action === "detail") {
       handleOpenProductDetail();
@@ -498,11 +645,7 @@ export function App() {
       return;
     }
     if (action === "tree") {
-      if (selectedProduct) {
-        handleProductSelect(selectedProduct);
-      } else {
-        setNotice("Ürün ağacını açmak için önce tablodan bir ürün seçin.");
-      }
+      handleOpenProductTree();
       return;
     }
     if (action === "export") {
@@ -681,6 +824,20 @@ export function App() {
             setProductDetail(null);
           }}
           onSave={handleSaveProductDetail}
+        />
+      ) : null}
+      {isTreeOpen ? (
+        <ProductTreeModal
+          isLoading={isLoadingTree}
+          isSaving={isSavingTree}
+          isMaster={isMasterUser(user)}
+          onClose={() => setIsTreeOpen(false)}
+          onDeleteItems={handleDeleteTreeItems}
+          onSave={handleSaveProductTree}
+          onSaveLabor={handleSaveTreeLabor}
+          onUpdateQuantity={handleUpdateTreeQuantity}
+          product={selectedProduct}
+          tree={productTree}
         />
       ) : null}
     </main>
@@ -880,6 +1037,201 @@ function ProductModuleScreen({
         ) : null}
       </section>
     </section>
+  );
+}
+
+function ProductTreeModal({
+  isLoading,
+  isSaving,
+  isMaster,
+  onClose,
+  onDeleteItems,
+  onSave,
+  onSaveLabor,
+  onUpdateQuantity,
+  product,
+  tree,
+}: {
+  isLoading: boolean;
+  isSaving: boolean;
+  isMaster: boolean;
+  onClose: () => void;
+  onDeleteItems: (itemIds: number[]) => void;
+  onSave: () => void;
+  onSaveLabor: (laborRows: ProductLabor[]) => void;
+  onUpdateQuantity: (item: ProductTreeItem) => void;
+  product: ProductInfo | null;
+  tree: ProductTree | null;
+}) {
+  const [activeTab, setActiveTab] = useState<"yari" | "mamul" | "alt" | "labor">("yari");
+  const [selectedItems, setSelectedItems] = useState<Record<string, number[]>>({});
+  const [laborRows, setLaborRows] = useState<ProductLabor[]>([]);
+  const tabItems = [
+    { key: "yari" as const, label: "Yarı Mamüller", items: tree?.yari_mamuller ?? [] },
+    { key: "mamul" as const, label: "Mamüller", items: tree?.mamuller ?? [] },
+    { key: "alt" as const, label: "Alt Ürünler", items: tree?.alt_urunler ?? [] },
+  ];
+  const activeItems = tabItems.find((tab) => tab.key === activeTab)?.items ?? [];
+  const activeSelection = selectedItems[activeTab] ?? [];
+
+  useEffect(() => {
+    const laborByType = new Map((tree?.iscilikler ?? []).map((row) => [row.iscilik_tipi ?? "", row]));
+    setLaborRows(
+      laborTypes.map((laborType) => {
+        const row = laborByType.get(laborType);
+        return {
+          iscilik_tipi: laborType,
+          usta_saat: row?.usta_saat ?? 0,
+          yardimci_saat: row?.yardimci_saat ?? 0,
+        };
+      }),
+    );
+    setSelectedItems({});
+  }, [tree]);
+
+  function toggleItem(tabKey: string, itemId: number) {
+    setSelectedItems((current) => {
+      const existing = current[tabKey] ?? [];
+      const next = existing.includes(itemId) ? existing.filter((id) => id !== itemId) : [...existing, itemId];
+      return { ...current, [tabKey]: next };
+    });
+  }
+
+  function updateLabor(index: number, key: "usta_saat" | "yardimci_saat", value: string) {
+    setLaborRows((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, [key]: value === "" ? 0 : value } : row)));
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="product-tree-modal" role="dialog" aria-modal="true" aria-labelledby="product-tree-title">
+        <header className="product-detail-header">
+          <div>
+            <span>Ürün Ağacı Yönetimi</span>
+            <h2 id="product-tree-title">{formatValue(product?.urun_kodu)}</h2>
+            <p>Ürün bileşenlerini, malzemeleri ve işçilik saatlerini yönetin</p>
+          </div>
+          <div className="tree-modal-actions">
+            {isMaster ? (
+              <button className="product-action emphasis" type="button" onClick={onSave} disabled={isSaving || isLoading || !tree}>
+                <Save size={18} />
+                <span>{isSaving ? "Kaydediliyor" : "Kaydet"}</span>
+              </button>
+            ) : null}
+            <button className="modal-close-button" type="button" onClick={onClose} title="Kapat">
+              <X size={20} />
+            </button>
+          </div>
+        </header>
+
+        <div className="product-tree-modal-body">
+          {isLoading ? (
+            <div className="detail-loading">Ürün ağacı yükleniyor...</div>
+          ) : tree ? (
+            <>
+              <div className="tree-stats tree-modal-stats">
+                <span>Yarı Mamül: {tree.stats.yari_mamul_count ?? 0}</span>
+                <span>Mamül: {tree.stats.mamul_count ?? 0}</span>
+                <span>Alt Ürün: {tree.stats.alt_urun_count ?? 0}</span>
+                <span>İşçilik: {formatValue(tree.stats.iscilik_toplam)} saat</span>
+                <span>Yarı Mamül: {formatValue(tree.stats.yari_mamul_kg)} kg</span>
+              </div>
+
+              <div className="tree-tabs" role="tablist" aria-label="Ürün ağacı sekmeleri">
+                {tabItems.map((tab) => (
+                  <button className={activeTab === tab.key ? "active" : ""} type="button" key={tab.key} onClick={() => setActiveTab(tab.key)}>
+                    {tab.label}
+                  </button>
+                ))}
+                <button className={activeTab === "labor" ? "active" : ""} type="button" onClick={() => setActiveTab("labor")}>
+                  İşçilik
+                </button>
+              </div>
+
+              {activeTab === "labor" ? (
+                <section className="tree-panel-table">
+                  <div className="labor-row header">
+                    <span>İşçilik Tipi</span>
+                    <span>Usta Saat</span>
+                    <span>Yardımcı Saat</span>
+                  </div>
+                  {laborRows.map((row, index) => (
+                    <div className="labor-row" key={row.iscilik_tipi ?? "empty"}>
+                      <span>{row.iscilik_tipi}</span>
+                      <input
+                        className="labor-input"
+                        disabled={!isMaster || isSaving}
+                        min="0"
+                        step="0.01"
+                        type="number"
+                        value={row.usta_saat ?? 0}
+                        onChange={(event) => updateLabor(index, "usta_saat", event.target.value)}
+                      />
+                      <input
+                        className="labor-input"
+                        disabled={!isMaster || isSaving}
+                        min="0"
+                        step="0.01"
+                        type="number"
+                        value={row.yardimci_saat ?? 0}
+                        onChange={(event) => updateLabor(index, "yardimci_saat", event.target.value)}
+                      />
+                    </div>
+                  ))}
+                  {isMaster ? (
+                    <div className="tree-panel-actions">
+                      <button className="product-action emphasis" type="button" onClick={() => onSaveLabor(laborRows)} disabled={isSaving}>
+                        İşçilik Saatlerini Kaydet
+                      </button>
+                    </div>
+                  ) : null}
+                </section>
+              ) : (
+                <section className="tree-panel-table">
+                  <div className="tree-table-row header">
+                    <span></span>
+                    <span>Kod</span>
+                    <span>Ad</span>
+                    <span>Miktar</span>
+                    <span></span>
+                  </div>
+                  {activeItems.map((item) => (
+                    <div className="tree-table-row" key={item.id}>
+                      <input
+                        aria-label={`${item.kod ?? "Kayıt"} seç`}
+                        checked={activeSelection.includes(item.id)}
+                        disabled={!isMaster || isSaving}
+                        type="checkbox"
+                        onChange={() => toggleItem(activeTab, item.id)}
+                      />
+                      <span>{item.kod || "-"}</span>
+                      <span>{item.ad || "-"}</span>
+                      <span>{formatValue(item.miktar)}</span>
+                      {isMaster ? (
+                        <button className="product-action compact-action" type="button" onClick={() => onUpdateQuantity(item)} disabled={isSaving}>
+                          Miktar
+                        </button>
+                      ) : (
+                        <span></span>
+                      )}
+                    </div>
+                  ))}
+                  {!activeItems.length ? <div className="table-empty-state">Bu sekmede kayıt yok.</div> : null}
+                  {isMaster ? (
+                    <div className="tree-panel-actions">
+                      <button className="product-action danger" type="button" onClick={() => onDeleteItems(activeSelection)} disabled={isSaving || !activeSelection.length}>
+                        Seçili Öğeyi Sil
+                      </button>
+                    </div>
+                  ) : null}
+                </section>
+              )}
+            </>
+          ) : (
+            <div className="detail-loading">Ürün ağacı verisi bulunamadı.</div>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 

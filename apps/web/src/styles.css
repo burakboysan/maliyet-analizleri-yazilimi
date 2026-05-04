@@ -912,6 +912,18 @@ button.data-row.selected {
   overflow: hidden;
 }
 
+.product-tree-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(1180px, 100%);
+  max-height: calc(100vh - 48px);
+  border: 1px solid #cfd9e6;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgb(15 36 61 / 24%);
+  overflow: hidden;
+}
+
 .product-detail-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -967,6 +979,102 @@ button.data-row.selected {
   border-radius: 8px;
   background: #ffffff;
   color: #24415f;
+}
+
+.tree-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.product-tree-modal-body {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 16px;
+}
+
+.tree-modal-stats {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 0;
+}
+
+.tree-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border-bottom: 1px solid #e5ebf2;
+  padding-bottom: 12px;
+}
+
+.tree-tabs button {
+  min-height: 38px;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #24415f;
+  font-weight: 800;
+  padding: 0 12px;
+}
+
+.tree-tabs button.active {
+  border-color: #d32f2f;
+  background: #d32f2f;
+  color: #ffffff;
+}
+
+.tree-panel-table {
+  min-height: 0;
+  overflow: auto;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.tree-table-row {
+  display: grid;
+  grid-template-columns: 34px 180px minmax(260px, 1fr) 120px 100px;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  border-bottom: 1px solid #eef2f6;
+  padding: 0 12px;
+}
+
+.tree-table-row.header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  color: #63758a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tree-table-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-action {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.tree-panel-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid #eef2f6;
+  background: #f8fafc;
+  padding: 10px 12px;
 }
 
 .product-detail-body {

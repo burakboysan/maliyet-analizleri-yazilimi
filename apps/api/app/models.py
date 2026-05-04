@@ -149,6 +149,31 @@ class ProductCostRevisionResponse(BaseModel):
     message: str
 
 
+class ProductTreeQuantityUpdateRequest(BaseModel):
+    miktar: float | int | str
+
+
+class ProductTreeDeleteRequest(BaseModel):
+    item_ids: list[int]
+
+
+class ProductTreeDeleteResponse(BaseModel):
+    deleted_count: int
+    message: str
+
+
+class ProductTreeLaborUpdateRequest(BaseModel):
+    labor_rows: list[ProductLaborUpdateRequest]
+    recalculate_cost: bool = True
+
+
+class ProductTreeRecalculateResponse(BaseModel):
+    product_id: int
+    cost_recalculated: bool = False
+    recalculation_error: str | None = None
+    detail: ProductDetailResponse
+
+
 class ProductTreeResponse(BaseModel):
     product_id: int
     stats: dict[str, float | int]
