@@ -185,6 +185,20 @@ class ProductTreeMaterialAddResponse(BaseModel):
     message: str
 
 
+class ProductTreeMaterialCodeResolveRequest(BaseModel):
+    codes: list[str]
+
+
+class ProductTreeMaterialCodeResolveItem(BaseModel):
+    kod: str
+    ad: str
+    found: bool
+
+
+class ProductTreeMaterialCodeResolveResponse(BaseModel):
+    items: list[ProductTreeMaterialCodeResolveItem]
+
+
 class ProductTreeLaborUpdateRequest(BaseModel):
     labor_rows: list[ProductLaborUpdateRequest]
     recalculate_cost: bool = True

@@ -40,6 +40,7 @@ import {
   login,
   recalculateProductTreeCost,
   reviseProductCosts,
+  resolveProductTreeMaterialCodes,
   searchProductTreeMaterials,
   saveProductTreeLabor,
   updateProduct,
@@ -54,6 +55,7 @@ import {
   type ProductTreeItem,
   type ProductTreeMaterial,
   type ProductTreeMaterialAddItem,
+  type ProductTreeMaterialResolveItem,
   type UserInfo,
 } from "./api";
 
@@ -189,6 +191,40 @@ function canSeeModule(modules: ModuleInfo[], key: string) {
 function isMasterUser(user: UserInfo | null) {
   const role = String(user?.rol_adi ?? "").trim().toLowerCase();
   return role === "owner" || role === "master admin" || role === "admin";
+}
+
+function parseBulkMaterialRows(text: string) {
+  const quantityByCode = new Map<string, number | null>();
+  const codes: string[] = [];
+  for (const line of text.split("\n")) {
+    const normalizedLine = line.trim().replace(/\s+/g, " ");
+    if (!normalizedLine) {
+      continue;
+    }
+    const [code, quantityText] = normalizedLine.split(" ");
+    if (!code || !quantityText) {
+      continue;
+    }
+    const quantity = Number(quantityText.replace(",", "."));
+    if (!codes.includes(code)) {
+      codes.push(code);
+    }
+    if (!Number.isFinite(quantity)) {
+      quantityByCode.set(code, null);
+      continue;
+    }
+    if (quantityByCode.get(code) !== null) {
+      quantityByCode.set(code, (quantityByCode.get(code) ?? 0) + quantity);
+    }
+  }
+  return codes.map((kod) => {
+    const miktar = quantityByCode.get(kod) ?? null;
+    return {
+      kod,
+      miktar,
+      validQuantity: typeof miktar === "number" && Number.isFinite(miktar) && miktar > 0,
+    };
+  });
 }
 
 export function App() {
@@ -584,6 +620,10 @@ export function App() {
     return searchProductTreeMaterials(token, materialType, search);
   }
 
+  async function handleResolveTreeMaterialCodes(codes: string[]) {
+    return resolveProductTreeMaterialCodes(token, codes);
+  }
+
   async function handleAddTreeMaterials(items: ProductTreeMaterialAddItem[]) {
     if (!selectedProduct || !items.length) {
       return;
@@ -862,6 +902,7 @@ export function App() {
           onDeleteItems={handleDeleteTreeItems}
           onSave={handleSaveProductTree}
           onSaveLabor={handleSaveTreeLabor}
+          onResolveMaterialCodes={handleResolveTreeMaterialCodes}
           onSearchMaterials={handleSearchTreeMaterials}
           onUpdateQuantity={handleUpdateTreeQuantity}
           product={selectedProduct}
@@ -1077,6 +1118,7 @@ function ProductTreeModal({
   onDeleteItems,
   onSave,
   onSaveLabor,
+  onResolveMaterialCodes,
   onSearchMaterials,
   onUpdateQuantity,
   product,
@@ -1090,6 +1132,7 @@ function ProductTreeModal({
   onDeleteItems: (itemIds: number[]) => void;
   onSave: () => void;
   onSaveLabor: (laborRows: ProductLabor[]) => void;
+  onResolveMaterialCodes: (codes: string[]) => Promise<ProductTreeMaterialResolveItem[]>;
   onSearchMaterials: (materialType: string, search: string) => Promise<ProductTreeMaterial[]>;
   onUpdateQuantity: (item: ProductTreeItem) => void;
   product: ProductInfo | null;
@@ -1106,6 +1149,11 @@ function ProductTreeModal({
   const [isSearchingMaterials, setIsSearchingMaterials] = useState(false);
   const [addPanelError, setAddPanelError] = useState<string | null>(null);
   const [isInfoOpen, setIsInfoOpen] = useState(false);
+  const [isBulkPanelOpen, setIsBulkPanelOpen] = useState(false);
+  const [bulkText, setBulkText] = useState("");
+  const [bulkRows, setBulkRows] = useState<Array<{ kod: string; ad: string; miktar: number | null; found: boolean; validQuantity: boolean }>>([]);
+  const [isResolvingBulk, setIsResolvingBulk] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
   const tabItems = [
     { key: "yari" as const, label: "Yarı Mamüller", items: tree?.yari_mamuller ?? [] },
     { key: "mamul" as const, label: "Mamüller", items: tree?.mamuller ?? [] },
@@ -1115,6 +1163,7 @@ function ProductTreeModal({
   const activeSelection = selectedItems[activeTab] ?? [];
   const activeMaterialType = activeTab === "yari" ? "Yarı Mamül" : activeTab === "mamul" ? "Mamül" : "";
   const canAddMaterial = isMaster && Boolean(activeMaterialType);
+  const canBulkAddMaterial = isMaster && activeTab === "mamul";
 
   useEffect(() => {
     const laborByType = new Map((tree?.iscilikler ?? []).map((row) => [row.iscilik_tipi ?? "", row]));
@@ -1137,6 +1186,10 @@ function ProductTreeModal({
     setMaterialResults([]);
     setSelectedMaterialCodes([]);
     setAddPanelError(null);
+    setIsBulkPanelOpen(false);
+    setBulkText("");
+    setBulkRows([]);
+    setBulkError(null);
   }, [activeTab]);
 
   useEffect(() => {
@@ -1179,6 +1232,65 @@ function ProductTreeModal({
     };
   }, [activeMaterialType, isAddPanelOpen, materialSearch, onSearchMaterials]);
 
+  useEffect(() => {
+    if (!isBulkPanelOpen || bulkText.trim().length === 0) {
+      setBulkRows([]);
+      setBulkError(null);
+      setIsResolvingBulk(false);
+      return;
+    }
+
+    const parsed = parseBulkMaterialRows(bulkText);
+    if (!parsed.length) {
+      setBulkRows([]);
+      setBulkError("Her satırı KOD MİKTAR formatında girin.");
+      setIsResolvingBulk(false);
+      return;
+    }
+
+    let isCurrent = true;
+    setIsResolvingBulk(true);
+    setBulkError(null);
+    const timeoutId = window.setTimeout(() => {
+      onResolveMaterialCodes(parsed.map((row) => row.kod))
+        .then((resolvedRows) => {
+          if (!isCurrent) {
+            return;
+          }
+          const resolvedMap = new Map(resolvedRows.map((row) => [row.kod, row]));
+          setBulkRows(
+            parsed.map((row) => {
+              const resolved = resolvedMap.get(row.kod);
+              return {
+                kod: row.kod,
+                ad: resolved?.ad ?? "",
+                miktar: row.miktar,
+                found: Boolean(resolved?.found),
+                validQuantity: row.validQuantity,
+              };
+            }),
+          );
+        })
+        .catch((err) => {
+          if (!isCurrent) {
+            return;
+          }
+          setBulkError(err instanceof Error ? err.message : "Toplu mamül kodları kontrol edilemedi.");
+          setBulkRows([]);
+        })
+        .finally(() => {
+          if (isCurrent) {
+            setIsResolvingBulk(false);
+          }
+        });
+    }, 300);
+
+    return () => {
+      isCurrent = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [bulkText, isBulkPanelOpen, onResolveMaterialCodes]);
+
   function toggleItem(tabKey: string, itemId: number) {
     setSelectedItems((current) => {
       const existing = current[tabKey] ?? [];
@@ -1212,6 +1324,19 @@ function ProductTreeModal({
     setMaterialResults([]);
     setMaterialQuantity("1");
     setAddPanelError(null);
+  }
+
+  async function handleAddBulkMaterials() {
+    const validRows = bulkRows.filter((row) => row.found && row.validQuantity && row.miktar && row.miktar > 0);
+    if (!validRows.length) {
+      setBulkError("Kaydedilecek geçerli bir mamül bulunamadı.");
+      return;
+    }
+    await onAddMaterials(validRows.map((row) => ({ kod: row.kod, ad: row.ad, miktar: Number(row.miktar), malzeme_tipi: "Mamül" })));
+    setBulkText("");
+    setBulkRows([]);
+    setBulkError(null);
+    setIsBulkPanelOpen(false);
   }
 
   return (
@@ -1336,6 +1461,37 @@ function ProductTreeModal({
                       {addPanelError ? <div className="inline-error">{addPanelError}</div> : null}
                     </div>
                   ) : null}
+                  {canBulkAddMaterial && isBulkPanelOpen ? (
+                    <div className="tree-bulk-panel">
+                      <label>
+                        Toplu Mamül Listesi
+                        <textarea
+                          value={bulkText}
+                          onChange={(event) => setBulkText(event.target.value)}
+                          placeholder={"Excel'den KOD MİKTAR formatında yapıştırın\nYMM-001 12,5\nYMM-002 8"}
+                        />
+                      </label>
+                      <div className="tree-bulk-preview">
+                        <div className="tree-table-row bulk-tree-row header">
+                          <span>Kod</span>
+                          <span>Ad</span>
+                          <span>Miktar</span>
+                          <span>Durum</span>
+                        </div>
+                        {isResolvingBulk ? <div className="table-empty-state">Mamül kodları kontrol ediliyor...</div> : null}
+                        {!isResolvingBulk && !bulkRows.length ? <div className="table-empty-state">Önizleme için satır yapıştırın.</div> : null}
+                        {bulkRows.map((row) => (
+                          <div className={row.found && row.validQuantity ? "tree-table-row bulk-tree-row" : "tree-table-row bulk-tree-row invalid"} key={row.kod}>
+                            <span>{row.kod}</span>
+                            <span>{row.ad || "Kod bulunamadı veya Mamül değil"}</span>
+                            <span>{row.validQuantity ? formatValue(row.miktar) : "Hatalı"}</span>
+                            <span>{row.found && row.validQuantity ? "Hazır" : "Kontrol gerekli"}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {bulkError ? <div className="inline-error">{bulkError}</div> : null}
+                    </div>
+                  ) : null}
                   <div className="tree-table-row header">
                     <span></span>
                     <span>Kod</span>
@@ -1372,9 +1528,19 @@ function ProductTreeModal({
                           <button className="product-action" type="button" onClick={() => setIsAddPanelOpen((value) => !value)} disabled={isSaving}>
                             {isAddPanelOpen ? "Ekleme Alanını Kapat" : `${activeMaterialType} Ekle`}
                           </button>
+                          {canBulkAddMaterial ? (
+                            <button className="product-action" type="button" onClick={() => setIsBulkPanelOpen((value) => !value)} disabled={isSaving}>
+                              {isBulkPanelOpen ? "Toplu Ekleme Alanını Kapat" : "Toplu Ekle"}
+                            </button>
+                          ) : null}
                           {isAddPanelOpen ? (
                             <button className="product-action emphasis" type="button" onClick={handleAddSelectedMaterials} disabled={isSaving || !selectedMaterialCodes.length}>
                               Seçili Malzemeleri Ekle
+                            </button>
+                          ) : null}
+                          {isBulkPanelOpen ? (
+                            <button className="product-action emphasis" type="button" onClick={handleAddBulkMaterials} disabled={isSaving || isResolvingBulk || !bulkRows.some((row) => row.found && row.validQuantity)}>
+                              Toplu Listeyi Ekle
                             </button>
                           ) : null}
                         </>

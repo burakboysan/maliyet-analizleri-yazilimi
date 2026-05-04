@@ -25,6 +25,9 @@ from app.models import (
     ProductTreeDeleteResponse,
     ProductTreeMaterialAddRequest,
     ProductTreeMaterialAddResponse,
+    ProductTreeMaterialCodeResolveRequest,
+    ProductTreeMaterialCodeResolveResponse,
+    ProductTreeMaterialCodeResolveItem,
     ProductTreeMaterialSearchResponse,
     ProductTreeLaborUpdateRequest,
     ProductTreeQuantityUpdateRequest,
@@ -899,6 +902,37 @@ def add_product_tree_materials_route(
         raise HTTPException(status_code=500, detail=f"Malzeme eklenemedi: {exc}") from exc
 
     return ProductTreeMaterialAddResponse(inserted_count=inserted_count, message=f"{inserted_count} malzeme ürün ağacına eklendi.")
+
+
+@router.post("/tree-materials/resolve", response_model=ProductTreeMaterialCodeResolveResponse)
+def resolve_product_tree_material_codes_route(
+    payload: ProductTreeMaterialCodeResolveRequest,
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    codes = list(dict.fromkeys(code.strip() for code in payload.codes if code and code.strip()))
+    if not codes:
+        return ProductTreeMaterialCodeResolveResponse(items=[])
+
+    placeholders = ", ".join(["%s"] * len(codes))
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute(
+        f"""
+        SELECT malzeme_kodu, ad
+        FROM malzemeler
+        WHERE malzeme_kodu IN ({placeholders})
+          AND malzeme_tipi = 'Mamül'
+        """,
+        tuple(codes),
+    )
+    found_map = {str(row.get("malzeme_kodu") or ""): str(row.get("ad") or "") for row in cursor.fetchall()}
+    return ProductTreeMaterialCodeResolveResponse(
+        items=[
+            ProductTreeMaterialCodeResolveItem(kod=code, ad=found_map.get(code, ""), found=code in found_map)
+            for code in codes
+        ]
+    )
 
 
 @router.put("/{product_id}/tree/labor", response_model=ProductTreeRecalculateResponse)

@@ -1162,6 +1162,43 @@ button.data-row.selected {
   padding: 0 11px;
 }
 
+.tree-bulk-panel {
+  display: grid;
+  gap: 10px;
+  border-bottom: 1px solid #dce4ee;
+  background: #ffffff;
+  padding: 10px 12px;
+}
+
+.tree-bulk-panel label {
+  display: grid;
+  gap: 6px;
+  color: #4f647d;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tree-bulk-panel textarea {
+  min-height: 92px;
+  resize: vertical;
+  border: 1px solid #d2dce9;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #17304f;
+  font: inherit;
+  line-height: 1.5;
+  padding: 9px 11px;
+}
+
+.tree-bulk-preview {
+  display: grid;
+  max-height: 210px;
+  overflow: auto;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
 .tree-material-results {
   grid-column: 1 / -1;
   display: grid;
@@ -1223,6 +1260,15 @@ button.data-row.selected {
 
 .tree-table-row.labor-tree-row {
   grid-template-columns: 34px minmax(260px, 1fr) 140px 140px 100px;
+}
+
+.tree-table-row.bulk-tree-row {
+  grid-template-columns: 150px minmax(260px, 1fr) 120px 150px;
+}
+
+.tree-table-row.invalid {
+  background: #fff7f7;
+  color: #9b2424;
 }
 
 .tree-table-row.header {

@@ -151,6 +151,12 @@ export type ProductTreeMaterialAddResponse = {
   message: string;
 };
 
+export type ProductTreeMaterialResolveItem = {
+  kod: string;
+  ad: string;
+  found: boolean;
+};
+
 export type ProductTreeRecalculateResponse = {
   product_id: number;
   cost_recalculated: boolean;
@@ -414,6 +420,22 @@ export async function addProductTreeMaterials(token: string, productId: number, 
     throw new Error(await parseError(response));
   }
   return (await response.json()) as ProductTreeMaterialAddResponse;
+}
+
+export async function resolveProductTreeMaterialCodes(token: string, codes: string[]): Promise<ProductTreeMaterialResolveItem[]> {
+  const response = await apiFetch(`${API_BASE_URL}/products/tree-materials/resolve`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ codes }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  const payload = (await response.json()) as { items?: ProductTreeMaterialResolveItem[] };
+  return payload.items ?? [];
 }
 
 export async function saveProductTreeLabor(token: string, productId: number, laborRows: ProductLabor[]): Promise<ProductTreeRecalculateResponse> {
