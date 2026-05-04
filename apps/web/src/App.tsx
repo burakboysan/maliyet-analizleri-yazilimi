@@ -1219,11 +1219,10 @@ function ProductTreeModal({
           <div>
             <span>Ürün Ağacı Yönetimi</span>
             <h2 id="product-tree-title">{formatValue(product?.urun_kodu)}</h2>
-            <p>Ürün bileşenlerini, malzemeleri ve işçilik saatlerini yönetin</p>
           </div>
           <div className="tree-modal-actions">
             {isMaster ? (
-              <button className="product-action emphasis" type="button" onClick={onSave} disabled={isSaving || isLoading || !tree}>
+              <button className="product-action emphasis save-action" type="button" onClick={onSave} disabled={isSaving || isLoading || !tree}>
                 <Save size={18} />
                 <span>{isSaving ? "Kaydediliyor" : "Kaydet"}</span>
               </button>
@@ -1303,7 +1302,6 @@ function ProductTreeModal({
                       <div className="tree-add-panel-header">
                         <div>
                           <strong>{activeMaterialType} Ekle</strong>
-                          <span>Masaüstündeki seçim akışıyla aynı malzeme listesinden ekleme yapar.</span>
                         </div>
                         <button className="product-action compact-action" type="button" onClick={() => setIsAddPanelOpen((value) => !value)} disabled={isSaving}>
                           {isAddPanelOpen ? "Ekleme Alanını Kapat" : `${activeMaterialType} Ekle`}

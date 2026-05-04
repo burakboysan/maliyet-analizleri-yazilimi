@@ -749,7 +749,7 @@ button.data-row.selected {
 
 .product-action:disabled {
   cursor: not-allowed;
-  opacity: 0.62;
+  opacity: 1;
 }
 
 .product-action:disabled:hover {
@@ -784,6 +784,18 @@ button.data-row.selected {
 .product-action.emphasis:disabled:hover {
   border-color: #2f9e7e;
   background: #2f9e7e;
+  color: #ffffff;
+}
+
+.product-action.save-action,
+.product-action.save-action span,
+.product-action.save-action svg {
+  color: #ffffff;
+}
+
+.product-action.save-action:disabled,
+.product-action.save-action:disabled span,
+.product-action.save-action:disabled svg {
   color: #ffffff;
 }
 
@@ -941,7 +953,7 @@ button.data-row.selected {
 .product-tree-modal {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  width: min(1180px, 100%);
+  width: min(1060px, 100%);
   max-height: calc(100vh - 48px);
   border: 1px solid #cfd9e6;
   border-radius: 8px;
@@ -954,10 +966,10 @@ button.data-row.selected {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   border-bottom: 1px solid #e5ebf2;
-  background: #f8fafc;
-  padding: 18px 20px;
+  background: #ffffff;
+  padding: 14px 18px;
 }
 
 .product-detail-header span,
@@ -972,8 +984,8 @@ button.data-row.selected {
 
 .product-detail-header h2 {
   color: #19334d;
-  font-size: 22px;
-  margin-top: 4px;
+  font-size: 20px;
+  margin-top: 3px;
 }
 
 .product-detail-header p {
@@ -998,13 +1010,20 @@ button.data-row.selected {
 
 .modal-close-button {
   display: inline-grid;
-  width: 40px;
-  height: 40px;
+  width: 38px;
+  height: 38px;
   place-items: center;
   border: 1px solid #d8e1ec;
   border-radius: 8px;
   background: #ffffff;
   color: #24415f;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.modal-close-button:hover {
+  border-color: #d32f2f;
+  background: #fff6f6;
+  color: #b92727;
 }
 
 .tree-modal-actions {
@@ -1017,29 +1036,41 @@ button.data-row.selected {
 .product-tree-modal-body {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 14px;
+  gap: 10px;
   min-height: 0;
   overflow: hidden;
-  padding: 16px;
+  padding: 14px 16px 16px;
 }
 
 .tree-modal-stats {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   padding: 0;
 }
 
+.tree-modal-stats span {
+  border-color: #e0e8f2;
+  background: #ffffff;
+  color: #24415f;
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
 .tree-tabs {
-  display: flex;
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 4px;
   border-bottom: 1px solid #e5ebf2;
-  padding-bottom: 12px;
+  padding-bottom: 10px;
 }
 
 .tree-tabs button {
-  min-height: 38px;
+  min-height: 34px;
   border: 1px solid #dce4ee;
-  border-radius: 8px;
+  border-radius: 7px;
   background: #ffffff;
   color: #24415f;
   font-weight: 800;
@@ -1047,9 +1078,15 @@ button.data-row.selected {
 }
 
 .tree-tabs button.active {
-  border-color: #d32f2f;
-  background: #d32f2f;
+  border-color: #24415f;
+  background: #24415f;
   color: #ffffff;
+}
+
+.tree-tabs button:not(.active):hover {
+  border-color: #24415f;
+  background: #f4f7fb;
+  color: #17304f;
 }
 
 .tree-panel-table {
@@ -1062,10 +1099,10 @@ button.data-row.selected {
 
 .tree-add-panel {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   border-bottom: 1px solid #dce4ee;
-  background: #f8fbff;
-  padding: 12px;
+  background: #ffffff;
+  padding: 10px 12px;
 }
 
 .tree-add-panel-header {
@@ -1082,7 +1119,7 @@ button.data-row.selected {
 
 .tree-add-panel-header strong {
   color: #17304f;
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .tree-add-panel-header span {
@@ -1094,7 +1131,9 @@ button.data-row.selected {
 .tree-add-panel-body {
   display: grid;
   grid-template-columns: minmax(260px, 1fr) 140px;
-  gap: 12px;
+  gap: 10px;
+  border-top: 1px solid #eef2f6;
+  padding-top: 10px;
 }
 
 .tree-add-panel-body label {
@@ -1106,7 +1145,7 @@ button.data-row.selected {
 }
 
 .tree-add-panel-body input {
-  min-height: 38px;
+  min-height: 34px;
   border: 1px solid #d2dce9;
   border-radius: 8px;
   background: #ffffff;
@@ -1118,7 +1157,7 @@ button.data-row.selected {
 .tree-material-results {
   grid-column: 1 / -1;
   display: grid;
-  max-height: 210px;
+  max-height: 178px;
   overflow: auto;
   border: 1px solid #dce4ee;
   border-radius: 8px;
@@ -1130,7 +1169,7 @@ button.data-row.selected {
   grid-template-columns: 28px 150px minmax(220px, 1fr) 130px;
   align-items: center;
   gap: 10px;
-  min-height: 38px;
+  min-height: 34px;
   border-bottom: 1px solid #eef2f6;
   padding: 0 10px;
 }
@@ -1169,7 +1208,7 @@ button.data-row.selected {
   grid-template-columns: 34px 180px minmax(260px, 1fr) 120px 100px;
   align-items: center;
   gap: 12px;
-  min-height: 42px;
+  min-height: 38px;
   border-bottom: 1px solid #eef2f6;
   padding: 0 12px;
 }
@@ -1192,7 +1231,7 @@ button.data-row.selected {
 }
 
 .compact-action {
-  min-height: 30px;
+  min-height: 28px;
   padding: 0 10px;
 }
 
