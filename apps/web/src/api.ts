@@ -36,8 +36,16 @@ export type ProductInfo = {
   urun_modeli?: string | null;
   maliyet?: number | null;
   filtre_medyasi?: string | null;
-  debi?: string | null;
-  fan_basinc?: string | null;
+  filtre_medyasi_kodu?: string | null;
+  patlac_kumanda_tipi?: string | null;
+  toplam_filtre_alani?: number | null;
+  debi?: number | null;
+  fan_basinc?: number | null;
+  fan_basinc_birimi?: string | null;
+  motor?: string | null;
+  fan_kumanda_tipi?: string | null;
+  patlama_kapagi?: string | null;
+  filtre_elemani_sayisi?: number | null;
   maliyet_hesaplama_tarihi?: string | null;
 };
 
@@ -133,7 +141,7 @@ export async function fetchMaterials(token: string, search = ""): Promise<Materi
 }
 
 export async function fetchProducts(token: string, search = ""): Promise<ProductInfo[]> {
-  const params = new URLSearchParams({ limit: "100" });
+  const params = new URLSearchParams({ limit: "2000" });
   if (search.trim()) {
     params.set("search", search.trim());
   }

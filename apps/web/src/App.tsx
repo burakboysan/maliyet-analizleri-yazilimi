@@ -1,5 +1,23 @@
-import { AlertCircle, Boxes, Database, FileText, Gauge, LogOut, PackageSearch, Search, ShieldCheck } from "lucide-react";
+import {
+  AlertCircle,
+  Boxes,
+  Copy,
+  Database,
+  Download,
+  Edit,
+  FileText,
+  Gauge,
+  GitBranch,
+  LogOut,
+  PackagePlus,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  Trash2,
+  X,
+} from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 import {
   fetchMaterials,
@@ -15,6 +33,25 @@ import {
   type UserInfo,
 } from "./api";
 
+type AppView = "dashboard" | "products" | "materials";
+type ProductFilterKey =
+  | "urun_kodu"
+  | "urun_adi"
+  | "urun_kategorisi"
+  | "urun_tipi"
+  | "urun_modeli"
+  | "filtre_medyasi"
+  | "filtre_medyasi_kodu"
+  | "patlac_kumanda_tipi"
+  | "toplam_filtre_alani"
+  | "debi"
+  | "fan_basinc"
+  | "fan_basinc_birimi"
+  | "motor"
+  | "fan_kumanda_tipi"
+  | "patlama_kapagi"
+  | "filtre_elemani_sayisi";
+
 const phaseLabels: Record<number, string> = {
   1: "İlk faz",
   2: "İkinci faz",
@@ -22,17 +59,49 @@ const phaseLabels: Record<number, string> = {
   4: "Yönetici fazı",
 };
 
+const productColumns: Array<{ key: ProductFilterKey | "maliyet"; label: string; filterType?: "text" | "select" }> = [
+  { key: "urun_kodu", label: "Ürün Kodu", filterType: "text" },
+  { key: "urun_adi", label: "Ürün Adı", filterType: "text" },
+  { key: "urun_kategorisi", label: "Kategori", filterType: "select" },
+  { key: "urun_tipi", label: "Ürün Tipi", filterType: "select" },
+  { key: "urun_modeli", label: "Model", filterType: "text" },
+  { key: "maliyet", label: "Genel Toplam Maliyet" },
+  { key: "filtre_medyasi", label: "Filtre Medyası", filterType: "select" },
+  { key: "filtre_medyasi_kodu", label: "Filtre Medyası Kodu", filterType: "text" },
+  { key: "patlac_kumanda_tipi", label: "Patlaç Kontrol", filterType: "select" },
+  { key: "toplam_filtre_alani", label: "Toplam Filtre Alanı", filterType: "text" },
+  { key: "debi", label: "Debi", filterType: "text" },
+  { key: "fan_basinc", label: "Basınç", filterType: "text" },
+  { key: "fan_basinc_birimi", label: "Basınç Birimi", filterType: "select" },
+  { key: "motor", label: "Motor", filterType: "text" },
+  { key: "fan_kumanda_tipi", label: "Fan Pano Tipi", filterType: "select" },
+  { key: "patlama_kapagi", label: "Patlama Kapağı", filterType: "text" },
+  { key: "filtre_elemani_sayisi", label: "Filtre Sayısı", filterType: "text" },
+];
+
 const moduleIcons = [Boxes, Database, Gauge, FileText, ShieldCheck];
 
-function formatMoney(value?: number | null) {
-  if (value === null || value === undefined) {
+function formatValue(value?: string | number | null) {
+  if (value === null || value === undefined || value === "") {
     return "-";
   }
-  return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 }).format(value);
+  if (typeof value === "number") {
+    return new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 2 }).format(value);
+  }
+  return value;
+}
+
+function formatMoney(value?: number | null) {
+  return formatValue(value);
 }
 
 function canSeeModule(modules: ModuleInfo[], key: string) {
   return modules.some((module) => module.key === key);
+}
+
+function isMasterUser(user: UserInfo | null) {
+  const role = String(user?.rol_adi ?? "").trim().toLowerCase();
+  return role === "owner" || role === "master admin" || role === "admin";
 }
 
 export function App() {
@@ -47,9 +116,12 @@ export function App() {
   const [products, setProducts] = useState<ProductInfo[]>([]);
   const [materialSearch, setMaterialSearch] = useState("");
   const [productSearch, setProductSearch] = useState("");
+  const [productFilters, setProductFilters] = useState<Partial<Record<ProductFilterKey, string>>>({});
   const [selectedProduct, setSelectedProduct] = useState<ProductInfo | null>(null);
   const [productTree, setProductTree] = useState<ProductTree | null>(null);
+  const [view, setView] = useState<AppView>("dashboard");
   const [dataError, setDataError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(false);
 
   useEffect(() => {
@@ -102,6 +174,43 @@ export function App() {
   }, [materialSearch, modules, productSearch, selectedProduct, token, user]);
 
   const firstPhaseModules = useMemo(() => modules.filter((module) => module.phase === 1), [modules]);
+  const activeFilterCount = useMemo(
+    () => Object.values(productFilters).filter((value) => String(value ?? "").trim()).length + (productSearch.trim() ? 1 : 0),
+    [productFilters, productSearch],
+  );
+  const productFilterOptions = useMemo(() => {
+    const options: Partial<Record<ProductFilterKey, string[]>> = {};
+    for (const column of productColumns) {
+      if (column.filterType !== "select") {
+        continue;
+      }
+      const key = column.key as ProductFilterKey;
+      const values = new Set<string>();
+      for (const product of products) {
+        const value = product[key];
+        if (value !== null && value !== undefined && String(value).trim()) {
+          values.add(String(value));
+        }
+      }
+      options[key] = Array.from(values).sort((a, b) => a.localeCompare(b, "tr"));
+    }
+    return options;
+  }, [products]);
+  const filteredProducts = useMemo(() => {
+    return products.filter((product) => {
+      return productColumns.every((column) => {
+        if (!column.filterType) {
+          return true;
+        }
+        const filterValue = String(productFilters[column.key as ProductFilterKey] ?? "").trim().toLocaleLowerCase("tr-TR");
+        if (!filterValue) {
+          return true;
+        }
+        const cellValue = String(product[column.key as keyof ProductInfo] ?? "").toLocaleLowerCase("tr-TR");
+        return cellValue.includes(filterValue);
+      });
+    });
+  }, [productFilters, products]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -129,6 +238,36 @@ export function App() {
     } catch (err) {
       setDataError(err instanceof Error ? err.message : "Ürün ağacı yüklenemedi.");
     }
+  }
+
+  function handleProductAction(action: string) {
+    if (action === "tree") {
+      if (selectedProduct) {
+        handleProductSelect(selectedProduct);
+      } else {
+        setNotice("Ürün ağacını açmak için önce tablodan bir ürün seçin.");
+      }
+      return;
+    }
+    if (action === "export") {
+      exportProducts(filteredProducts);
+      setNotice("Görünen ürün listesi CSV olarak hazırlandı.");
+      return;
+    }
+    if (action === "close") {
+      setView("dashboard");
+      return;
+    }
+    setNotice("Bu masaüstü aksiyonu web API'ye taşınacağı sıradaki adım için ekranda hazır tutuluyor.");
+  }
+
+  function updateProductFilter(key: ProductFilterKey, value: string) {
+    setProductFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function clearProductFilters() {
+    setProductSearch("");
+    setProductFilters({});
   }
 
   function handleLogout() {
@@ -191,17 +330,31 @@ export function App() {
           </div>
         </div>
         <nav className="nav-list" aria-label="Modül navigasyonu">
-          <a className="active" href="#dashboard">Genel Bakış</a>
-          <a href="#products">Ürünler</a>
-          <a href="#materials">Malzemeler</a>
+          <button className={view === "dashboard" ? "active" : ""} type="button" onClick={() => setView("dashboard")}>
+            Genel Bakış
+          </button>
+          {canSeeModule(modules, "products") ? (
+            <button className={view === "products" ? "active" : ""} type="button" onClick={() => setView("products")}>
+              Ürünler
+            </button>
+          ) : null}
+          {canSeeModule(modules, "materials") ? (
+            <button className={view === "materials" ? "active" : ""} type="button" onClick={() => setView("materials")}>
+              Malzemeler
+            </button>
+          ) : null}
         </nav>
       </aside>
 
       <section className="content">
         <header className="topbar">
           <div>
-            <h1>Maliyet Analizleri Web App</h1>
-            <p>Ürün ve malzeme modüllerinin ilk web okuma ekranı aynı veritabanı üzerinden çalışıyor.</p>
+            <h1>{view === "products" ? "Ürünler" : view === "materials" ? "Malzemeler" : "Maliyet Analizleri Web App"}</h1>
+            <p>
+              {view === "products"
+                ? "Masaüstü Ürünler ekranındaki tablo, filtreler ve aksiyonlar web modül ekranına taşındı."
+                : "Ürün ve malzeme modülleri aynı veritabanı üzerinden çalışıyor."}
+            </p>
           </div>
           <div className="topbar-actions">
             <div className="user-chip">
@@ -219,24 +372,6 @@ export function App() {
           </div>
         </header>
 
-        <section className="status-grid" id="dashboard">
-          <div className="status-panel">
-            <span>Modül Yetkisi</span>
-            <strong>{modules.length} modül</strong>
-            <p>Liste kullanıcının web yetkilerine göre süzülür.</p>
-          </div>
-          <div className="status-panel">
-            <span>Ürünler</span>
-            <strong>{products.length} kayıt</strong>
-            <p>Ürün ağacı detayı seçili ürün üzerinden okunur.</p>
-          </div>
-          <div className="status-panel">
-            <span>Malzemeler</span>
-            <strong>{materials.length} kayıt</strong>
-            <p>Malzeme fiyatı masaüstündeki aynı hesapla gösterilir.</p>
-          </div>
-        </section>
-
         {dataError ? (
           <div className="error-state inline-error">
             <AlertCircle size={20} />
@@ -244,142 +379,311 @@ export function App() {
           </div>
         ) : null}
 
-        <section className="workbench-grid">
-          <section className="data-panel" id="products">
-            <div className="panel-heading">
-              <div>
-                <h2>Ürünler</h2>
-                <p>Ürün seçerek ağaç özetini kontrol edin.</p>
-              </div>
-              <label className="search-box">
-                <Search size={18} />
-                <input value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Ürün ara" />
-              </label>
-            </div>
-            <div className="data-table product-table" role="table" aria-label="Ürün listesi">
-              <div className="data-row header" role="row">
-                <span>Kod</span>
-                <span>Ad</span>
-                <span>Kategori</span>
-                <span>Maliyet</span>
-              </div>
-              {products.map((product) => (
-                <button
-                  className={selectedProduct?.id === product.id ? "data-row selected" : "data-row"}
-                  key={product.id}
-                  type="button"
-                  onClick={() => handleProductSelect(product)}
-                >
-                  <span>{product.urun_kodu || "-"}</span>
-                  <span>{product.urun_adi || "-"}</span>
-                  <span>{product.urun_kategorisi || "-"}</span>
-                  <span>{formatMoney(product.maliyet)}</span>
-                </button>
-              ))}
-            </div>
-          </section>
+        {notice ? (
+          <div className="notice-state">
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice(null)} title="Kapat">
+              <X size={16} />
+            </button>
+          </div>
+        ) : null}
 
-          <section className="data-panel tree-panel">
-            <div className="panel-heading">
-              <div>
-                <h2>Ürün Ağacı</h2>
-                <p>{selectedProduct ? selectedProduct.urun_kodu : "Bir ürün seçin."}</p>
-              </div>
-              <PackageSearch size={24} />
-            </div>
-            {productTree ? (
-              <>
-                <div className="tree-stats">
-                  <span>Yarı Mamül: {productTree.stats.yari_mamul_count ?? 0}</span>
-                  <span>Mamül: {productTree.stats.mamul_count ?? 0}</span>
-                  <span>Alt Ürün: {productTree.stats.alt_urun_count ?? 0}</span>
-                  <span>İşçilik: {formatMoney(productTree.stats.iscilik_toplam)} saat</span>
-                </div>
-                <div className="tree-lists">
-                  <TreeList title="Yarı Mamüller" items={productTree.yari_mamuller} />
-                  <TreeList title="Mamüller" items={productTree.mamuller} />
-                  <TreeList title="Alt Ürünler" items={productTree.alt_urunler} />
-                </div>
-              </>
-            ) : (
-              <div className="empty-state">{isLoadingData ? "Veriler yükleniyor..." : "Ürün ağacı burada gösterilecek."}</div>
-            )}
-          </section>
-
-          <section className="data-panel wide-panel" id="materials">
-            <div className="panel-heading">
-              <div>
-                <h2>Malzemeler</h2>
-                <p>Masaüstüyle aynı malzeme fiyat kaynağı kullanılır.</p>
-              </div>
-              <label className="search-box">
-                <Search size={18} />
-                <input value={materialSearch} onChange={(event) => setMaterialSearch(event.target.value)} placeholder="Malzeme ara" />
-              </label>
-            </div>
-            <div className="data-table material-table" role="table" aria-label="Malzeme listesi">
-              <div className="data-row header" role="row">
-                <span>Kod</span>
-                <span>Tip</span>
-                <span>Ad</span>
-                <span>Fiyat EUR</span>
-                <span>Güncelleme</span>
-              </div>
-              {materials.map((material) => (
-                <div className="data-row" role="row" key={material.id}>
-                  <span>{material.malzeme_kodu || "-"}</span>
-                  <span>{material.malzeme_tipi || "-"}</span>
-                  <span>{material.ad || "-"}</span>
-                  <span>{formatMoney(material.fiyat)}</span>
-                  <span>{material.guncelleme_tarihi || "-"}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="module-section wide-panel" id="modules">
-            <div className="section-heading">
-              <div>
-                <h2>Taşınacak Modüller</h2>
-                <p>İlk fazdaki ana akışlar ürün, malzeme, fiyat listesi ve maliyet hesaplama üzerine kuruluyor.</p>
-              </div>
-            </div>
-            <div className="module-table" role="table" aria-label="Web app modül taşıma listesi">
-              <div className="module-row header" role="row">
-                <span>Modül</span>
-                <span>Faz</span>
-                <span>Durum</span>
-              </div>
-              {modules.map((module, index) => {
-                const Icon = moduleIcons[index % moduleIcons.length];
-                return (
-                  <div className="module-row" role="row" key={module.key}>
-                    <span className="module-title">
-                      <Icon size={18} />
-                      {module.title}
-                    </span>
-                    <span>{phaseLabels[module.phase] ?? `${module.phase}. faz`}</span>
-                    <span className={module.phase === 1 ? "tag active-tag" : "tag"}>{module.phase === 1 ? "Öncelikli" : "Planlandı"}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="migration-panel wide-panel" id="migration">
-            <div>
-              <h2>İlk Faz Odağı</h2>
-              <p>Bu ekrandan sonra ürün ekleme, malzeme ekleme ve maliyet hesaplama aksiyonları sırayla web API'ye alınacak.</p>
-            </div>
-            <ul>
-              {firstPhaseModules.map((module) => (
-                <li key={module.key}>{module.title}</li>
-              ))}
-            </ul>
-          </section>
-        </section>
+        {view === "products" ? (
+          <ProductModuleScreen
+            activeFilterCount={activeFilterCount}
+            filterOptions={productFilterOptions}
+            filters={productFilters}
+            isLoading={isLoadingData}
+            isMaster={isMasterUser(user)}
+            onAction={handleProductAction}
+            onClearFilters={clearProductFilters}
+            onFilterChange={updateProductFilter}
+            onSearchChange={setProductSearch}
+            onSelectProduct={handleProductSelect}
+            productSearch={productSearch}
+            productTree={productTree}
+            products={filteredProducts}
+            selectedProduct={selectedProduct}
+          />
+        ) : view === "materials" ? (
+          <MaterialsScreen materials={materials} materialSearch={materialSearch} onMaterialSearchChange={setMaterialSearch} />
+        ) : (
+          <DashboardScreen firstPhaseModules={firstPhaseModules} materials={materials} modules={modules} products={products} setView={setView} />
+        )}
       </section>
     </main>
+  );
+}
+
+function ProductModuleScreen({
+  activeFilterCount,
+  filterOptions,
+  filters,
+  isLoading,
+  isMaster,
+  onAction,
+  onClearFilters,
+  onFilterChange,
+  onSearchChange,
+  onSelectProduct,
+  productSearch,
+  productTree,
+  products,
+  selectedProduct,
+}: {
+  activeFilterCount: number;
+  filterOptions: Partial<Record<ProductFilterKey, string[]>>;
+  filters: Partial<Record<ProductFilterKey, string>>;
+  isLoading: boolean;
+  isMaster: boolean;
+  onAction: (action: string) => void;
+  onClearFilters: () => void;
+  onFilterChange: (key: ProductFilterKey, value: string) => void;
+  onSearchChange: (value: string) => void;
+  onSelectProduct: (product: ProductInfo) => void;
+  productSearch: string;
+  productTree: ProductTree | null;
+  products: ProductInfo[];
+  selectedProduct: ProductInfo | null;
+}) {
+  return (
+    <section className="product-module-shell">
+      <aside className="product-filter-panel">
+        <div className="filter-title">
+          <strong>Filtreler</strong>
+          <span>{activeFilterCount ? `${activeFilterCount} aktif filtre` : "Filtre yok"}</span>
+        </div>
+        <label className="search-box full-search">
+          <Search size={18} />
+          <input value={productSearch} onChange={(event) => onSearchChange(event.target.value)} placeholder="Anında arama" />
+        </label>
+        <button className="filter-clear-button" type="button" onClick={onClearFilters}>
+          Tüm Filtreleri Temizle
+        </button>
+        <div className="filter-grid">
+          {productColumns
+            .filter((column) => column.filterType)
+            .map((column) => {
+              const key = column.key as ProductFilterKey;
+              return (
+                <label className="filter-control" key={key}>
+                  <span>{column.label}</span>
+                  {column.filterType === "select" ? (
+                    <select value={filters[key] ?? ""} onChange={(event) => onFilterChange(key, event.target.value)}>
+                      <option value="">Tümü</option>
+                      {(filterOptions[key] ?? []).map((value) => (
+                        <option value={value} key={value}>
+                          {value}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input value={filters[key] ?? ""} onChange={(event) => onFilterChange(key, event.target.value)} placeholder={`${column.label} ara`} />
+                  )}
+                </label>
+              );
+            })}
+        </div>
+      </aside>
+
+      <section className="product-workspace">
+        <div className="product-toolbar">
+          <ProductActionButton icon={<PackagePlus size={18} />} label="Ürün Ekle" onClick={() => onAction("add")} />
+          {isMaster ? (
+            <>
+              <ProductActionButton danger icon={<Trash2 size={18} />} label="Ürün Sil" onClick={() => onAction("delete")} />
+              <ProductActionButton icon={<Edit size={18} />} label="Düzenle" onClick={() => onAction("edit")} />
+            </>
+          ) : null}
+          <ProductActionButton icon={<GitBranch size={18} />} label="Ürün Ağacı" onClick={() => onAction("tree")} />
+          <ProductActionButton danger icon={<RefreshCw size={18} />} label="Fiyatları Revize Et" onClick={() => onAction("revise")} />
+          <ProductActionButton icon={<Copy size={18} />} label="Kopyala" onClick={() => onAction("copy")} />
+          <ProductActionButton icon={<Download size={18} />} label="Dışa Aktar" onClick={() => onAction("export")} />
+          <ProductActionButton icon={<X size={18} />} label="Kapat" onClick={() => onAction("close")} />
+        </div>
+
+        <div className="product-table-shell">
+          <div className="product-table-header">
+            <strong>{products.length} ürün</strong>
+            <span>{isLoading ? "Veriler yükleniyor..." : selectedProduct ? `${selectedProduct.urun_kodu} seçili` : "Tablodan ürün seçin"}</span>
+          </div>
+          <div className="data-table desktop-product-table" role="table" aria-label="Ürünler">
+            <div className="data-row header" role="row">
+              {productColumns.map((column) => (
+                <span key={column.key}>{column.label}</span>
+              ))}
+            </div>
+            {products.map((product) => (
+              <button
+                className={selectedProduct?.id === product.id ? "data-row selected" : "data-row"}
+                key={product.id}
+                type="button"
+                onClick={() => onSelectProduct(product)}
+              >
+                {productColumns.map((column) => (
+                  <span key={column.key}>{column.key === "maliyet" ? formatMoney(product.maliyet) : formatValue(product[column.key as keyof ProductInfo])}</span>
+                ))}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {productTree ? (
+          <section className="product-tree-detail">
+            <div className="tree-stats">
+              <span>Yarı Mamül: {productTree.stats.yari_mamul_count ?? 0}</span>
+              <span>Mamül: {productTree.stats.mamul_count ?? 0}</span>
+              <span>Alt Ürün: {productTree.stats.alt_urun_count ?? 0}</span>
+              <span>İşçilik: {formatMoney(productTree.stats.iscilik_toplam)} saat</span>
+            </div>
+            <div className="tree-lists">
+              <TreeList title="Yarı Mamüller" items={productTree.yari_mamuller} />
+              <TreeList title="Mamüller" items={productTree.mamuller} />
+              <TreeList title="Alt Ürünler" items={productTree.alt_urunler} />
+            </div>
+          </section>
+        ) : null}
+      </section>
+    </section>
+  );
+}
+
+function ProductActionButton({
+  danger = false,
+  icon,
+  label,
+  onClick,
+}: {
+  danger?: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button className={danger ? "product-action danger" : "product-action"} type="button" onClick={onClick}>
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function MaterialsScreen({
+  materials,
+  materialSearch,
+  onMaterialSearchChange,
+}: {
+  materials: MaterialInfo[];
+  materialSearch: string;
+  onMaterialSearchChange: (value: string) => void;
+}) {
+  return (
+    <section className="data-panel wide-panel" id="materials">
+      <div className="panel-heading">
+        <div>
+          <h2>Malzemeler</h2>
+          <p>Masaüstüyle aynı malzeme fiyat kaynağı kullanılır.</p>
+        </div>
+        <label className="search-box">
+          <Search size={18} />
+          <input value={materialSearch} onChange={(event) => onMaterialSearchChange(event.target.value)} placeholder="Malzeme ara" />
+        </label>
+      </div>
+      <div className="data-table material-table" role="table" aria-label="Malzeme listesi">
+        <div className="data-row header" role="row">
+          <span>Kod</span>
+          <span>Tip</span>
+          <span>Ad</span>
+          <span>Fiyat EUR</span>
+          <span>Güncelleme</span>
+        </div>
+        {materials.map((material) => (
+          <div className="data-row" role="row" key={material.id}>
+            <span>{material.malzeme_kodu || "-"}</span>
+            <span>{material.malzeme_tipi || "-"}</span>
+            <span>{material.ad || "-"}</span>
+            <span>{formatMoney(material.fiyat)}</span>
+            <span>{material.guncelleme_tarihi || "-"}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function DashboardScreen({
+  firstPhaseModules,
+  materials,
+  modules,
+  products,
+  setView,
+}: {
+  firstPhaseModules: ModuleInfo[];
+  materials: MaterialInfo[];
+  modules: ModuleInfo[];
+  products: ProductInfo[];
+  setView: (view: AppView) => void;
+}) {
+  return (
+    <section className="workbench-grid">
+      <section className="status-grid wide-panel" id="dashboard">
+        <button className="status-panel status-button" type="button" onClick={() => setView("products")}>
+          <span>Ürünler</span>
+          <strong>{products.length} kayıt</strong>
+          <p>Ürün modülü ekranını açar.</p>
+        </button>
+        <button className="status-panel status-button" type="button" onClick={() => setView("materials")}>
+          <span>Malzemeler</span>
+          <strong>{materials.length} kayıt</strong>
+          <p>Malzeme modülü ekranını açar.</p>
+        </button>
+        <div className="status-panel">
+          <span>Modül Yetkisi</span>
+          <strong>{modules.length} modül</strong>
+          <p>Liste kullanıcının web yetkilerine göre süzülür.</p>
+        </div>
+      </section>
+
+      <section className="module-section wide-panel" id="modules">
+        <div className="section-heading">
+          <div>
+            <h2>Taşınacak Modüller</h2>
+            <p>İlk fazdaki ana akışlar ürün, malzeme, fiyat listesi ve maliyet hesaplama üzerine kuruluyor.</p>
+          </div>
+        </div>
+        <div className="module-table" role="table" aria-label="Web app modül taşıma listesi">
+          <div className="module-row header" role="row">
+            <span>Modül</span>
+            <span>Faz</span>
+            <span>Durum</span>
+          </div>
+          {modules.map((module, index) => {
+            const Icon = moduleIcons[index % moduleIcons.length];
+            return (
+              <div className="module-row" role="row" key={module.key}>
+                <span className="module-title">
+                  <Icon size={18} />
+                  {module.title}
+                </span>
+                <span>{phaseLabels[module.phase] ?? `${module.phase}. faz`}</span>
+                <span className={module.phase === 1 ? "tag active-tag" : "tag"}>{module.phase === 1 ? "Öncelikli" : "Planlandı"}</span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="migration-panel wide-panel" id="migration">
+        <div>
+          <h2>İlk Faz Odağı</h2>
+          <p>Ürün modülü masaüstü davranışına yaklaştırıldı; sırada buton aksiyonlarının gerçek web API karşılıkları var.</p>
+        </div>
+        <ul>
+          {firstPhaseModules.map((module) => (
+            <li key={module.key}>{module.title}</li>
+          ))}
+        </ul>
+      </section>
+    </section>
   );
 }
 
@@ -398,4 +702,22 @@ function TreeList({ title, items }: { title: string; items: ProductTree["yari_ma
       )}
     </div>
   );
+}
+
+function exportProducts(products: ProductInfo[]) {
+  const header = productColumns.map((column) => column.label);
+  const rows = products.map((product) =>
+    productColumns.map((column) => {
+      const value = column.key === "maliyet" ? product.maliyet : product[column.key as keyof ProductInfo];
+      return `"${String(value ?? "").replace(/"/g, '""')}"`;
+    }),
+  );
+  const csv = [header, ...rows].map((row) => row.join(";")).join("\n");
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "urunler.csv";
+  link.click();
+  URL.revokeObjectURL(url);
 }

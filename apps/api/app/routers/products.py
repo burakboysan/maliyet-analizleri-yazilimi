@@ -29,7 +29,7 @@ def _tree_item(row: dict[str, Any]) -> ProductTreeItemResponse:
 @router.get("", response_model=list[ProductResponse])
 def list_products(
     search: str = Query(default="", max_length=120),
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=2000, ge=1, le=10000),
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
@@ -63,8 +63,16 @@ def list_products(
             urun_modeli,
             maliyet,
             filtre_medyasi,
+            filtre_medyasi_kodu,
+            patlac_kumanda_tipi,
+            toplam_filtre_alani,
             debi,
             fan_basinc,
+            fan_basinc_birimi,
+            motor,
+            fan_kumanda_tipi,
+            patlama_kapagi,
+            filtre_elemani_sayisi,
             maliyet_hesaplama_tarihi
         FROM urunler
         WHERE {" AND ".join(where_parts)}

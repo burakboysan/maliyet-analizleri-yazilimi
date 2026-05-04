@@ -17,7 +17,8 @@ body {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -75,14 +76,20 @@ a {
   gap: 6px;
 }
 
-.nav-list a {
+.nav-list a,
+.nav-list button {
   border-radius: 8px;
+  border: 0;
+  background: transparent;
   color: #d7e2ee;
   padding: 11px 12px;
+  text-align: left;
 }
 
 .nav-list a.active,
-.nav-list a:hover {
+.nav-list a:hover,
+.nav-list button.active,
+.nav-list button:hover {
   background: #183553;
   color: #ffffff;
 }
@@ -265,6 +272,16 @@ h2 {
   padding: 18px;
 }
 
+.status-button {
+  border: 1px solid #dce4ee;
+  color: inherit;
+  text-align: left;
+}
+
+.status-button:hover {
+  border-color: #2f9e7e;
+}
+
 .status-panel span {
   color: #63758a;
   font-size: 13px;
@@ -426,6 +443,194 @@ button.data-row.selected {
   margin: 0 0 18px;
 }
 
+.notice-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 18px;
+  border: 1px solid #b9d8c7;
+  border-radius: 8px;
+  background: #f0fbf5;
+  color: #1f6d55;
+  padding: 12px 14px;
+}
+
+.notice-state button {
+  display: inline-grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #1f6d55;
+}
+
+.product-module-shell {
+  display: grid;
+  grid-template-columns: 350px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.product-filter-panel,
+.product-workspace,
+.product-table-shell,
+.product-tree-detail {
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.product-filter-panel {
+  position: sticky;
+  top: 20px;
+  display: grid;
+  gap: 14px;
+  max-height: calc(100vh - 60px);
+  overflow: auto;
+  padding: 16px;
+}
+
+.filter-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.filter-title strong {
+  font-size: 18px;
+}
+
+.filter-title span {
+  color: #63758a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.full-search {
+  width: 100%;
+}
+
+.filter-clear-button {
+  min-height: 38px;
+  border: 1px solid #f2c5c5;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #b92727;
+  font-weight: 800;
+}
+
+.filter-clear-button:hover {
+  background: #d32f2f;
+  color: #ffffff;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.filter-control {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-control span {
+  color: #31445a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.filter-control input,
+.filter-control select {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid #cfd9e6;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #162033;
+  padding: 9px 10px;
+}
+
+.product-workspace {
+  display: grid;
+  gap: 14px;
+  border: 0;
+  background: transparent;
+}
+
+.product-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 12px;
+}
+
+.product-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  border: 1px solid #cfd9e6;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #205f8c;
+  font-weight: 800;
+  padding: 0 13px;
+}
+
+.product-action:hover {
+  border-color: #d32f2f;
+  background: #d32f2f;
+  color: #ffffff;
+}
+
+.product-action.danger {
+  color: #b92727;
+}
+
+.product-table-shell {
+  overflow: hidden;
+}
+
+.product-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 52px;
+  border-bottom: 1px solid #e5ebf2;
+  padding: 0 16px;
+}
+
+.product-table-header span {
+  color: #63758a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.desktop-product-table {
+  max-height: calc(100vh - 270px);
+}
+
+.desktop-product-table .data-row {
+  grid-template-columns: 140px 220px 150px 140px 150px 170px 150px 180px 150px 180px 120px 140px 140px 140px 150px 150px 130px;
+  min-width: 2530px;
+}
+
+.product-tree-detail {
+  overflow: hidden;
+}
+
 .section-heading {
   display: flex;
   justify-content: space-between;
@@ -537,6 +742,15 @@ button.data-row.selected {
     grid-template-columns: 1fr;
   }
 
+  .product-module-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .product-filter-panel {
+    position: static;
+    max-height: none;
+  }
+
   .status-grid {
     grid-template-columns: 1fr;
   }
@@ -549,6 +763,10 @@ button.data-row.selected {
 
 @media (max-width: 620px) {
   .nav-list {
+    grid-template-columns: 1fr;
+  }
+
+  .filter-grid {
     grid-template-columns: 1fr;
   }
 

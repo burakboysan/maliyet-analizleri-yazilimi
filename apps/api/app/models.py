@@ -38,8 +38,16 @@ class ProductResponse(BaseModel):
     urun_modeli: str | None = None
     maliyet: float | None = None
     filtre_medyasi: str | None = None
+    filtre_medyasi_kodu: str | None = None
+    patlac_kumanda_tipi: str | None = None
+    toplam_filtre_alani: float | None = None
     debi: float | None = None
     fan_basinc: float | None = None
+    fan_basinc_birimi: str | None = None
+    motor: str | None = None
+    fan_kumanda_tipi: str | None = None
+    patlama_kapagi: str | None = None
+    filtre_elemani_sayisi: float | None = None
     maliyet_hesaplama_tarihi: str | None = None
 
 
