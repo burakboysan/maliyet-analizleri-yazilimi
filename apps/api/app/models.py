@@ -96,6 +96,13 @@ class ProductDetailResponse(BaseModel):
     flange_fields: list[ProductDetailFieldResponse] = []
 
 
+class ProductEditOptionsResponse(BaseModel):
+    category_options: list[str]
+    type_options_by_category: dict[str, list[str]]
+    field_options: dict[str, list[str]]
+    filter_media_code_map: dict[str, str]
+
+
 class ProductUpdateRequest(BaseModel):
     fields: dict[str, str | float | int | None] = {}
     labor_rows: list[ProductLaborUpdateRequest] = []

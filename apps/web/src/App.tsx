@@ -28,6 +28,7 @@ import {
   fetchMe,
   fetchModules,
   fetchProductDetail,
+  fetchProductEditOptions,
   fetchProducts,
   fetchProductTree,
   login,
@@ -35,6 +36,7 @@ import {
   type MaterialInfo,
   type ModuleInfo,
   type ProductDetail,
+  type ProductEditOptions,
   type ProductLabor,
   type ProductInfo,
   type ProductTree,
@@ -124,6 +126,15 @@ const readonlyDetailFields = new Set([
   "flans_durumu",
   "maliyet_hesaplama_tarihi",
 ]);
+const dropdownDetailFields = new Set([
+  "urun_kategorisi",
+  "urun_tipi",
+  "filtre_medyasi",
+  "filtre_medyasi_kodu",
+  "patlac_kumanda_tipi",
+  "fan_basinc_birimi",
+  "fan_kumanda_tipi",
+]);
 
 function formatValue(value?: string | number | null) {
   if (value === null || value === undefined || value === "") {
@@ -167,6 +178,7 @@ export function App() {
   const [productFilters, setProductFilters] = useState<Partial<Record<ProductFilterKey, string>>>({});
   const [selectedProduct, setSelectedProduct] = useState<ProductInfo | null>(null);
   const [productDetail, setProductDetail] = useState<ProductDetail | null>(null);
+  const [productEditOptions, setProductEditOptions] = useState<ProductEditOptions | null>(null);
   const [productTree, setProductTree] = useState<ProductTree | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
@@ -318,7 +330,14 @@ export function App() {
     setProductDetail(null);
     setDataError(null);
     try {
-      setProductDetail(await fetchProductDetail(token, targetProduct.id));
+      const [detailResponse, optionsResponse] = await Promise.all([
+        fetchProductDetail(token, targetProduct.id),
+        mode === "edit" ? fetchProductEditOptions(token) : Promise.resolve(productEditOptions),
+      ]);
+      setProductDetail(detailResponse);
+      if (optionsResponse) {
+        setProductEditOptions(optionsResponse);
+      }
     } catch (err) {
       setDataError(err instanceof Error ? err.message : "Ürün detayı yüklenemedi.");
       setIsDetailOpen(false);
@@ -547,6 +566,7 @@ export function App() {
       {isDetailOpen ? (
         <ProductDetailModal
           detail={productDetail}
+          editOptions={productEditOptions}
           mode={detailMode}
           isLoading={isLoadingDetail}
           isSaving={isSavingDetail}
@@ -758,6 +778,7 @@ function ProductModuleScreen({
 
 function ProductDetailModal({
   detail,
+  editOptions,
   mode,
   isLoading,
   isSaving,
@@ -765,6 +786,7 @@ function ProductDetailModal({
   onSave,
 }: {
   detail: ProductDetail | null;
+  editOptions: ProductEditOptions | null;
   mode: "view" | "edit";
   isLoading: boolean;
   isSaving: boolean;
@@ -800,8 +822,31 @@ function ProductDetailModal({
     setLaborValues(detail.labor_rows.map((row) => ({ ...row, usta_saat: row.usta_saat ?? 0, yardimci_saat: row.yardimci_saat ?? 0 })));
   }, [detail]);
 
+  function getFieldOptions(key: string) {
+    const currentValue = fieldValues[key] ?? "";
+    let options: string[] = [];
+    if (key === "urun_kategorisi") {
+      options = editOptions?.category_options ?? [];
+    } else if (key === "urun_tipi") {
+      options = editOptions?.type_options_by_category[fieldValues.urun_kategorisi ?? ""] ?? [];
+    } else {
+      options = editOptions?.field_options[key] ?? [];
+    }
+    return currentValue && !options.includes(currentValue) ? [currentValue, ...options] : options;
+  }
+
   function updateFieldValue(key: string, value: string) {
-    setFieldValues((current) => ({ ...current, [key]: value }));
+    setFieldValues((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "urun_kategorisi") {
+        const typeOptions = editOptions?.type_options_by_category[value] ?? [];
+        next.urun_tipi = typeOptions.includes(current.urun_tipi ?? "") ? (current.urun_tipi ?? "") : (typeOptions[0] ?? "");
+      }
+      if (key === "filtre_medyasi") {
+        next.filtre_medyasi_kodu = editOptions?.filter_media_code_map[value] ?? "YOK - [NULL]";
+      }
+      return next;
+    });
   }
 
   function updateLaborValue(index: number, key: "usta_saat" | "yardimci_saat", value: string) {
@@ -868,6 +913,20 @@ function ProductDetailModal({
                             value={fieldValues[field.key] ?? ""}
                             onChange={(event) => updateFieldValue(field.key, event.target.value)}
                           />
+                        ) : dropdownDetailFields.has(field.key) ? (
+                          <select
+                            className="detail-input"
+                            disabled={field.key === "filtre_medyasi_kodu"}
+                            value={fieldValues[field.key] ?? ""}
+                            onChange={(event) => updateFieldValue(field.key, event.target.value)}
+                          >
+                            <option value="">Seçiniz</option>
+                            {getFieldOptions(field.key).map((option) => (
+                              <option value={option} key={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
                         ) : (
                           <input
                             className="detail-input"

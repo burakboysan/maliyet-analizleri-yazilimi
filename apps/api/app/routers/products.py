@@ -10,6 +10,7 @@ from app.models import (
     ProductCostBreakdownResponse,
     ProductDetailFieldResponse,
     ProductDetailResponse,
+    ProductEditOptionsResponse,
     ProductLaborResponse,
     ProductUpdateRequest,
     ProductUpdateResponse,
@@ -83,6 +84,49 @@ LABOR_TYPES = [
     "Elektrik",
     "Ambalaj/Yükleme",
 ]
+
+FILTER_MEDIA_OPTIONS = [
+    "Null",
+    "nanoBLEND FR",
+    "polyMIGHT 55",
+    "polyMIGHT 65",
+    "polyMIGHT HO 55",
+    "polyMIGHT HO 65",
+    "polyMIGHT ALU",
+    "polyMIGHT PTFE 55",
+    "polyMIGHT PTFE 65",
+    "polyMIGHT ALU PTFE 55",
+    "polyMIGHT ALU PTFE 65",
+    "Coalescer",
+    "Coalescer RB",
+]
+
+FILTER_MEDIA_CODE_MAP = {
+    "Null": "YOK - [NULL]",
+    "nanoBLEND FR": "B135FR",
+    "polyMIGHT 55": "255P",
+    "polyMIGHT 65": "265P",
+    "polyMIGHT HO 55": "255HO",
+    "polyMIGHT HO 65": "265HO",
+    "polyMIGHT ALU": "260ALU",
+    "polyMIGHT PTFE 55": "255 PTFE",
+    "polyMIGHT PTFE 65": "265PTFE",
+    "polyMIGHT ALU PTFE 55": "255 ALU+PTFE",
+    "polyMIGHT ALU PTFE 65": "265 ALU+PTFE",
+    "Coalescer": "YOK - [NULL]",
+    "Coalescer RB": "YOK - [NULL]",
+}
+
+BURST_CONTROL_OPTIONS = [
+    "Null",
+    "Fark Basınç Kontrollü - TURBO Economizer",
+    "Fark Basınç Kontrollü - LCD Dokunmatik Ekran",
+    "Takvim Ayarlı - LCD Dokunmatik Ekran",
+    "Zaman Ayarlı",
+]
+
+FAN_CONTROL_OPTIONS = ["NULL", "Motor Koruma Şalteri", "Yıldız Üçgen", "Frekans İnvertörlü"]
+FAN_PRESSURE_UNIT_OPTIONS = ["Pa", "mmSS"]
 
 READONLY_PRODUCT_FIELDS = {
     "id",
@@ -354,6 +398,52 @@ def get_product_detail(
 ):
     require_module_access(current_user, "products")
     return _get_product_detail_response(connection, product_id)
+
+
+@router.get("/edit-options", response_model=ProductEditOptionsResponse)
+def get_product_edit_options(
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT DISTINCT urun_kategorisi
+        FROM urunler
+        WHERE urun_kategorisi IS NOT NULL AND urun_kategorisi != ''
+        ORDER BY urun_kategorisi
+        """
+    )
+    category_options = [str(row["urun_kategorisi"]) for row in cursor.fetchall()]
+
+    cursor.execute(
+        """
+        SELECT DISTINCT urun_kategorisi, urun_tipi
+        FROM urunler
+        WHERE urun_kategorisi IS NOT NULL
+            AND urun_kategorisi != ''
+            AND urun_tipi IS NOT NULL
+            AND urun_tipi != ''
+        ORDER BY urun_kategorisi, urun_tipi
+        """
+    )
+    type_options_by_category: dict[str, list[str]] = {}
+    for row in cursor.fetchall():
+        type_options_by_category.setdefault(str(row["urun_kategorisi"]), []).append(str(row["urun_tipi"]))
+
+    return ProductEditOptionsResponse(
+        category_options=category_options,
+        type_options_by_category=type_options_by_category,
+        field_options={
+            "filtre_medyasi": FILTER_MEDIA_OPTIONS,
+            "filtre_medyasi_kodu": sorted(set(FILTER_MEDIA_CODE_MAP.values())),
+            "patlac_kumanda_tipi": BURST_CONTROL_OPTIONS,
+            "fan_basinc_birimi": FAN_PRESSURE_UNIT_OPTIONS,
+            "fan_kumanda_tipi": FAN_CONTROL_OPTIONS,
+        },
+        filter_media_code_map=FILTER_MEDIA_CODE_MAP,
+    )
 
 
 @router.put("/{product_id}", response_model=ProductUpdateResponse)

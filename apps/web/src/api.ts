@@ -86,6 +86,13 @@ export type ProductDetail = {
   flange_fields: ProductDetailField[];
 };
 
+export type ProductEditOptions = {
+  category_options: string[];
+  type_options_by_category: Record<string, string[]>;
+  field_options: Record<string, string[]>;
+  filter_media_code_map: Record<string, string>;
+};
+
 export type ProductUpdatePayload = {
   fields: Record<string, string | number | null>;
   labor_rows: ProductLabor[];
@@ -211,6 +218,16 @@ export async function fetchProductDetail(token: string, productId: number): Prom
     throw new Error(await parseError(response));
   }
   return (await response.json()) as ProductDetail;
+}
+
+export async function fetchProductEditOptions(token: string): Promise<ProductEditOptions> {
+  const response = await fetch(`${API_BASE_URL}/products/edit-options`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductEditOptions;
 }
 
 export async function updateProduct(token: string, productId: number, payload: ProductUpdatePayload): Promise<ProductUpdateResponse> {

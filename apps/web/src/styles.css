@@ -1080,6 +1080,12 @@ button.data-row.selected {
   padding: 9px 10px;
 }
 
+.detail-input:disabled {
+  cursor: not-allowed;
+  background: #eef2f6;
+  color: #63758a;
+}
+
 .cost-card {
   align-self: start;
   border-color: #ead4a7;
