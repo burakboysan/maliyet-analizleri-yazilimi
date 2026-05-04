@@ -34,6 +34,7 @@ import {
   fetchProducts,
   fetchProductTree,
   login,
+  reviseProductCosts,
   updateProduct,
   type MaterialInfo,
   type ModuleInfo,
@@ -449,6 +450,32 @@ export function App() {
     }
   }
 
+  async function handleReviseProductCosts() {
+    const productIds = filteredProducts.map((product) => product.id);
+    if (!productIds.length) {
+      setNotice("Güncellenecek ürün bulunamadı.");
+      return;
+    }
+    const confirmed = window.confirm(
+      "Listelenen tüm ürünlerin maliyetleri güncel malzeme fiyatlarına göre yeniden hesaplanacaktır. Devam edilsin mi?",
+    );
+    if (!confirmed) {
+      return;
+    }
+    setIsProductActionRunning(true);
+    setDataError(null);
+    try {
+      const response = await reviseProductCosts(token, productIds);
+      const nextSelectedId = selectedProduct?.id && productIds.includes(selectedProduct.id) ? selectedProduct.id : null;
+      await refreshProductRows(nextSelectedId);
+      setNotice(response.message);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Fiyat revizyonu başlatılamadı.");
+    } finally {
+      setIsProductActionRunning(false);
+    }
+  }
+
   function handleProductAction(action: string) {
     if (action === "detail") {
       handleOpenProductDetail();
@@ -466,6 +493,10 @@ export function App() {
       handleCopyProduct();
       return;
     }
+    if (action === "revise") {
+      handleReviseProductCosts();
+      return;
+    }
     if (action === "tree") {
       if (selectedProduct) {
         handleProductSelect(selectedProduct);
@@ -477,10 +508,6 @@ export function App() {
     if (action === "export") {
       exportProducts(filteredProducts);
       setNotice("Görünen ürün listesi CSV olarak hazırlandı.");
-      return;
-    }
-    if (action === "close") {
-      setView("dashboard");
       return;
     }
     setNotice("Bu masaüstü aksiyonu web API'ye taşınacağı sıradaki adım için ekranda hazır tutuluyor.");
@@ -774,9 +801,8 @@ function ProductModuleScreen({
                 <ProductActionButton disabled={isActionRunning} icon={<Edit size={18} />} label="Düzenle" onClick={() => onAction("edit")} />
               </>
             ) : null}
-            <ProductActionButton danger disabled={isActionRunning} icon={<RefreshCw size={18} />} label="Fiyatları Revize Et" onClick={() => onAction("revise")} />
+            <ProductActionButton danger disabled={isActionRunning} icon={<RefreshCw size={18} />} label={isActionRunning ? "Revize Ediliyor" : "Fiyatları Revize Et"} onClick={() => onAction("revise")} />
             <ProductActionButton disabled={isActionRunning} icon={<Copy size={18} />} label={isActionRunning ? "İşleniyor" : "Kopyala"} onClick={() => onAction("copy")} />
-            <ProductActionButton disabled={isActionRunning} icon={<X size={18} />} label="Kapat" onClick={() => onAction("close")} />
           </div>
         </div>
 

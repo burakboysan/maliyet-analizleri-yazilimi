@@ -10,6 +10,8 @@ from app.models import (
     ProductCostBreakdownResponse,
     ProductCopyRequest,
     ProductCopyResponse,
+    ProductCostRevisionRequest,
+    ProductCostRevisionResponse,
     ProductDeleteResponse,
     ProductDetailFieldResponse,
     ProductDetailResponse,
@@ -446,6 +448,79 @@ def get_product_edit_options(
             "fan_kumanda_tipi": FAN_CONTROL_OPTIONS,
         },
         filter_media_code_map=FILTER_MEDIA_CODE_MAP,
+    )
+
+
+@router.post("/revise-costs", response_model=ProductCostRevisionResponse)
+def revise_product_costs(
+    payload: ProductCostRevisionRequest,
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    product_ids = list(dict.fromkeys(int(product_id) for product_id in payload.product_ids if int(product_id) > 0))
+    if not product_ids:
+        raise HTTPException(status_code=422, detail="Güncellenecek ürün bulunamadı.")
+
+    cursor = connection.cursor(dictionary=True, buffered=True)
+    placeholders = ", ".join(["%s"] * len(product_ids))
+    cursor.execute(f"SELECT id FROM urunler WHERE id IN ({placeholders})", tuple(product_ids))
+    existing_ids = [int(row["id"]) for row in cursor.fetchall()]
+    if not existing_ids:
+        raise HTTPException(status_code=404, detail="Güncellenecek ürün bulunamadı.")
+
+    cursor.execute("SELECT kalem_adi, birim_fiyat FROM sabit_maliyet_kalemleri")
+    fixed_costs = {row["kalem_adi"]: row["birim_fiyat"] for row in cursor.fetchall()}
+
+    cursor.execute("SELECT malzeme_kodu, birim_fiyat FROM malzemeler")
+    material_prices = {row["malzeme_kodu"]: row["birim_fiyat"] for row in cursor.fetchall()}
+
+    cursor.execute("SELECT birim_adi, saat_ucreti_usta, saat_ucreti_yardimci FROM iscilik")
+    labor_rates = {row["birim_adi"]: row for row in cursor.fetchall()}
+
+    updated_count = 0
+    try:
+        from urun_konfigurator import _calculate_unit_cost
+
+        for product_id in existing_ids:
+            try:
+                unit = _calculate_unit_cost(cursor, product_id, fixed_costs, material_prices, labor_rates)
+                cursor.execute(
+                    """
+                    UPDATE urunler SET
+                        maliyet = %s,
+                        malzeme_maliyeti = %s,
+                        iscilik_maliyeti = %s,
+                        uretim_gideri = %s,
+                        yonetim_gideri = %s,
+                        alt_urun_maliyeti = %s,
+                        maliyet_hesaplama_tarihi = NOW()
+                    WHERE id = %s
+                    """,
+                    (
+                        unit.get("genel_toplam"),
+                        unit.get("malzeme_maliyeti", 0),
+                        unit.get("iscilik_maliyeti", 0),
+                        unit.get("uretim_gideri", 0),
+                        unit.get("yonetim_gideri", 0),
+                        unit.get("alt_urun_maliyeti", 0),
+                        product_id,
+                    ),
+                )
+                updated_count += 1
+            except Exception:
+                continue
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Fiyat revizyonu başlatılamadı: {exc}") from exc
+
+    failed_count = len(existing_ids) - updated_count
+    return ProductCostRevisionResponse(
+        requested_count=len(product_ids),
+        updated_count=updated_count,
+        failed_count=failed_count,
+        message=f"Fiyat revizyonu tamamlandı. {updated_count}/{len(existing_ids)} ürün güncellendi.",
     )
 
 

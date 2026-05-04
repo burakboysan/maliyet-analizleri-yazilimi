@@ -124,6 +124,13 @@ export type ProductCopyResponse = {
   detail: ProductDetail;
 };
 
+export type ProductCostRevisionResponse = {
+  requested_count: number;
+  updated_count: number;
+  failed_count: number;
+  message: string;
+};
+
 export type ProductTree = {
   product_id: number;
   stats: Record<string, number>;
@@ -285,4 +292,19 @@ export async function copyProduct(token: string, productId: number, newProductCo
     throw new Error(await parseError(response));
   }
   return (await response.json()) as ProductCopyResponse;
+}
+
+export async function reviseProductCosts(token: string, productIds: number[]): Promise<ProductCostRevisionResponse> {
+  const response = await fetch(`${API_BASE_URL}/products/revise-costs`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ product_ids: productIds }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductCostRevisionResponse;
 }

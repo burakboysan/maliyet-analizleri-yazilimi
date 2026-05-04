@@ -138,6 +138,17 @@ class ProductCopyResponse(BaseModel):
     detail: ProductDetailResponse
 
 
+class ProductCostRevisionRequest(BaseModel):
+    product_ids: list[int]
+
+
+class ProductCostRevisionResponse(BaseModel):
+    requested_count: int
+    updated_count: int
+    failed_count: int
+    message: str
+
+
 class ProductTreeResponse(BaseModel):
     product_id: int
     stats: dict[str, float | int]
