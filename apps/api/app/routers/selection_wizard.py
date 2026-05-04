@@ -139,6 +139,51 @@ ECOG_FAN_POWER_SUFFIX = {
 
 MOTOR_KW_OPTIONS = [2.2, 3.0, 4.0, 5.5, 7.5, 11.0, 15.0, 18.5, 22.0, 30.0]
 
+FILTER_MEDIA_SEGMENTS = {
+    "nanoBLEND FR": "B135FR",
+    "polyMIGHT 55": "255P",
+    "polyMIGHT PTFE 65": "265PTFE",
+    "polyMIGHT ALU": "260ALU",
+    "polyMIGHT ALU PTFE 65": "265ALUPTFE",
+    "polyMIGHT HO": "255HO",
+}
+
+CARTRIDGE_CONFIGS = {
+    "line": {
+        "title": "LINE",
+        "series_key": "LINE",
+        "article_prefix": "D-LINE",
+        "filter_media": ["polyMIGHT 55", "polyMIGHT PTFE 65", "polyMIGHT ALU", "polyMIGHT ALU PTFE 65", "polyMIGHT HO"],
+        "filter_lengths": ["1.000 mm"],
+        "variants_by_length": {"1.000 mm": [("LINE.8", 8), ("LINE.12", 12), ("LINE.18", 18), ("LINE.24", 24), ("LINE.32", 32), ("LINE.36", 36)]},
+        "section_areas": {"LINE.8": 0.954, "LINE.12": 1.334, "LINE.18": 1.757, "LINE.24": 2.542, "LINE.32": 3.493, "LINE.36": 4.183},
+        "panel_prefix": "LINE",
+        "cleaning_codes": {
+            "ECON": {"LINE.8": "LINE.ECON.4", "LINE.12": "LINE.ECON.8", "LINE.18": "LINE.ECON.12", "LINE.24": "LINE.ECON.12", "LINE.32": "LINE.ECON.16", "LINE.36": "LINE.ECON.20"},
+            "B-CONTROL": {"LINE.8": "LINE.LCD.9", "LINE.12": "LINE.LCD.9", "LINE.18": "LINE.LCD.9", "LINE.24": "LINE.LCD.18", "LINE.32": "LINE.LCD.18", "LINE.36": "LINE.LCD.18"},
+        },
+    },
+    "pkfc": {
+        "title": "PKFC",
+        "series_key": "PKFC",
+        "article_prefix": "D-PKFC",
+        "filter_media": ["nanoBLEND FR", "polyMIGHT 55", "polyMIGHT PTFE 65", "polyMIGHT ALU", "polyMIGHT ALU PTFE 65", "polyMIGHT HO"],
+        "filter_lengths": ["660 mm", "1.000 mm", "1.200 mm", "1.320 mm"],
+        "variants_by_length": {
+            "660 mm": [("PKFC.S4", 4), ("PKFC.S6", 6), ("PKFC.S8", 8)],
+            "1.000 mm": [("PKFC.L6", 6), ("PKFC.L8", 8), ("PKFC.L10", 10)],
+            "1.200 mm": [("PKFC.L6", 6), ("PKFC.L8", 8), ("PKFC.L10", 10)],
+            "1.320 mm": [("PKFC.L6", 6), ("PKFC.L8", 8), ("PKFC.L10", 10)],
+        },
+        "section_areas": {"PKFC.S4": 0.804, "PKFC.S6": 1.336, "PKFC.S8": 1.543, "PKFC.L6": 1.336, "PKFC.L8": 1.543, "PKFC.L10": 1.914},
+        "panel_prefix": "PKFC",
+        "cleaning_codes": {
+            "ECON": {"PKFC.S4": "PKFC.ECON.4", "PKFC.S6": "PKFC.ECON.8", "PKFC.S8": "PKFC.ECON.8", "PKFC.L6": "PKFC.ECON.8", "PKFC.L8": "PKFC.ECON.8", "PKFC.L10": "PKFC.ECON.12"},
+            "B-CONTROL": {"*": "SCHDL.CLEAN"},
+        },
+    },
+}
+
 
 def _normalize(value: Any) -> str:
     return str(value or "").strip()
@@ -487,6 +532,167 @@ def _ecog_metrics(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _cartridge_config(wizard_key: str) -> dict[str, Any]:
+    config = CARTRIDGE_CONFIGS.get(wizard_key.lower())
+    if not config:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bu sihirbaz henüz web'e taşınmadı.")
+    return config
+
+
+def _cartridge_lengths(config: dict[str, Any], filter_media: str) -> list[str]:
+    if config["series_key"] == "PKFC":
+        if not filter_media:
+            return []
+        return [
+            length for length in config["filter_lengths"]
+            if not (length == "1.200 mm" and filter_media == "nanoBLEND FR")
+            and not (length == "1.320 mm" and filter_media != "nanoBLEND FR")
+        ]
+    return list(config["filter_lengths"])
+
+
+def _cartridge_piece_area(filter_media: str, filter_length: str) -> int | None:
+    if filter_length == "660 mm":
+        return 20 if filter_media == "nanoBLEND FR" else 10
+    if filter_length == "1.000 mm":
+        return 30 if filter_media == "nanoBLEND FR" else 15
+    if filter_length == "1.200 mm":
+        return 25
+    if filter_length == "1.320 mm":
+        return 40
+    return None
+
+
+def _cartridge_filter_code(config: dict[str, Any], filter_media: str, filter_length: str, cartridge_count: int | None) -> str | None:
+    if not cartridge_count:
+        return None
+    segment = FILTER_MEDIA_SEGMENTS.get(_normalize(filter_media))
+    piece_area = _cartridge_piece_area(_normalize(filter_media), _normalize(filter_length))
+    if not segment or piece_area is None:
+        return None
+    if config["series_key"] == "LINE":
+        return f"HTM/500/480/1000/{segment}/5 x {int(cartridge_count)}"
+    length_code = {"660 mm": "660", "1.000 mm": "1000", "1.200 mm": "1200", "1.320 mm": "1320"}.get(_normalize(filter_length))
+    return f"HTM/327G/{length_code}/{segment}/{piece_area} x {int(cartridge_count)}" if length_code else None
+
+
+def _cartridge_filter_area(config: dict[str, Any], filter_media: str, filter_length: str, cartridge_count: int | None) -> float | None:
+    if not cartridge_count:
+        return None
+    if config["series_key"] == "LINE":
+        return 5.0 * int(cartridge_count)
+    piece_area = _cartridge_piece_area(_normalize(filter_media), _normalize(filter_length))
+    return float(piece_area * int(cartridge_count)) if piece_area is not None else None
+
+
+def _cartridge_panel_code(config: dict[str, Any], panel: str, fan_power: str) -> str | None:
+    prefix = config["panel_prefix"]
+    if panel == "Motor Koruma Salteri":
+        return {"2.2 kW": f"{prefix}.MPS.380.50.22", "3.0 kW": f"{prefix}.MPS.380.50.30", "4.0 kW": f"{prefix}.MPS.380.50.40"}.get(fan_power)
+    if panel == "Yildiz Ucgen":
+        return {
+            "5.5 kW": f"{prefix}.DS.380.50.55",
+            "7.5 kW": f"{prefix}.DS.380.50.75",
+            "11.0 kW": f"{prefix}.DS.380.50.110",
+            "15.0 kW": f"{prefix}.DS.380.50.150",
+            "18.5 kW": f"{prefix}.DS.380.50.185",
+            "22.0 kW": f"{prefix}.DS.380.50.220",
+            "30.0 kW": f"{prefix}.DS.380.50.300",
+        }.get(fan_power)
+    if panel == "Frekans Invertoru":
+        return _ecog_panel_code(panel, fan_power)
+    return None
+
+
+def _cartridge_cleaning_code(config: dict[str, Any], variant: str, cleaning: str) -> str | None:
+    codes = config["cleaning_codes"].get(_normalize(cleaning), {})
+    return codes.get(_normalize(variant)) or codes.get("*")
+
+
+def _cartridge_variant_options(config: dict[str, Any], state: dict[str, Any]) -> list[dict[str, Any]]:
+    filter_length = _normalize(state.get("filter_length"))
+    filter_media = _normalize(state.get("filter_media"))
+    airflow = _parse_decimal(state.get("airflow_text"))
+    result = []
+    for variant, cartridge_count in config["variants_by_length"].get(filter_length, []):
+        section_area = config["section_areas"].get(variant)
+        filter_area = _cartridge_filter_area(config, filter_media, filter_length, cartridge_count)
+        result.append(
+            {
+                "label": variant,
+                "value": variant,
+                "description": f"Filtre alanı: {filter_area or '-'} m2",
+                "cartridge_count": cartridge_count,
+                "section_area": section_area,
+                "filter_area": filter_area,
+                "rise_velocity": airflow / section_area / 3600.0 if airflow and section_area else None,
+                "filtration_velocity": airflow / filter_area / 60.0 if airflow and filter_area else None,
+            }
+        )
+    return result
+
+
+def _cartridge_compute_article(config: dict[str, Any], summary: dict[str, Any] | None) -> str | None:
+    if not summary:
+        return None
+    target = (
+        _normalize(summary.get("kasa")),
+        _normalize(summary.get("filtreMedyasi")),
+        _normalize(summary.get("filtreBoyu")),
+        _normalize(summary.get("temizlik")),
+        _normalize(summary.get("fanTipi")),
+        _normalize(summary.get("fanGucu")),
+        _normalize(summary.get("panoValue")),
+    )
+    index = 1
+    for length in config["filter_lengths"]:
+        for media in [item for item in config["filter_media"] if length in _cartridge_lengths(config, item)]:
+            for variant, _count in config["variants_by_length"].get(length, []):
+                for fan_type in ECOG_OPTION_ORDER["fan_type"]:
+                    for fan_power in ECOG_OPTION_ORDER["fan_power"]:
+                        for panel in _ecog_panel_options(fan_power):
+                            for cleaning in ("B-CONTROL", "ECON"):
+                                if target == (variant, media, length, cleaning, fan_type, fan_power, panel):
+                                    return f"{config['article_prefix']}-{index:04d}"
+                                index += 1
+    return None
+
+
+def _cartridge_summary(config: dict[str, Any], state: dict[str, Any]) -> dict[str, Any] | None:
+    required = ("filter_variant", "filter_media", "filter_length", "cleaning", "fan_type", "fan_power", "panel")
+    if any(not _normalize(state.get(key)) for key in required):
+        return None
+    variant_option = next((item for item in _cartridge_variant_options(config, state) if item["value"] == state.get("filter_variant")), None)
+    cartridge_count = int(variant_option["cartridge_count"]) if variant_option else None
+    filter_media = _normalize(state.get("filter_media"))
+    filter_length = _normalize(state.get("filter_length"))
+    summary = {
+        "combinationKey": "|".join(_normalize(state.get(key)) for key in required),
+        "kasa": _normalize(state.get("filter_variant")),
+        "filtreMedyasi": filter_media,
+        "filtreBoyu": filter_length,
+        "temizlik": _normalize(state.get("cleaning")),
+        "fanTipi": _normalize(state.get("fan_type")),
+        "fanGucu": _normalize(state.get("fan_power")),
+        "pano": _display_label(state.get("panel")),
+        "panoValue": _normalize(state.get("panel")),
+        "filtreAdedi": cartridge_count,
+        "kasaKodu": _normalize(state.get("filter_variant")),
+        "filtreSetKodu": _cartridge_filter_code(config, filter_media, filter_length, cartridge_count),
+        "temizlikKodu": _cartridge_cleaning_code(config, state.get("filter_variant"), state.get("cleaning")),
+        "fanKodu": _ecog_fan_code(state.get("fan_type"), state.get("fan_power")),
+        "panoKodu": _cartridge_panel_code(config, state.get("panel"), state.get("fan_power")),
+        "kesitAlani": variant_option.get("section_area") if variant_option else None,
+        "toplamFiltreAlani": variant_option.get("filter_area") if variant_option else None,
+        "yukselmeHizi": variant_option.get("rise_velocity") if variant_option else None,
+        "filtrasyonHizi": variant_option.get("filtration_velocity") if variant_option else None,
+        "milGucu": state.get("shaft_power"),
+        "onerilenMotor": state.get("recommended_motor_kw"),
+    }
+    summary["articleNo"] = _cartridge_compute_article(config, summary)
+    return summary
+
+
 def _alverpro_schema() -> dict[str, Any]:
     return {
         "key": "alverpro",
@@ -617,14 +823,96 @@ def _ecog_preview(state: dict[str, Any], connection: MySQLConnection) -> dict[st
     return {"state": state, "sections": schema["sections"], "summary": summary, "cost": _cost_summary(connection, summary)}
 
 
+def _cartridge_initial_state(config: dict[str, Any]) -> dict[str, str]:
+    state = _ecog_initial_state()
+    if len(config["filter_lengths"]) == 1:
+        state["filter_length"] = config["filter_lengths"][0]
+    return state
+
+
+def _cartridge_schema(wizard_key: str) -> dict[str, Any]:
+    config = _cartridge_config(wizard_key)
+    return {
+        "key": wizard_key,
+        "title": config["title"],
+        "description": f"{config['title']} kartuş filtre seçim akışı.",
+        "initial_state": _cartridge_initial_state(config),
+        "steps": [
+            {"key": "criteria", "title": "Kriterler"},
+            {"key": "fan", "title": "Fan Seçimi"},
+            {"key": "filter", "title": "Filtre Seçimi"},
+            {"key": "case", "title": "Kasa"},
+            {"key": "cleaning", "title": "Temizlik"},
+            {"key": "panel", "title": "Pano"},
+            {"key": "summary", "title": "Özet"},
+        ],
+        "sections": {
+            "criteria": _ecog_schema()["sections"]["criteria"],
+            "fan": [
+                {"title": "Fan Tipi", "field": "fan_type", "options": []},
+                {"title": "Fan Gücü", "field": "fan_power", "options": []},
+            ],
+            "filter": [
+                {"title": "Filtre Medyası", "field": "filter_media", "options": _option_items(config["filter_media"])},
+                {"title": "Filtre Boyu", "field": "filter_length", "options": []},
+            ],
+            "case": [{"title": "Kasa Seçimi", "field": "filter_variant", "options": []}],
+            "cleaning": [{"title": "Temizlik Sistemi", "field": "cleaning", "options": []}],
+            "panel": [{"title": "Pano", "field": "panel", "options": []}],
+        },
+    }
+
+
+def _cartridge_preview(wizard_key: str, state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any]:
+    config = _cartridge_config(wizard_key)
+    state.update(_ecog_motor_result(state))
+    allowed_fan_types = _ecog_allowed_fan_types(state.get("pressure_value"))
+    if state.get("fan_type") not in allowed_fan_types:
+        state["fan_type"] = ""
+        state["fan_power"] = ""
+    fan_power_options = [
+        power for power in ECOG_OPTION_ORDER["fan_power"]
+        if not state.get("shaft_power") or _parse_kw(power) >= float(state.get("shaft_power") or 0)
+    ] if state.get("fan_type") else []
+    if state.get("fan_power") not in fan_power_options:
+        state["fan_power"] = state.get("recommended_fan_power") if state.get("recommended_fan_power") in fan_power_options else ""
+    if state.get("filter_media") not in config["filter_media"]:
+        state["filter_media"] = ""
+        state["filter_length"] = config["filter_lengths"][0] if len(config["filter_lengths"]) == 1 else ""
+        state["filter_variant"] = ""
+    length_options = _cartridge_lengths(config, state.get("filter_media"))
+    if state.get("filter_length") not in length_options:
+        state["filter_length"] = length_options[0] if len(length_options) == 1 else ""
+        state["filter_variant"] = ""
+    variant_options = _cartridge_variant_options(config, state)
+    if state.get("filter_variant") not in {item["value"] for item in variant_options}:
+        state["filter_variant"] = ""
+    cleaning_options = ECOG_OPTION_ORDER["cleaning"] if state.get("filter_variant") else []
+    if state.get("cleaning") not in cleaning_options:
+        state["cleaning"] = ""
+    panel_options = _ecog_panel_options(state.get("fan_power"))
+    if state.get("panel") not in panel_options:
+        state["panel"] = ""
+
+    schema = _cartridge_schema(wizard_key)
+    schema["sections"]["fan"][0]["options"] = _option_items(allowed_fan_types)
+    schema["sections"]["fan"][1]["options"] = _option_items(fan_power_options)
+    schema["sections"]["filter"][1]["options"] = _option_items(length_options)
+    schema["sections"]["case"][0]["options"] = variant_options
+    schema["sections"]["cleaning"][0]["options"] = _option_items(cleaning_options)
+    schema["sections"]["panel"][0]["options"] = _display_option_items(panel_options)
+    summary = _cartridge_summary(config, state)
+    return {"state": state, "sections": schema["sections"], "summary": summary, "cost": _cost_summary(connection, summary)}
+
+
 @router.get("/products")
 def list_wizard_products(_current_user: dict = Depends(_require_access)):
     return {
         "products": [
             {"key": "alverpro", "title": "ALVERpro", "description": "Kapasite ve filtre medyası seçimi.", "status": "active"},
             {"key": "ecog", "title": "ECOG", "description": "Fan, filtre, kasa, temizlik ve pano seçimi.", "status": "active"},
-            {"key": "line", "title": "LINE", "description": "Kartuş filtre seçim akışı.", "status": "planned"},
-            {"key": "pkfc", "title": "PKFC", "description": "Kartuş filtre seçim akışı.", "status": "planned"},
+            {"key": "line", "title": "LINE", "description": "Kartuş filtre seçim akışı.", "status": "active"},
+            {"key": "pkfc", "title": "PKFC", "description": "Kartuş filtre seçim akışı.", "status": "active"},
             {"key": "hexafil", "title": "HEXAFIL", "description": "Filtre, fan kabini ve opsiyon seçimleri.", "status": "planned"},
             {"key": "verty", "title": "VERTY", "description": "Geniş ürün konfigürasyon seçimi.", "status": "planned"},
         ]
@@ -637,6 +925,8 @@ def get_wizard_schema(wizard_key: str, _current_user: dict = Depends(_require_ac
         return _alverpro_schema()
     if wizard_key.lower() == "ecog":
         return _ecog_schema()
+    if wizard_key.lower() in CARTRIDGE_CONFIGS:
+        return _cartridge_schema(wizard_key.lower())
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bu sihirbaz henüz web'e taşınmadı.")
 
 
@@ -649,6 +939,8 @@ def preview_wizard(
 ):
     if wizard_key.lower() == "ecog":
         return _ecog_preview(dict(payload.get("state") or {}), connection)
+    if wizard_key.lower() in CARTRIDGE_CONFIGS:
+        return _cartridge_preview(wizard_key.lower(), dict(payload.get("state") or {}), connection)
     if wizard_key.lower() != "alverpro":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bu sihirbaz henüz web'e taşınmadı.")
     state = dict(payload.get("state") or {})
