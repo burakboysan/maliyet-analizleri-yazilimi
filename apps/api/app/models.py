@@ -38,8 +38,8 @@ class ProductResponse(BaseModel):
     urun_modeli: str | None = None
     maliyet: float | None = None
     filtre_medyasi: str | None = None
-    debi: str | None = None
-    fan_basinc: str | None = None
+    debi: float | None = None
+    fan_basinc: float | None = None
     maliyet_hesaplama_tarihi: str | None = None
 
 
