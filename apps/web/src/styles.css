@@ -944,9 +944,13 @@ button.data-row.selected {
 }
 
 .desktop-product-table {
-  height: calc(100vh - 430px);
+  height: calc(100vh - 355px);
   min-height: 360px;
   max-height: none;
+}
+
+.selected-product-summary + .product-table-shell .desktop-product-table {
+  height: calc(100vh - 455px);
 }
 
 .desktop-product-table .data-row {
