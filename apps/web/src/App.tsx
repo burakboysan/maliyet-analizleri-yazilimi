@@ -120,6 +120,10 @@ function formatMoney(value?: number | string | null) {
   return formatValue(value);
 }
 
+function formatCurrency(value?: number | string | null, currency = "EUR") {
+  return `${formatValue(value)} ${currency}`;
+}
+
 function canSeeModule(modules: ModuleInfo[], key: string) {
   return modules.some((module) => module.key === key);
 }
@@ -726,7 +730,7 @@ function ProductDetailModal({
           </div>
           <div className="detail-header-cost">
             <span>Toplam Maliyet</span>
-            <strong>{formatMoney(detail?.cost_breakdown.toplam_maliyet)}</strong>
+            <strong>{formatCurrency(detail?.cost_breakdown.toplam_maliyet)}</strong>
           </div>
           <button className="modal-close-button" type="button" onClick={onClose} title="Kapat">
             <X size={20} />
@@ -762,7 +766,7 @@ function ProductDetailModal({
                   {costRows.map((row) => (
                     <div className={row.total ? "cost-row total" : "cost-row"} key={row.label}>
                       <span>{row.label}</span>
-                      <strong>{formatMoney(row.value)}</strong>
+                      <strong>{formatCurrency(row.value)}</strong>
                     </div>
                   ))}
                 </div>
