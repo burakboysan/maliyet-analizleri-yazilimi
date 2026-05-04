@@ -38,14 +38,14 @@ export type ProductInfo = {
   filtre_medyasi?: string | null;
   filtre_medyasi_kodu?: string | null;
   patlac_kumanda_tipi?: string | null;
-  toplam_filtre_alani?: number | null;
-  debi?: number | null;
-  fan_basinc?: number | null;
+  toplam_filtre_alani?: number | string | null;
+  debi?: number | string | null;
+  fan_basinc?: number | string | null;
   fan_basinc_birimi?: string | null;
   motor?: string | null;
   fan_kumanda_tipi?: string | null;
   patlama_kapagi?: string | null;
-  filtre_elemani_sayisi?: number | null;
+  filtre_elemani_sayisi?: number | string | null;
   maliyet_hesaplama_tarihi?: string | null;
 };
 
