@@ -62,6 +62,30 @@ export type ProductLabor = {
   yardimci_saat?: number | null;
 };
 
+export type ProductDetailField = {
+  key: string;
+  label: string;
+  value?: string | number | null;
+};
+
+export type ProductCostBreakdown = {
+  malzeme_maliyeti?: number | string | null;
+  iscilik_maliyeti?: number | string | null;
+  uretim_gideri?: number | string | null;
+  yonetim_gideri?: number | string | null;
+  alt_urun_maliyeti?: number | string | null;
+  toplam_maliyet?: number | string | null;
+};
+
+export type ProductDetail = {
+  product: Record<string, string | number | null>;
+  display_fields: ProductDetailField[];
+  cost_breakdown: ProductCostBreakdown;
+  labor_rows: ProductLabor[];
+  channel_fields: ProductDetailField[];
+  flange_fields: ProductDetailField[];
+};
+
 export type ProductTree = {
   product_id: number;
   stats: Record<string, number>;
@@ -162,4 +186,14 @@ export async function fetchProductTree(token: string, productId: number): Promis
     throw new Error(await parseError(response));
   }
   return (await response.json()) as ProductTree;
+}
+
+export async function fetchProductDetail(token: string, productId: number): Promise<ProductDetail> {
+  const response = await fetch(`${API_BASE_URL}/products/${productId}/detail`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductDetail;
 }

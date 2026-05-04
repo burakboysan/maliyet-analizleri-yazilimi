@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -62,6 +64,30 @@ class ProductLaborResponse(BaseModel):
     iscilik_tipi: str | None = None
     usta_saat: float | None = None
     yardimci_saat: float | None = None
+
+
+class ProductDetailFieldResponse(BaseModel):
+    key: str
+    label: str
+    value: str | float | int | None = None
+
+
+class ProductCostBreakdownResponse(BaseModel):
+    malzeme_maliyeti: float | str | None = None
+    iscilik_maliyeti: float | str | None = None
+    uretim_gideri: float | str | None = None
+    yonetim_gideri: float | str | None = None
+    alt_urun_maliyeti: float | str | None = None
+    toplam_maliyet: float | str | None = None
+
+
+class ProductDetailResponse(BaseModel):
+    product: dict[str, Any]
+    display_fields: list[ProductDetailFieldResponse]
+    cost_breakdown: ProductCostBreakdownResponse
+    labor_rows: list[ProductLaborResponse]
+    channel_fields: list[ProductDetailFieldResponse] = []
+    flange_fields: list[ProductDetailFieldResponse] = []
 
 
 class ProductTreeResponse(BaseModel):

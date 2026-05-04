@@ -878,6 +878,221 @@ button.data-row.selected {
   overflow: hidden;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgb(15 36 61 / 52%);
+  padding: 24px;
+}
+
+.product-detail-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(1180px, 100%);
+  max-height: calc(100vh - 48px);
+  border: 1px solid #cfd9e6;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgb(15 36 61 / 24%);
+  overflow: hidden;
+}
+
+.product-detail-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid #e5ebf2;
+  background: #f8fafc;
+  padding: 18px 20px;
+}
+
+.product-detail-header span,
+.detail-header-cost span,
+.detail-card-heading span,
+.detail-field span,
+.cost-row span {
+  color: #63758a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.product-detail-header h2 {
+  color: #19334d;
+  font-size: 22px;
+  margin-top: 4px;
+}
+
+.product-detail-header p {
+  color: #31445a;
+  margin-top: 5px;
+}
+
+.detail-header-cost {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+  border: 1px solid #b9d8c7;
+  border-radius: 8px;
+  background: #f0fbf5;
+  padding: 10px 12px;
+}
+
+.detail-header-cost strong {
+  color: #1f7a5f;
+  font-size: 20px;
+}
+
+.modal-close-button {
+  display: inline-grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid #d8e1ec;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #24415f;
+}
+
+.product-detail-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  gap: 14px;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.detail-card {
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.detail-card-heading {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid #edf1f6;
+  background: #f8fafc;
+  padding: 12px 14px;
+}
+
+.detail-card-heading strong {
+  color: #19334d;
+  font-size: 17px;
+}
+
+.detail-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 14px;
+}
+
+.detail-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 10px;
+}
+
+.detail-field strong {
+  min-width: 0;
+  color: #19334d;
+  overflow-wrap: anywhere;
+}
+
+.cost-card {
+  align-self: start;
+}
+
+.cost-breakdown-list {
+  display: grid;
+  padding: 12px 14px;
+}
+
+.cost-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.cost-row:last-child {
+  border-bottom: 0;
+}
+
+.cost-row strong {
+  color: #19334d;
+}
+
+.cost-row.total {
+  min-height: 48px;
+  margin-top: 4px;
+  border-top: 1px solid #cfd9e6;
+  border-bottom: 0;
+}
+
+.cost-row.total strong {
+  color: #1f7a5f;
+  font-size: 18px;
+}
+
+.labor-card {
+  grid-column: 1 / -1;
+}
+
+.labor-table {
+  display: grid;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.labor-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 150px 150px;
+  align-items: center;
+  min-height: 40px;
+  gap: 12px;
+  border-bottom: 1px solid #eef2f6;
+  padding: 0 14px;
+}
+
+.labor-row.header {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  color: #63758a;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.detail-loading {
+  grid-column: 1 / -1;
+  min-height: 240px;
+  display: grid;
+  place-items: center;
+  color: #63758a;
+  font-weight: 800;
+}
+
+.product-detail-footer {
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #e5ebf2;
+  background: #f8fafc;
+  padding: 12px 16px;
+}
+
 .section-heading {
   display: flex;
   justify-content: space-between;
@@ -999,9 +1214,19 @@ button.data-row.selected {
   }
 
   .product-commandbar,
+  .product-detail-body,
   .selected-product-summary,
   .selected-product-summary dl {
     grid-template-columns: 1fr;
+  }
+
+  .product-detail-header {
+    grid-template-columns: 1fr auto;
+  }
+
+  .detail-header-cost {
+    grid-column: 1 / -1;
+    grid-row: 2;
   }
 
   .primary-toolbar,
@@ -1040,6 +1265,16 @@ button.data-row.selected {
   }
 
   .login-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .modal-backdrop {
+    padding: 10px;
+  }
+
+  .product-detail-header,
+  .detail-field-grid,
+  .labor-row {
     grid-template-columns: 1fr;
   }
 }
