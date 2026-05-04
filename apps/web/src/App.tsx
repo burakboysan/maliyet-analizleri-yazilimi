@@ -3975,6 +3975,20 @@ function SelectionWizardScreen({ token }: { token: string }) {
       if (field === "fan_cabin") {
         next.sound = "";
       }
+      if (field === "fan_module") {
+        next.sound = "";
+        next.panel = "";
+        next.dust = "";
+        next.silencer = "";
+      }
+      if (field === "sound") {
+        next.panel = "";
+        next.dust = "";
+        next.silencer = "";
+      }
+      if (field === "panel" || field === "dust") {
+        next.silencer = "";
+      }
       if (field === "is_fan_excluded" && value === "true") {
         next.fan_type = "";
         next.fan_power = "";
@@ -4132,8 +4146,10 @@ function WizardSummary({ compact = false, cost, summary }: { compact?: boolean; 
         ["Fan Tipi", summary.fanTipi],
         ["Fan Gücü", summary.fanGucu],
         ["Fan Kabini", summary.fanKabini],
+        ["Fan Modülü", summary.fanModulu],
         ["Ses İzolasyonu", summary.sesIzolasyonu],
         ["Pano", summary.pano],
+        ["Toz Boşaltma", summary.tozBosaltma],
         ["Susturucu", summary.susturucu],
         ["Filtre Adedi", summary.filtreAdedi],
         ["Toplam Filtre Alanı", summary.toplamFiltreAlani ? `${summary.toplamFiltreAlani} m²` : null],
@@ -4148,8 +4164,10 @@ function WizardSummary({ compact = false, cost, summary }: { compact?: boolean; 
         ["Temizlik Kodu", summary.temizlikKodu],
         ["Fan Kodu", summary.fanKodu],
         ["Fan Kabini Kodu", summary.fanKabiniKodu],
+        ["Fan Modül Kodu", summary.fanModulKodu],
         ["Ses İzolasyon Kodu", summary.sesIzolasyonKodu],
         ["Pano Kodu", summary.panoKodu],
+        ["Toz Boşaltma Kodu", summary.tozBosaltmaKodu],
         ["Susturucu Kodu", summary.susturucuKodu],
       ].filter(([, value]) => value !== undefined && value !== null && value !== "")
     : [];

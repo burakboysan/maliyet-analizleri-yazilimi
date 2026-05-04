@@ -244,6 +244,26 @@ HEXAFIL_FAN_CABINS = {"Plug Fan": ["Fan Kabini"], "Salyangoz Fan": ["Fan Kabini"
 HEXAFIL_SOUND_OPTIONS = {"Fan Kabini": ["EKLE", "HARIC"], "HARIC": ["HARIC"]}
 HEXAFIL_SILENCERS = ["Kanal Tipi", "Dirsek Tipi", "HARIC"]
 
+VERTY_MEDIA = ["nanoBLEND FR", "polyMIGHT 55", "polyMIGHT PTFE 65", "polyMIGHT ALU", "polyMIGHT ALU PTFE 65", "polyMIGHT HO 55"]
+VERTY_CASES_BY_LENGTH = {
+    "660 mm": ["V66", "V66 - Ortam Emisli", "V100", "V100 - Ortam Emisli", "V132", "V132 - Ortam Emisli"],
+    "1.000 mm": ["V100", "V100 - Ortam Emisli", "V132", "V132 - Ortam Emisli"],
+    "1.200 mm": ["V132", "V132 - Ortam Emisli"],
+    "1.320 mm": ["V132", "V132 - Ortam Emisli"],
+}
+VERTY_CASE_CODES = {
+    "V66": "VERTY.V66",
+    "V66 - Ortam Emisli": "VERTY.V66.BCKDRFT",
+    "V100": "VERTY.V100",
+    "V100 - Ortam Emisli": "VERTY.V100.BCKDRFT",
+    "V132": "VERTY.V132",
+    "V132 - Ortam Emisli": "VERTY.V132.BCKDRFT",
+}
+VERTY_FAN_POWERS = ["2.2 kW", "3.0 kW", "4.0 kW", "5.5 kW", "7.5 kW", "11.0 kW"]
+VERTY_CLEANING = ["B-CONTROL", "HARIC"]
+VERTY_DUST = ["Toz Kovasi", "HARIC"]
+VERTY_SILENCERS = ["Kanal Tipi", "Dirsek Tipi", "HARIC"]
+
 
 def _normalize(value: Any) -> str:
     return str(value or "").strip()
@@ -332,7 +352,7 @@ def _summary_product_codes(summary: dict[str, Any] | None) -> list[str]:
         return []
     result = []
     seen = set()
-    for key in ("kasaKodu", "filtreSetKodu", "temizlikKodu", "fanKodu", "fanKabiniKodu", "sesIzolasyonKodu", "panoKodu", "susturucuKodu"):
+    for key in ("kasaKodu", "filtreSetKodu", "temizlikKodu", "fanKodu", "fanKabiniKodu", "fanModulKodu", "sesIzolasyonKodu", "panoKodu", "tozBosaltmaKodu", "susturucuKodu"):
         code = _normalize(summary.get(key)).upper()
         if code and code not in seen:
             seen.add(code)
@@ -860,6 +880,124 @@ def _hexafil_summary(state: dict[str, Any], connection: MySQLConnection) -> dict
     return summary
 
 
+def _verty_lengths(filter_media: str) -> list[str]:
+    if not filter_media:
+        return []
+    return ["660 mm", "1.000 mm", "1.320 mm"] if filter_media == "nanoBLEND FR" else ["660 mm", "1.000 mm", "1.200 mm"]
+
+
+def _verty_filter_code(filter_media: str, filter_length: str) -> str | None:
+    segment = FILTER_MEDIA_SEGMENTS.get(_normalize(filter_media))
+    spec = {"660 mm": ("660", 20 if filter_media == "nanoBLEND FR" else 10), "1.000 mm": ("1000", 30 if filter_media == "nanoBLEND FR" else 15), "1.200 mm": ("1200", 25), "1.320 mm": ("1320", 40)}.get(_normalize(filter_length))
+    if not segment or not spec:
+        return None
+    return f"HTM/410/{spec[0]}/{segment}/{spec[1]} x 4"
+
+
+def _verty_filter_area(filter_code: str | None) -> float | None:
+    normalized = _normalize(filter_code).upper()
+    if not normalized:
+        return None
+    base = HEXAFIL_FILTER_AREAS.get(normalized.replace(" X 4", " X 6").replace(" x 4", " X 6"))
+    return base / 6.0 * 4.0 if base is not None else None
+
+
+def _verty_fan_module_options(fan_type: str, fan_power: str, case_label: str) -> list[str]:
+    is_backdraft = "Ortam Emisli" in _normalize(case_label)
+    if not fan_type or not fan_power:
+        return []
+    if fan_type == "Salyangoz Fan":
+        if fan_power in {"2.2 kW", "3.0 kW", "4.0 kW", "5.5 kW"}:
+            return ["HARIC", "VERTY.FAN.700"]
+        if fan_power in {"7.5 kW", "11.0 kW"}:
+            return ["HARIC", "VERTY.FAN.900"]
+        return []
+    if fan_type == "Plug Fan":
+        if fan_power in {"2.2 kW", "3.0 kW", "4.0 kW", "5.5 kW"}:
+            return ["VERTY.FAN.700"] + (["VERTY.TOWER.6000"] if is_backdraft else [])
+        if fan_power in {"7.5 kW", "11.0 kW"}:
+            return ["VERTY.FAN.900"] + (["VERTY.TOWER.10000"] if is_backdraft else [])
+    return []
+
+
+def _verty_sound_options(fan_module: str) -> list[str]:
+    if fan_module in ("VERTY.FAN.700", "VERTY.FAN.900"):
+        return ["EKLE", "HARIC"]
+    return ["HARIC"] if fan_module else []
+
+
+def _verty_panel_options(fan_power: str) -> list[str]:
+    if fan_power in ("2.2 kW", "3.0 kW", "4.0 kW"):
+        return ["Motor Koruma Salteri", "Frekans Invertoru", "HARIC"]
+    if fan_power in ("5.5 kW", "7.5 kW", "11.0 kW"):
+        return ["Yildiz Ucgen", "Frekans Invertoru", "HARIC"]
+    return []
+
+
+def _verty_panel_code(panel: str, fan_power: str) -> str | None:
+    if _normalize(panel) == "HARIC":
+        return None
+    prefix = {"Motor Koruma Salteri": "VERTY.MPS.380.50.", "Yildiz Ucgen": "VERTY.DS.380.50.", "Frekans Invertoru": "KMPKT.VFD.380.50."}.get(_normalize(panel))
+    suffix = {"2.2 kW": "22", "3.0 kW": "30", "4.0 kW": "40", "5.5 kW": "55", "7.5 kW": "75", "11.0 kW": "110"}.get(_normalize(fan_power))
+    return f"{prefix}{suffix}" if prefix and suffix else None
+
+
+def _verty_summary(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any] | None:
+    required = ("fan_type", "fan_power", "filter_media", "filter_length", "case", "cleaning", "fan_module", "sound", "panel", "dust", "silencer")
+    if any(not _normalize(state.get(key)) for key in required):
+        return None
+    filter_code = _verty_filter_code(state.get("filter_media"), state.get("filter_length"))
+    filter_area = _verty_filter_area(filter_code)
+    section_area = 0.865
+    airflow = _parse_decimal(state.get("airflow_text"))
+    article_parts = [
+        state.get("case"),
+        state.get("filter_media"),
+        state.get("filter_length"),
+        state.get("cleaning"),
+        state.get("fan_type"),
+        state.get("fan_power"),
+        state.get("fan_module"),
+        state.get("sound"),
+        state.get("panel"),
+        state.get("dust"),
+    ]
+    article_key = "|".join(_normalize(part) for part in article_parts)
+    fan_module = _normalize(state.get("fan_module"))
+    sound = _normalize(state.get("sound"))
+    summary = {
+        "combinationKey": article_key,
+        "articleNo": _lookup_article(connection, "VERTY", article_key),
+        "kasa": _normalize(state.get("case")),
+        "filtreMedyasi": _normalize(state.get("filter_media")),
+        "filtreBoyu": _normalize(state.get("filter_length")),
+        "temizlik": _normalize(state.get("cleaning")),
+        "fanTipi": _normalize(state.get("fan_type")),
+        "fanGucu": _normalize(state.get("fan_power")),
+        "fanModulu": fan_module,
+        "sesIzolasyonu": sound,
+        "pano": _display_label(state.get("panel")),
+        "tozBosaltma": _normalize(state.get("dust")),
+        "susturucu": _normalize(state.get("silencer")),
+        "kasaKodu": VERTY_CASE_CODES.get(_normalize(state.get("case"))),
+        "filtreSetKodu": filter_code,
+        "temizlikKodu": "SCHDL.CLEAN" if state.get("cleaning") == "B-CONTROL" else None,
+        "fanKodu": _ecog_fan_code(state.get("fan_type"), state.get("fan_power")),
+        "fanModulKodu": None if fan_module == "HARIC" else fan_module,
+        "sesIzolasyonKodu": f"{fan_module}.SOUNDINS" if sound == "EKLE" and fan_module in ("VERTY.FAN.700", "VERTY.FAN.900") else None,
+        "panoKodu": _verty_panel_code(state.get("panel"), state.get("fan_power")),
+        "tozBosaltmaKodu": "VERTY.BIN" if state.get("dust") == "Toz Kovasi" else None,
+        "susturucuKodu": {"Kanal Tipi": "SILENCER.DUCT.500", "Dirsek Tipi": "SILENCER.ELBOW"}.get(_normalize(state.get("silencer"))),
+        "kesitAlani": section_area,
+        "toplamFiltreAlani": filter_area,
+        "yukselmeHizi": airflow / section_area / 3600.0 if airflow and section_area else None,
+        "filtrasyonHizi": airflow / filter_area / 60.0 if airflow and filter_area else None,
+        "milGucu": state.get("shaft_power"),
+        "onerilenMotor": state.get("recommended_motor_kw"),
+    }
+    return summary
+
+
 def _alverpro_schema() -> dict[str, Any]:
     return {
         "key": "alverpro",
@@ -1190,6 +1328,96 @@ def _hexafil_preview(state: dict[str, Any], connection: MySQLConnection) -> dict
     return {"state": state, "sections": schema["sections"], "summary": summary, "cost": _cost_summary(connection, summary)}
 
 
+def _verty_initial_state() -> dict[str, str]:
+    state = _ecog_initial_state()
+    state.update({"case": "", "fan_module": "", "sound": "", "dust": "", "silencer": ""})
+    return state
+
+
+def _verty_schema() -> dict[str, Any]:
+    return {
+        "key": "verty",
+        "title": "VERTY",
+        "description": "VERTY fan, filtre, kasa ve aksesuar seçim akışı.",
+        "initial_state": _verty_initial_state(),
+        "steps": [
+            {"key": "criteria", "title": "Kriterler"},
+            {"key": "fan", "title": "Fan Seçimi"},
+            {"key": "filter", "title": "Filtre Seçimi"},
+            {"key": "case", "title": "Kasa"},
+            {"key": "cleaning", "title": "Temizlik"},
+            {"key": "fan_module", "title": "Fan Modülü"},
+            {"key": "sound", "title": "Ses İzolasyonu"},
+            {"key": "panel", "title": "Pano"},
+            {"key": "dust", "title": "Toz Boşaltma"},
+            {"key": "silencer", "title": "Susturucu"},
+            {"key": "summary", "title": "Özet"},
+        ],
+        "sections": {
+            "criteria": _ecog_schema()["sections"]["criteria"],
+            "fan": [{"title": "Fan Tipi", "field": "fan_type", "options": []}, {"title": "Fan Gücü", "field": "fan_power", "options": []}],
+            "filter": [{"title": "Filtre Medyası", "field": "filter_media", "options": _option_items(VERTY_MEDIA)}, {"title": "Filtre Boyu", "field": "filter_length", "options": []}],
+            "case": [{"title": "Kasa Seçimi", "field": "case", "options": []}],
+            "cleaning": [{"title": "Temizlik", "field": "cleaning", "options": _option_items(VERTY_CLEANING)}],
+            "fan_module": [{"title": "Fan Modülü", "field": "fan_module", "options": []}],
+            "sound": [{"title": "Ses İzolasyonu", "field": "sound", "options": []}],
+            "panel": [{"title": "Pano", "field": "panel", "options": []}],
+            "dust": [{"title": "Toz Boşaltma", "field": "dust", "options": _option_items(VERTY_DUST)}],
+            "silencer": [{"title": "Susturucu", "field": "silencer", "options": _option_items(VERTY_SILENCERS)}],
+        },
+    }
+
+
+def _verty_preview(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any]:
+    state.update(_ecog_motor_result(state))
+    fan_types = _ecog_allowed_fan_types(state.get("pressure_value"))
+    if state.get("fan_type") not in fan_types:
+        state["fan_type"] = ""
+        state["fan_power"] = ""
+    fan_power_options = [power for power in VERTY_FAN_POWERS if not state.get("shaft_power") or _parse_kw(power) >= float(state.get("shaft_power") or 0)] if state.get("fan_type") else []
+    if state.get("fan_power") not in fan_power_options:
+        state["fan_power"] = state.get("recommended_fan_power") if state.get("recommended_fan_power") in fan_power_options else ""
+    if state.get("filter_media") not in VERTY_MEDIA:
+        state["filter_media"] = ""
+        state["filter_length"] = ""
+        state["case"] = ""
+    length_options = _verty_lengths(state.get("filter_media"))
+    if state.get("filter_length") not in length_options:
+        state["filter_length"] = ""
+        state["case"] = ""
+    case_options = VERTY_CASES_BY_LENGTH.get(_normalize(state.get("filter_length")), [])
+    if state.get("case") not in case_options:
+        state["case"] = ""
+    if state.get("cleaning") not in VERTY_CLEANING:
+        state["cleaning"] = ""
+    fan_module_options = _verty_fan_module_options(state.get("fan_type"), state.get("fan_power"), state.get("case"))
+    if state.get("fan_module") not in fan_module_options:
+        state["fan_module"] = ""
+    sound_options = _verty_sound_options(state.get("fan_module"))
+    if len(sound_options) == 1:
+        state["sound"] = sound_options[0]
+    elif state.get("sound") not in sound_options:
+        state["sound"] = ""
+    panel_options = _verty_panel_options(state.get("fan_power"))
+    if state.get("panel") not in panel_options:
+        state["panel"] = ""
+    if state.get("dust") not in VERTY_DUST:
+        state["dust"] = ""
+    if state.get("silencer") not in VERTY_SILENCERS:
+        state["silencer"] = ""
+
+    schema = _verty_schema()
+    schema["sections"]["fan"][0]["options"] = _option_items(fan_types)
+    schema["sections"]["fan"][1]["options"] = _option_items(fan_power_options)
+    schema["sections"]["filter"][1]["options"] = _option_items(length_options)
+    schema["sections"]["case"][0]["options"] = _option_items(case_options)
+    schema["sections"]["fan_module"][0]["options"] = _option_items(fan_module_options)
+    schema["sections"]["sound"][0]["options"] = _option_items(sound_options)
+    schema["sections"]["panel"][0]["options"] = _display_option_items(panel_options)
+    summary = _verty_summary(state, connection)
+    return {"state": state, "sections": schema["sections"], "summary": summary, "cost": _cost_summary(connection, summary)}
+
+
 @router.get("/products")
 def list_wizard_products(_current_user: dict = Depends(_require_access)):
     return {
@@ -1199,7 +1427,7 @@ def list_wizard_products(_current_user: dict = Depends(_require_access)):
             {"key": "line", "title": "LINE", "description": "Kartuş filtre seçim akışı.", "status": "active"},
             {"key": "pkfc", "title": "PKFC", "description": "Kartuş filtre seçim akışı.", "status": "active"},
             {"key": "hexafil", "title": "HEXAFIL", "description": "Filtre, fan kabini ve opsiyon seçimleri.", "status": "active"},
-            {"key": "verty", "title": "VERTY", "description": "Geniş ürün konfigürasyon seçimi.", "status": "planned"},
+            {"key": "verty", "title": "VERTY", "description": "Geniş ürün konfigürasyon seçimi.", "status": "active"},
         ]
     }
 
@@ -1214,6 +1442,8 @@ def get_wizard_schema(wizard_key: str, _current_user: dict = Depends(_require_ac
         return _cartridge_schema(wizard_key.lower())
     if wizard_key.lower() == "hexafil":
         return _hexafil_schema()
+    if wizard_key.lower() == "verty":
+        return _verty_schema()
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bu sihirbaz henüz web'e taşınmadı.")
 
 
@@ -1230,6 +1460,8 @@ def preview_wizard(
         return _cartridge_preview(wizard_key.lower(), dict(payload.get("state") or {}), connection)
     if wizard_key.lower() == "hexafil":
         return _hexafil_preview(dict(payload.get("state") or {}), connection)
+    if wizard_key.lower() == "verty":
+        return _verty_preview(dict(payload.get("state") or {}), connection)
     if wizard_key.lower() != "alverpro":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bu sihirbaz henüz web'e taşınmadı.")
     state = dict(payload.get("state") or {})
