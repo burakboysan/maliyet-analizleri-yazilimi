@@ -736,7 +736,7 @@ button.data-row.selected {
   border-radius: 8px;
   background: #ffffff;
   color: #205f8c;
-  font-weight: 800;
+  font-weight: 500;
   padding: 0 13px;
   transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
 }
@@ -954,6 +954,7 @@ button.data-row.selected {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   width: min(1060px, 100%);
+  height: min(720px, calc(100vh - 48px));
   max-height: calc(100vh - 48px);
   border: 1px solid #cfd9e6;
   border-radius: 8px;
@@ -1026,6 +1027,58 @@ button.data-row.selected {
   color: #b92727;
 }
 
+.modal-icon-button {
+  display: inline-grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid #d8e1ec;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #24415f;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.modal-icon-button:hover {
+  border-color: #24415f;
+  background: #f4f7fb;
+  color: #17304f;
+}
+
+.tree-info-menu {
+  position: relative;
+}
+
+.tree-info-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 4;
+  display: grid;
+  gap: 8px;
+  width: 240px;
+  border: 1px solid #d8e1ec;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 18px 45px rgb(15 36 61 / 18%);
+  padding: 12px;
+}
+
+.tree-info-popover strong {
+  color: #17304f;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tree-info-popover span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: #31445a;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 .tree-modal-actions {
   display: flex;
   align-items: center;
@@ -1035,26 +1088,11 @@ button.data-row.selected {
 
 .product-tree-modal-body {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 10px;
   min-height: 0;
   overflow: hidden;
   padding: 14px 16px 16px;
-}
-
-.tree-modal-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 0;
-}
-
-.tree-modal-stats span {
-  border-color: #e0e8f2;
-  background: #ffffff;
-  color: #24415f;
-  min-height: 34px;
-  padding: 7px 10px;
 }
 
 .tree-tabs {
@@ -1073,7 +1111,7 @@ button.data-row.selected {
   border-radius: 7px;
   background: #ffffff;
   color: #24415f;
-  font-weight: 800;
+  font-weight: 500;
   padding: 0 12px;
 }
 
@@ -1099,52 +1137,22 @@ button.data-row.selected {
 
 .tree-add-panel {
   display: grid;
+  grid-template-columns: minmax(260px, 1fr) 140px;
   gap: 10px;
   border-bottom: 1px solid #dce4ee;
   background: #ffffff;
   padding: 10px 12px;
 }
 
-.tree-add-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-}
-
-.tree-add-panel-header div {
-  display: grid;
-  gap: 3px;
-}
-
-.tree-add-panel-header strong {
-  color: #17304f;
-  font-size: 14px;
-}
-
-.tree-add-panel-header span {
-  color: #60758d;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.tree-add-panel-body {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) 140px;
-  gap: 10px;
-  border-top: 1px solid #eef2f6;
-  padding-top: 10px;
-}
-
-.tree-add-panel-body label {
+.tree-add-panel label {
   display: grid;
   gap: 6px;
   color: #4f647d;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 500;
 }
 
-.tree-add-panel-body input {
+.tree-add-panel input {
   min-height: 34px;
   border: 1px solid #d2dce9;
   border-radius: 8px;
@@ -1213,6 +1221,10 @@ button.data-row.selected {
   padding: 0 12px;
 }
 
+.tree-table-row.labor-tree-row {
+  grid-template-columns: 34px minmax(260px, 1fr) 140px 140px 100px;
+}
+
 .tree-table-row.header {
   position: sticky;
   top: 0;
@@ -1220,7 +1232,7 @@ button.data-row.selected {
   background: #f8fafc;
   color: #63758a;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .tree-table-row span {
@@ -1240,6 +1252,8 @@ button.data-row.selected {
   bottom: 0;
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   border-top: 1px solid #eef2f6;
   background: #f8fafc;
@@ -1459,6 +1473,12 @@ button.data-row.selected {
 
 .labor-input {
   min-height: 30px;
+  min-width: 0;
+  border: 1px solid #d2dce9;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #17304f;
+  font: inherit;
   padding: 5px 7px;
 }
 

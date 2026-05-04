@@ -10,6 +10,7 @@ import {
   FileText,
   Gauge,
   GitBranch,
+  Info,
   LogOut,
   PackagePlus,
   RefreshCw,
@@ -1104,6 +1105,7 @@ function ProductTreeModal({
   const [selectedMaterialCodes, setSelectedMaterialCodes] = useState<string[]>([]);
   const [isSearchingMaterials, setIsSearchingMaterials] = useState(false);
   const [addPanelError, setAddPanelError] = useState<string | null>(null);
+  const [isInfoOpen, setIsInfoOpen] = useState(false);
   const tabItems = [
     { key: "yari" as const, label: "Yarı Mamüller", items: tree?.yari_mamuller ?? [] },
     { key: "mamul" as const, label: "Mamüller", items: tree?.mamuller ?? [] },
@@ -1227,6 +1229,21 @@ function ProductTreeModal({
                 <span>{isSaving ? "Kaydediliyor" : "Kaydet"}</span>
               </button>
             ) : null}
+            <div className="tree-info-menu">
+              <button className="modal-icon-button" type="button" onClick={() => setIsInfoOpen((value) => !value)} title="Özet bilgiler">
+                <Info size={18} />
+              </button>
+              {isInfoOpen && tree ? (
+                <div className="tree-info-popover">
+                  <strong>Özet Bilgiler</strong>
+                  <span>Yarı Mamül: {tree.stats.yari_mamul_count ?? 0}</span>
+                  <span>Mamül: {tree.stats.mamul_count ?? 0}</span>
+                  <span>Alt Ürün: {tree.stats.alt_urun_count ?? 0}</span>
+                  <span>İşçilik: {formatValue(tree.stats.iscilik_toplam)} saat</span>
+                  <span>Yarı Mamül: {formatValue(tree.stats.yari_mamul_kg)} kg</span>
+                </div>
+              ) : null}
+            </div>
             <button className="modal-close-button" type="button" onClick={onClose} title="Kapat">
               <X size={20} />
             </button>
@@ -1238,14 +1255,6 @@ function ProductTreeModal({
             <div className="detail-loading">Ürün ağacı yükleniyor...</div>
           ) : tree ? (
             <>
-              <div className="tree-stats tree-modal-stats">
-                <span>Yarı Mamül: {tree.stats.yari_mamul_count ?? 0}</span>
-                <span>Mamül: {tree.stats.mamul_count ?? 0}</span>
-                <span>Alt Ürün: {tree.stats.alt_urun_count ?? 0}</span>
-                <span>İşçilik: {formatValue(tree.stats.iscilik_toplam)} saat</span>
-                <span>Yarı Mamül: {formatValue(tree.stats.yari_mamul_kg)} kg</span>
-              </div>
-
               <div className="tree-tabs" role="tablist" aria-label="Ürün ağacı sekmeleri">
                 {tabItems.map((tab) => (
                   <button className={activeTab === tab.key ? "active" : ""} type="button" key={tab.key} onClick={() => setActiveTab(tab.key)}>
@@ -1259,13 +1268,16 @@ function ProductTreeModal({
 
               {activeTab === "labor" ? (
                 <section className="tree-panel-table">
-                  <div className="labor-row header">
+                  <div className="tree-table-row labor-tree-row header">
+                    <span></span>
                     <span>İşçilik Tipi</span>
                     <span>Usta Saat</span>
                     <span>Yardımcı Saat</span>
+                    <span></span>
                   </div>
                   {laborRows.map((row, index) => (
-                    <div className="labor-row" key={row.iscilik_tipi ?? "empty"}>
+                    <div className="tree-table-row labor-tree-row" key={row.iscilik_tipi ?? "empty"}>
+                      <span></span>
                       <span>{row.iscilik_tipi}</span>
                       <input
                         className="labor-input"
@@ -1285,6 +1297,7 @@ function ProductTreeModal({
                         value={row.yardimci_saat ?? 0}
                         onChange={(event) => updateLabor(index, "yardimci_saat", event.target.value)}
                       />
+                      <span></span>
                     </div>
                   ))}
                   {isMaster ? (
@@ -1297,47 +1310,30 @@ function ProductTreeModal({
                 </section>
               ) : (
                 <section className="tree-panel-table">
-                  {canAddMaterial ? (
+                  {canAddMaterial && isAddPanelOpen ? (
                     <div className="tree-add-panel">
-                      <div className="tree-add-panel-header">
-                        <div>
-                          <strong>{activeMaterialType} Ekle</strong>
-                        </div>
-                        <button className="product-action compact-action" type="button" onClick={() => setIsAddPanelOpen((value) => !value)} disabled={isSaving}>
-                          {isAddPanelOpen ? "Ekleme Alanını Kapat" : `${activeMaterialType} Ekle`}
-                        </button>
+                      <label>
+                        Arama
+                        <input value={materialSearch} onChange={(event) => setMaterialSearch(event.target.value)} placeholder="En az 2 karakter yazın" />
+                      </label>
+                      <label>
+                        Miktar
+                        <input value={materialQuantity} onChange={(event) => setMaterialQuantity(event.target.value)} inputMode="decimal" />
+                      </label>
+                      <div className="tree-material-results">
+                        {materialSearch.trim().length < 2 ? <div className="table-empty-state">Arama için en az 2 karakter yazın.</div> : null}
+                        {isSearchingMaterials ? <div className="table-empty-state">Malzemeler aranıyor...</div> : null}
+                        {!isSearchingMaterials && materialSearch.trim().length >= 2 && !materialResults.length ? <div className="table-empty-state">Sonuç bulunamadı.</div> : null}
+                        {materialResults.map((row) => (
+                          <label className="tree-material-result" key={row.kod}>
+                            <input checked={selectedMaterialCodes.includes(row.kod)} type="checkbox" onChange={() => toggleMaterial(row.kod)} />
+                            <span>{row.kod}</span>
+                            <strong>{row.ad}</strong>
+                            <em>{row.malzeme_tipi}</em>
+                          </label>
+                        ))}
                       </div>
-                      {isAddPanelOpen ? (
-                        <div className="tree-add-panel-body">
-                          <label>
-                            Arama
-                            <input value={materialSearch} onChange={(event) => setMaterialSearch(event.target.value)} placeholder="En az 2 karakter yazın" />
-                          </label>
-                          <label>
-                            Miktar
-                            <input value={materialQuantity} onChange={(event) => setMaterialQuantity(event.target.value)} inputMode="decimal" />
-                          </label>
-                          <div className="tree-material-results">
-                            {materialSearch.trim().length < 2 ? <div className="table-empty-state">Arama için en az 2 karakter yazın.</div> : null}
-                            {isSearchingMaterials ? <div className="table-empty-state">Malzemeler aranıyor...</div> : null}
-                            {!isSearchingMaterials && materialSearch.trim().length >= 2 && !materialResults.length ? <div className="table-empty-state">Sonuç bulunamadı.</div> : null}
-                            {materialResults.map((row) => (
-                              <label className="tree-material-result" key={row.kod}>
-                                <input checked={selectedMaterialCodes.includes(row.kod)} type="checkbox" onChange={() => toggleMaterial(row.kod)} />
-                                <span>{row.kod}</span>
-                                <strong>{row.ad}</strong>
-                                <em>{row.malzeme_tipi}</em>
-                              </label>
-                            ))}
-                          </div>
-                          {addPanelError ? <div className="inline-error">{addPanelError}</div> : null}
-                          <div className="tree-panel-actions inline-actions">
-                            <button className="product-action emphasis" type="button" onClick={handleAddSelectedMaterials} disabled={isSaving || !selectedMaterialCodes.length}>
-                              Seçili Malzemeleri Ekle
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
+                      {addPanelError ? <div className="inline-error">{addPanelError}</div> : null}
                     </div>
                   ) : null}
                   <div className="tree-table-row header">
@@ -1371,6 +1367,18 @@ function ProductTreeModal({
                   {!activeItems.length ? <div className="table-empty-state">Bu sekmede kayıt yok.</div> : null}
                   {isMaster ? (
                     <div className="tree-panel-actions">
+                      {canAddMaterial ? (
+                        <>
+                          <button className="product-action" type="button" onClick={() => setIsAddPanelOpen((value) => !value)} disabled={isSaving}>
+                            {isAddPanelOpen ? "Ekleme Alanını Kapat" : `${activeMaterialType} Ekle`}
+                          </button>
+                          {isAddPanelOpen ? (
+                            <button className="product-action emphasis" type="button" onClick={handleAddSelectedMaterials} disabled={isSaving || !selectedMaterialCodes.length}>
+                              Seçili Malzemeleri Ekle
+                            </button>
+                          ) : null}
+                        </>
+                      ) : null}
                       <button className="product-action danger" type="button" onClick={() => onDeleteItems(activeSelection)} disabled={isSaving || !activeSelection.length}>
                         Seçili Öğeyi Sil
                       </button>
