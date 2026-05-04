@@ -24,6 +24,7 @@ import {
   Trash2,
   Upload,
   User,
+  WandSparkles,
   Wrench,
   X,
 } from "lucide-react";
@@ -32,9 +33,18 @@ import type { ReactNode } from "react";
 
 import {
   addProductTreeMaterials,
+  approveLeaveRequest,
+  cancelLeaveRequest,
   copyProduct,
+  createLeaveRequest,
+  createMaterial,
+  deleteMaterial,
   deleteProduct,
   deleteProductTreeItems,
+  fetchMaterialAddOptions,
+  fetchMaterialDetail,
+  fetchLeaveDashboard,
+  fetchLeaveWorkdaySummary,
   fetchMaterials,
   fetchMe,
   fetchModules,
@@ -42,15 +52,34 @@ import {
   fetchProductEditOptions,
   fetchProducts,
   fetchProductTree,
+  fetchWizardProducts,
+  fetchWizardSchema,
+  finalizeLeaveRequest,
+  importMamulMaterials,
   login,
+  markLeaveUsageConfirmation,
+  previewWizard,
   recalculateProductTreeCost,
+  rejectLeaveRequest,
+  resetPasswordWithCode,
   reviseProductCosts,
   resolveProductTreeMaterialCodes,
   searchProductTreeMaterials,
+  sendEmailVerification,
+  sendPasswordResetCode,
   saveProductTreeLabor,
+  signup,
   updateProduct,
+  updateMaterial,
   updateProductTreeItemQuantity,
+  verifyEmailCode,
+  type MaterialAddOptions,
+  type MaterialCreatePayload,
+  type MaterialDetail,
   type MaterialInfo,
+  type MaterialImportResponse,
+  type LeaveDashboard,
+  type LeaveRequestInfo,
   type ModuleInfo,
   type ProductDetail,
   type ProductEditOptions,
@@ -62,10 +91,24 @@ import {
   type ProductTreeMaterialAddItem,
   type ProductTreeMaterialResolveItem,
   type UserInfo,
+  type WizardCostSummary,
+  type WizardPreview,
+  type WizardProduct,
+  type WizardSchema,
 } from "./api";
 import bomaksanLogo from "./assets/logo.png";
+import { TechnicalCalculationsScreen, type TechnicalToolKey } from "./TechnicalCalculations";
 
-type AppView = "dashboard" | "products" | "materials";
+type TechnicalDetailView = "technical-fan" | "technical-pressure-loss" | "technical-capacity" | "technical-compressed-air" | "technical-explosion-vent";
+type AppView = "dashboard" | "products" | "materials" | "selection-wizard" | "leave-management" | "technical-overview" | TechnicalDetailView;
+type AuthDialogMode = "signup" | "forgot-password" | "verify-email";
+type AuthDialogFields = {
+  username: string;
+  email: string;
+  identifier: string;
+  code: string;
+  password: string;
+};
 type MaterialFilterKey = "malzeme_kodu" | "malzeme_tipi" | "ad" | "fiyat" | "guncelleme_tarihi";
 type ProductFilterKey =
   | "urun_kodu"
@@ -160,6 +203,13 @@ const productFilterGroups: Array<{
 ];
 
 const moduleIcons = [Boxes, Database, Gauge, FileText, ShieldCheck];
+const technicalMenuItems: Array<{ view: TechnicalDetailView; label: string; description: string; tool: TechnicalToolKey }> = [
+  { view: "technical-fan", label: "Fan Motor Modülü", description: "Debi, basınç ve yoğunluk bilgileriyle fan motor gücü hesabı.", tool: "fan" },
+  { view: "technical-pressure-loss", label: "Basınç Kaybı Modülü", description: "Dirsek, düz kanal, Jet-Cap ve ekipman kayıplarını tabloya ekleyin.", tool: "pressure-loss" },
+  { view: "technical-capacity", label: "Kapasite Hesap Modülü", description: "Isıl kesim, CNC torna, davlumbaz ve kaynak hol kapasite hesapları.", tool: "capacity" },
+  { view: "technical-compressed-air", label: "Basınçlı Hava Tüketim Modülü", description: "Patlaç tipi ve çalışma değerleriyle tüketim ve enerji maliyeti.", tool: "compressed-air" },
+  { view: "technical-explosion-vent", label: "Patlama Kapağı Modülü", description: "ST sınıfı, net hacim ve kapak alanına göre patlama kapağı seçimi.", tool: "explosion-vent" },
+];
 const readonlyDetailFields = new Set([
   "id",
   "urun_kodu",
@@ -220,9 +270,30 @@ function canSeeModule(modules: ModuleInfo[], key: string) {
   return modules.some((module) => module.key === key);
 }
 
+function isTechnicalView(view: AppView): view is "technical-overview" | TechnicalDetailView {
+  return view.startsWith("technical-");
+}
+
+function isTechnicalDetailView(view: AppView): view is TechnicalDetailView {
+  return technicalMenuItems.some((item) => item.view === view);
+}
+
+function technicalToolForView(view: TechnicalDetailView): TechnicalToolKey {
+  return technicalMenuItems.find((item) => item.view === view)?.tool ?? "fan";
+}
+
+function technicalTitleForView(view: AppView) {
+  return isTechnicalView(view) ? (technicalMenuItems.find((item) => item.view === view)?.label ?? "Teknik Hesaplamalar") : "Teknik Hesaplamalar";
+}
+
 function isMasterUser(user: UserInfo | null) {
   const role = String(user?.rol_adi ?? "").trim().toLowerCase();
   return role === "owner" || role === "master admin" || role === "admin";
+}
+
+function canEditMaterial(user: UserInfo | null) {
+  const role = String(user?.rol_adi ?? "").trim().toLocaleLowerCase("tr-TR");
+  return isMasterUser(user) || role === "satınalmacı" || role === "satinalmaci";
 }
 
 function parseBulkMaterialRows(text: string) {
@@ -263,17 +334,32 @@ export function App() {
   const [modules, setModules] = useState<ModuleInfo[]>([]);
   const [token, setToken] = useState<string>(() => window.localStorage.getItem("maliyet_web_token") ?? "");
   const [user, setUser] = useState<UserInfo | null>(null);
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(() => window.localStorage.getItem("maliyet_web_remembered_username") ?? "");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
+  const [rememberMe, setRememberMe] = useState(() => Boolean(window.localStorage.getItem("maliyet_web_remembered_username")));
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [authDialogMode, setAuthDialogMode] = useState<AuthDialogMode | null>(null);
+  const [authDialogMessage, setAuthDialogMessage] = useState<string | null>(null);
+  const [isAuthDialogSubmitting, setIsAuthDialogSubmitting] = useState(false);
   const [materials, setMaterials] = useState<MaterialInfo[]>([]);
   const [products, setProducts] = useState<ProductInfo[]>([]);
   const [materialSearch, setMaterialSearch] = useState("");
   const [materialFilters, setMaterialFilters] = useState<Partial<Record<MaterialFilterKey, string>>>({});
   const [selectedMaterial, setSelectedMaterial] = useState<MaterialInfo | null>(null);
+  const [isAddMaterialOpen, setIsAddMaterialOpen] = useState(false);
+  const [isLoadingMaterialOptions, setIsLoadingMaterialOptions] = useState(false);
+  const [isSavingMaterial, setIsSavingMaterial] = useState(false);
+  const [materialAddOptions, setMaterialAddOptions] = useState<MaterialAddOptions | null>(null);
+  const [isMaterialDetailOpen, setIsMaterialDetailOpen] = useState(false);
+  const [isLoadingMaterialDetail, setIsLoadingMaterialDetail] = useState(false);
+  const [isSavingMaterialDetail, setIsSavingMaterialDetail] = useState(false);
+  const [materialDetail, setMaterialDetail] = useState<MaterialDetail | null>(null);
+  const [materialDetailMode, setMaterialDetailMode] = useState<"view" | "edit">("view");
+  const [isImportMaterialOpen, setIsImportMaterialOpen] = useState(false);
+  const [isImportingMaterials, setIsImportingMaterials] = useState(false);
+  const [materialImportResult, setMaterialImportResult] = useState<MaterialImportResponse | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [productFilters, setProductFilters] = useState<Partial<Record<ProductFilterKey, string>>>({});
   const [selectedProduct, setSelectedProduct] = useState<ProductInfo | null>(null);
@@ -452,7 +538,10 @@ export function App() {
       window.localStorage.setItem("maliyet_web_token", response.access_token);
       setToken(response.access_token);
       setUser(response.user);
-      if (!rememberMe) {
+      if (rememberMe) {
+        window.localStorage.setItem("maliyet_web_remembered_username", username.trim());
+      } else {
+        window.localStorage.removeItem("maliyet_web_remembered_username");
         setUsername("");
       }
       setPassword("");
@@ -460,6 +549,87 @@ export function App() {
       setError(err instanceof Error ? err.message : "Giriş yapılamadı.");
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  function openAuthDialog(mode: AuthDialogMode) {
+    setAuthDialogMode(mode);
+    setAuthDialogMessage(null);
+    setError(null);
+  }
+
+  function closeAuthDialog() {
+    if (isAuthDialogSubmitting) {
+      return;
+    }
+    setAuthDialogMode(null);
+    setAuthDialogMessage(null);
+  }
+
+  async function handleSignupSubmit(fields: AuthDialogFields) {
+    setIsAuthDialogSubmitting(true);
+    setAuthDialogMessage(null);
+    try {
+      const response = await signup(fields.username, fields.email, fields.password);
+      setAuthDialogMessage(response.message);
+      setUsername(fields.username);
+    } catch (err) {
+      setAuthDialogMessage(err instanceof Error ? err.message : "Hesap oluşturulamadı.");
+    } finally {
+      setIsAuthDialogSubmitting(false);
+    }
+  }
+
+  async function handleVerificationCodeSend(email: string) {
+    setIsAuthDialogSubmitting(true);
+    setAuthDialogMessage(null);
+    try {
+      const response = await sendEmailVerification(email);
+      setAuthDialogMessage(response.message);
+    } catch (err) {
+      setAuthDialogMessage(err instanceof Error ? err.message : "Doğrulama kodu gönderilemedi.");
+    } finally {
+      setIsAuthDialogSubmitting(false);
+    }
+  }
+
+  async function handleVerificationSubmit(fields: AuthDialogFields) {
+    setIsAuthDialogSubmitting(true);
+    setAuthDialogMessage(null);
+    try {
+      const response = await verifyEmailCode(fields.email, fields.code);
+      setAuthDialogMessage(response.message);
+    } catch (err) {
+      setAuthDialogMessage(err instanceof Error ? err.message : "E-posta doğrulanamadı.");
+    } finally {
+      setIsAuthDialogSubmitting(false);
+    }
+  }
+
+  async function handlePasswordResetCodeSend(identifier: string) {
+    setIsAuthDialogSubmitting(true);
+    setAuthDialogMessage(null);
+    try {
+      const response = await sendPasswordResetCode(identifier);
+      setAuthDialogMessage(response.message);
+    } catch (err) {
+      setAuthDialogMessage(err instanceof Error ? err.message : "Şifre sıfırlama kodu gönderilemedi.");
+    } finally {
+      setIsAuthDialogSubmitting(false);
+    }
+  }
+
+  async function handlePasswordResetSubmit(fields: AuthDialogFields) {
+    setIsAuthDialogSubmitting(true);
+    setAuthDialogMessage(null);
+    try {
+      const response = await resetPasswordWithCode(fields.identifier, fields.code, fields.password);
+      setAuthDialogMessage(response.message);
+      setUsername(fields.identifier);
+    } catch (err) {
+      setAuthDialogMessage(err instanceof Error ? err.message : "Şifre güncellenemedi.");
+    } finally {
+      setIsAuthDialogSubmitting(false);
     }
   }
 
@@ -830,7 +1000,150 @@ export function App() {
     setMaterialFilters({});
   }
 
+  async function openAddMaterialModal() {
+    setIsAddMaterialOpen(true);
+    setIsLoadingMaterialOptions(true);
+    setDataError(null);
+    try {
+      setMaterialAddOptions(await fetchMaterialAddOptions(token));
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Malzeme ekleme seçenekleri yüklenemedi.");
+      setIsAddMaterialOpen(false);
+    } finally {
+      setIsLoadingMaterialOptions(false);
+    }
+  }
+
+  async function handleSaveMaterial(payload: MaterialCreatePayload) {
+    setIsSavingMaterial(true);
+    setDataError(null);
+    try {
+      const createdMaterial = await createMaterial(token, payload);
+      const materialRows = await fetchMaterials(token, materialSearch);
+      setMaterials(materialRows);
+      setSelectedMaterial(materialRows.find((material) => material.id === createdMaterial.id) ?? createdMaterial);
+      setIsAddMaterialOpen(false);
+      setMaterialAddOptions(null);
+      setNotice(`${createdMaterial.malzeme_kodu || "Malzeme"} başarıyla eklendi.`);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Malzeme eklenemedi.");
+      throw err;
+    } finally {
+      setIsSavingMaterial(false);
+    }
+  }
+
+  async function openMaterialDetailModal(mode: "view" | "edit") {
+    if (!selectedMaterial) {
+      setNotice(mode === "edit" ? "Düzenlemek için önce tablodan bir malzeme seçin." : "Detay görmek için önce tablodan bir malzeme seçin.");
+      return;
+    }
+    const effectiveMode = mode === "edit" && canEditMaterial(user) ? "edit" : "view";
+    setMaterialDetailMode(effectiveMode);
+    setIsMaterialDetailOpen(true);
+    setIsLoadingMaterialDetail(true);
+    setMaterialDetail(null);
+    setDataError(null);
+    try {
+      const [detailResponse, optionsResponse] = await Promise.all([
+        fetchMaterialDetail(token, selectedMaterial.id),
+        canEditMaterial(user) ? fetchMaterialAddOptions(token) : Promise.resolve(materialAddOptions),
+      ]);
+      setMaterialDetail(detailResponse);
+      if (optionsResponse) {
+        setMaterialAddOptions(optionsResponse);
+      }
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Malzeme detayı yüklenemedi.");
+      setIsMaterialDetailOpen(false);
+    } finally {
+      setIsLoadingMaterialDetail(false);
+    }
+  }
+
+  async function handleSaveMaterialDetail(payload: MaterialCreatePayload) {
+    if (!materialDetail) {
+      return;
+    }
+    setIsSavingMaterialDetail(true);
+    setDataError(null);
+    try {
+      const detailResponse = await updateMaterial(token, materialDetail.material.id, payload);
+      setMaterialDetail(detailResponse);
+      const materialRows = await fetchMaterials(token, materialSearch);
+      setMaterials(materialRows);
+      setSelectedMaterial(materialRows.find((material) => material.id === detailResponse.material.id) ?? detailResponse.material);
+      setIsMaterialDetailOpen(false);
+      setNotice(`${detailResponse.material.malzeme_kodu || "Malzeme"} başarıyla güncellendi.`);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Malzeme güncellenemedi.");
+      throw err;
+    } finally {
+      setIsSavingMaterialDetail(false);
+    }
+  }
+
+  async function handleDeleteMaterial() {
+    if (!selectedMaterial) {
+      setNotice("Silmek için önce tablodan bir malzeme seçin.");
+      return;
+    }
+    const confirmed = window.confirm(`${selectedMaterial.id} ID'li '${selectedMaterial.malzeme_kodu || selectedMaterial.ad || "malzeme"}' kaydını silmek istiyor musunuz?`);
+    if (!confirmed) {
+      return;
+    }
+    setDataError(null);
+    try {
+      const response = await deleteMaterial(token, selectedMaterial.id);
+      const materialRows = await fetchMaterials(token, materialSearch);
+      setMaterials(materialRows);
+      setSelectedMaterial(null);
+      setNotice(response.message);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Malzeme silinemedi.");
+    }
+  }
+
+  async function handleImportMamulMaterials(file: File) {
+    setIsImportingMaterials(true);
+    setMaterialImportResult(null);
+    setDataError(null);
+    try {
+      const response = await importMamulMaterials(token, file);
+      setMaterialImportResult(response);
+      const materialRows = await fetchMaterials(token, materialSearch);
+      setMaterials(materialRows);
+      setNotice(`Mamül içe aktarma tamamlandı. Başarılı: ${response.inserted_count}, mevcut: ${response.existing_count}, hatalı: ${response.failed_count}.`);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Mamül içe aktarılamadı.");
+      throw err;
+    } finally {
+      setIsImportingMaterials(false);
+    }
+  }
+
   function handleMaterialAction(action: string) {
+    if (action === "add") {
+      void openAddMaterialModal();
+      return;
+    }
+    if (action === "detail") {
+      void openMaterialDetailModal("view");
+      return;
+    }
+    if (action === "edit") {
+      void openMaterialDetailModal("edit");
+      return;
+    }
+    if (action === "delete") {
+      void handleDeleteMaterial();
+      return;
+    }
+    if (action === "import") {
+      setMaterialImportResult(null);
+      setIsImportMaterialOpen(true);
+      return;
+    }
     if (action === "export") {
       exportMaterials(filteredMaterials);
       setNotice("Görünen malzeme listesi CSV olarak hazırlandı.");
@@ -841,10 +1154,6 @@ export function App() {
       return;
     }
     const actionMessages: Record<string, string> = {
-      add: "Malzeme ekleme API akışı hazırlandığında bu buton aktif edilecek.",
-      edit: "Malzeme düzenleme API akışı hazırlandığında bu buton seçili malzemeyi açacak.",
-      delete: "Malzeme silme API akışı hazırlandığında bu buton onayla silme yapacak.",
-      import: "Mamül içe aktarma masaüstündeki import akışı web API'ye taşındığında aktif edilecek.",
     };
     setNotice(actionMessages[action] ?? "Bu malzeme aksiyonu henüz web API'ye bağlanmadı.");
   }
@@ -860,6 +1169,12 @@ export function App() {
     setProductDetail(null);
     setProductTree(null);
     setIsDetailOpen(false);
+    setIsMaterialDetailOpen(false);
+    setMaterialDetail(null);
+    setIsAddMaterialOpen(false);
+    setMaterialAddOptions(null);
+    setIsImportMaterialOpen(false);
+    setMaterialImportResult(null);
   }
 
   if (!token || !user) {
@@ -916,12 +1231,8 @@ export function App() {
                 <span>Beni Hatırla</span>
               </label>
               <div className="login-links" aria-label="Hesap işlemleri">
-                <button type="button" onClick={() => setError("E-posta doğrulama akışı web arayüzüne henüz bağlanmadı.")}>
-                  E-posta Doğrula
-                </button>
-                <button type="button" onClick={() => setError("Şifre sıfırlama akışı web arayüzüne henüz bağlanmadı.")}>
-                  Şifremi Unuttum
-                </button>
+                <button type="button" onClick={() => openAuthDialog("verify-email")}>E-posta Doğrula</button>
+                <button type="button" onClick={() => openAuthDialog("forgot-password")}>Şifremi Unuttum</button>
               </div>
             </div>
             {error ? (
@@ -935,12 +1246,24 @@ export function App() {
             </button>
             <div className="login-footer">
               <span>Henüz hesabınız yok mu?</span>
-              <button type="button" onClick={() => setError("Hesap oluşturma akışı web arayüzüne henüz bağlanmadı.")}>
-                Hesap Oluştur
-              </button>
+              <button type="button" onClick={() => openAuthDialog("signup")}>Hesap Oluştur</button>
             </div>
           </form>
         </section>
+        {authDialogMode ? (
+          <AuthDialog
+            defaultIdentifier={username}
+            isSubmitting={isAuthDialogSubmitting}
+            message={authDialogMessage}
+            mode={authDialogMode}
+            onClose={closeAuthDialog}
+            onPasswordResetCodeSend={handlePasswordResetCodeSend}
+            onPasswordResetSubmit={handlePasswordResetSubmit}
+            onSignupSubmit={handleSignupSubmit}
+            onVerificationCodeSend={handleVerificationCodeSend}
+            onVerificationSubmit={handleVerificationSubmit}
+          />
+        ) : null}
       </main>
     );
   }
@@ -978,10 +1301,30 @@ export function App() {
               Malzemeler
             </button>
           ) : null}
+          {canSeeModule(modules, "selection_wizard") ? (
+            <button className={view === "selection-wizard" ? "active" : ""} type="button" onClick={() => setView("selection-wizard")}>
+              Seçim Sihirbazı
+            </button>
+          ) : null}
+          {canSeeModule(modules, "technical_calculations") ? (
+            <div className="nav-group">
+              <button className={isTechnicalView(view) ? "active nav-parent" : "nav-parent"} type="button" onClick={() => setView("technical-overview")}>
+                Teknik Hesaplamalar
+              </button>
+              <div className="nav-sublist" aria-label="Teknik hesaplamalar alt menüsü">
+                {technicalMenuItems.map((item) => (
+                  <button className={view === item.view ? "active" : ""} type="button" key={item.view} onClick={() => setView(item.view)}>
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </nav>
       </aside>
 
       <section className="content">
+        {view !== "dashboard" ? (
         <header className="topbar">
           <div className="topbar-title">
             <button
@@ -996,10 +1339,14 @@ export function App() {
               <span>Menü</span>
             </button>
             <div>
-              <h1>{view === "products" ? "Ürünler" : view === "materials" ? "Malzemeler" : "Maliyet Analizleri Web App"}</h1>
+              <h1>{view === "products" ? "Ürünler" : view === "materials" ? "Malzemeler" : view === "selection-wizard" ? "Seçim Sihirbazı" : isTechnicalView(view) ? technicalTitleForView(view) : "Maliyet Analizleri Web App"}</h1>
               <p>
                 {view === "products"
                   ? "Masaüstü Ürünler ekranındaki tablo, filtreler ve aksiyonlar web modül ekranına taşındı."
+                  : view === "selection-wizard"
+                    ? "Masaüstü seçim sihirbazları web akışına taşınıyor; ALVERpro aktif olarak kullanılabilir."
+                  : isTechnicalView(view)
+                    ? "Masaüstü Teknik Hesaplamalar modülündeki mühendislik aracı ayrı web ekranı olarak açıldı."
                   : "Ürün ve malzeme modülleri aynı veritabanı üzerinden çalışıyor."}
               </p>
             </div>
@@ -1019,6 +1366,7 @@ export function App() {
             </button>
           </div>
         </header>
+        ) : null}
 
         {dataError ? (
           <div className="error-state inline-error">
@@ -1064,6 +1412,7 @@ export function App() {
             filters={materialFilters}
             isLoading={isLoadingData}
             isMaster={isMasterUser(user)}
+            isMaterialEditable={canEditMaterial(user)}
             materialSearch={materialSearch}
             materials={filteredMaterials}
             onAction={handleMaterialAction}
@@ -1074,8 +1423,22 @@ export function App() {
             selectedMaterial={selectedMaterial}
             totalMaterialCount={materials.length}
           />
+        ) : view === "selection-wizard" ? (
+          <SelectionWizardScreen token={token} />
+        ) : view === "leave-management" ? (
+          <LeaveManagementScreen token={token} />
+        ) : view === "technical-overview" ? (
+          <TechnicalOverviewScreen setView={setView} />
+        ) : isTechnicalDetailView(view) ? (
+          <TechnicalCalculationsScreen tool={technicalToolForView(view)} />
         ) : (
-          <DashboardScreen firstPhaseModules={firstPhaseModules} materials={materials} modules={modules} products={products} setView={setView} />
+          <DashboardScreen
+            isSidebarOpen={isSidebarOpen}
+            materials={materials}
+            products={products}
+            setIsSidebarOpen={setIsSidebarOpen}
+            setView={setView}
+          />
         )}
       </section>
       {isDetailOpen ? (
@@ -1109,7 +1472,178 @@ export function App() {
           tree={productTree}
         />
       ) : null}
+      {isAddMaterialOpen ? (
+        <MaterialAddModal
+          isLoading={isLoadingMaterialOptions}
+          isSaving={isSavingMaterial}
+          onClose={() => {
+            if (!isSavingMaterial) {
+              setIsAddMaterialOpen(false);
+              setMaterialAddOptions(null);
+            }
+          }}
+          onSave={handleSaveMaterial}
+          options={materialAddOptions}
+        />
+      ) : null}
+      {isMaterialDetailOpen ? (
+        <MaterialDetailModal
+          detail={materialDetail}
+          isEditable={canEditMaterial(user)}
+          isLoading={isLoadingMaterialDetail}
+          isSaving={isSavingMaterialDetail}
+          mode={materialDetailMode}
+          onClose={() => {
+            if (!isSavingMaterialDetail) {
+              setIsMaterialDetailOpen(false);
+              setMaterialDetail(null);
+            }
+          }}
+          onSave={handleSaveMaterialDetail}
+          options={materialAddOptions}
+        />
+      ) : null}
+      {isImportMaterialOpen ? (
+        <MaterialImportModal
+          isImporting={isImportingMaterials}
+          onClose={() => {
+            if (!isImportingMaterials) {
+              setIsImportMaterialOpen(false);
+            }
+          }}
+          onImport={handleImportMamulMaterials}
+          result={materialImportResult}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function AuthDialog({
+  defaultIdentifier,
+  isSubmitting,
+  message,
+  mode,
+  onClose,
+  onPasswordResetCodeSend,
+  onPasswordResetSubmit,
+  onSignupSubmit,
+  onVerificationCodeSend,
+  onVerificationSubmit,
+}: {
+  defaultIdentifier: string;
+  isSubmitting: boolean;
+  message: string | null;
+  mode: AuthDialogMode;
+  onClose: () => void;
+  onPasswordResetCodeSend: (identifier: string) => void;
+  onPasswordResetSubmit: (fields: AuthDialogFields) => void;
+  onSignupSubmit: (fields: AuthDialogFields) => void;
+  onVerificationCodeSend: (email: string) => void;
+  onVerificationSubmit: (fields: AuthDialogFields) => void;
+}) {
+  const [fields, setFields] = useState<AuthDialogFields>({
+    username: defaultIdentifier,
+    email: "",
+    identifier: defaultIdentifier,
+    code: "",
+    password: "",
+  });
+  const title =
+    mode === "signup" ? "Hesap Oluştur" : mode === "forgot-password" ? "Şifremi Unuttum" : "E-posta Doğrula";
+  const description =
+    mode === "signup"
+      ? "Bomaksan e-posta adresinizle hesap oluşturun; doğrulama kodu e-posta olarak gönderilir."
+      : mode === "forgot-password"
+        ? "Kullanıcı adınızı veya e-posta adresinizi girip kod alın, ardından yeni şifrenizi belirleyin."
+        : "E-posta adresinize doğrulama kodu gönderin veya mevcut kodunuzu onaylayın.";
+
+  function updateField(key: keyof AuthDialogFields, value: string) {
+    setFields((current) => ({ ...current, [key]: value }));
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (mode === "signup") {
+      onSignupSubmit(fields);
+    } else if (mode === "forgot-password") {
+      onPasswordResetSubmit(fields);
+    } else {
+      onVerificationSubmit(fields);
+    }
+  }
+
+  return (
+    <div className="auth-dialog-backdrop" role="presentation">
+      <section className="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+        <button className="auth-dialog-close" type="button" onClick={onClose} title="Kapat" disabled={isSubmitting}>
+          <X size={18} />
+        </button>
+        <div className="auth-dialog-heading">
+          <h2 id="auth-dialog-title">{title}</h2>
+          <p>{description}</p>
+        </div>
+        <form className="auth-dialog-form" onSubmit={handleSubmit}>
+          {mode === "signup" ? (
+            <>
+              <label>
+                Kullanıcı Adı
+                <input value={fields.username} onChange={(event) => updateField("username", event.target.value)} autoComplete="username" required />
+              </label>
+              <label>
+                E-posta
+                <input value={fields.email} onChange={(event) => updateField("email", event.target.value)} autoComplete="email" type="email" required />
+              </label>
+              <label>
+                Şifre
+                <input value={fields.password} onChange={(event) => updateField("password", event.target.value)} autoComplete="new-password" type="password" minLength={8} required />
+              </label>
+            </>
+          ) : mode === "forgot-password" ? (
+            <>
+              <label>
+                Kullanıcı Adı veya E-posta
+                <input value={fields.identifier} onChange={(event) => updateField("identifier", event.target.value)} autoComplete="username" required />
+              </label>
+              <button className="secondary-auth-action" type="button" onClick={() => onPasswordResetCodeSend(fields.identifier)} disabled={isSubmitting || !fields.identifier.trim()}>
+                Kod Gönder
+              </button>
+              <label>
+                Sıfırlama Kodu
+                <input value={fields.code} onChange={(event) => updateField("code", event.target.value)} inputMode="numeric" required />
+              </label>
+              <label>
+                Yeni Şifre
+                <input value={fields.password} onChange={(event) => updateField("password", event.target.value)} autoComplete="new-password" type="password" minLength={8} required />
+              </label>
+            </>
+          ) : (
+            <>
+              <label>
+                E-posta
+                <input value={fields.email} onChange={(event) => updateField("email", event.target.value)} autoComplete="email" type="email" required />
+              </label>
+              <button className="secondary-auth-action" type="button" onClick={() => onVerificationCodeSend(fields.email)} disabled={isSubmitting || !fields.email.trim()}>
+                Kod Gönder
+              </button>
+              <label>
+                Doğrulama Kodu
+                <input value={fields.code} onChange={(event) => updateField("code", event.target.value)} inputMode="numeric" required />
+              </label>
+            </>
+          )}
+          {message ? (
+            <div className="auth-dialog-message">
+              <AlertCircle size={18} />
+              <span>{message}</span>
+            </div>
+          ) : null}
+          <button className="auth-dialog-submit" type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "İşleniyor..." : mode === "signup" ? "Hesap Oluştur" : mode === "forgot-password" ? "Şifreyi Güncelle" : "E-postayı Doğrula"}
+          </button>
+        </form>
+      </section>
+    </div>
   );
 }
 
@@ -1150,6 +1684,29 @@ function ProductModuleScreen({
   selectedProduct: ProductInfo | null;
   totalProductCount: number;
 }) {
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; product: ProductInfo } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+    const closeMenu = () => setContextMenu(null);
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [contextMenu]);
+
+  function handleContextAction(action: string) {
+    if (contextMenu) {
+      onSelectProduct(contextMenu.product);
+    }
+    setContextMenu(null);
+    window.setTimeout(() => onAction(action), 0);
+  }
+
   return (
     <section className="product-module-shell">
       <aside className="product-filter-panel">
@@ -1276,6 +1833,11 @@ function ProductModuleScreen({
                 key={product.id}
                 type="button"
                 onClick={() => onSelectProduct(product)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  onSelectProduct(product);
+                  setContextMenu({ x: event.clientX, y: event.clientY, product });
+                }}
                 onDoubleClick={() => onOpenDetail(product)}
               >
                 {productColumns.map((column) => (
@@ -1287,6 +1849,43 @@ function ProductModuleScreen({
           </div>
         </div>
       </section>
+      {contextMenu ? (
+        <div
+          className="product-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          role="menu"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" onClick={() => handleContextAction("detail")} disabled={isActionRunning}>
+            <FileText size={16} />
+            <span>Ürün Detay</span>
+          </button>
+          <button type="button" role="menuitem" onClick={() => handleContextAction("tree")} disabled={isActionRunning}>
+            <GitBranch size={16} />
+            <span>Ürün Ağacı</span>
+          </button>
+          {isMaster ? (
+            <button type="button" role="menuitem" onClick={() => handleContextAction("edit")} disabled={isActionRunning}>
+              <Edit size={16} />
+              <span>Ürün Düzenle</span>
+            </button>
+          ) : null}
+          <button type="button" role="menuitem" onClick={() => handleContextAction("copy")} disabled={isActionRunning}>
+            <Copy size={16} />
+            <span>Kopyala</span>
+          </button>
+          <button type="button" role="menuitem" onClick={() => handleContextAction("revise")} disabled={isActionRunning}>
+            <RefreshCw size={16} />
+            <span>Fiyatları Revize Et</span>
+          </button>
+          {isMaster ? (
+            <button className="danger" type="button" role="menuitem" onClick={() => handleContextAction("delete")} disabled={isActionRunning}>
+              <Trash2 size={16} />
+              <span>Ürün Sil</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -2125,6 +2724,7 @@ function MaterialsScreen({
   filters,
   isLoading,
   isMaster,
+  isMaterialEditable,
   materials,
   materialSearch,
   onAction,
@@ -2141,6 +2741,7 @@ function MaterialsScreen({
   filters: Partial<Record<MaterialFilterKey, string>>;
   isLoading: boolean;
   isMaster: boolean;
+  isMaterialEditable: boolean;
   materials: MaterialInfo[];
   materialSearch: string;
   onAction: (action: string) => void;
@@ -2151,14 +2752,28 @@ function MaterialsScreen({
   selectedMaterial: MaterialInfo | null;
   totalMaterialCount: number;
 }) {
-  const typeCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const material of materials) {
-      const type = String(material.malzeme_tipi || "Tipsiz");
-      counts.set(type, (counts.get(type) ?? 0) + 1);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; material: MaterialInfo } | null>(null);
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
     }
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4);
-  }, [materials]);
+    const closeMenu = () => setContextMenu(null);
+    window.addEventListener("click", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    return () => {
+      window.removeEventListener("click", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [contextMenu]);
+
+  function handleContextAction(action: string) {
+    if (contextMenu) {
+      onSelectMaterial(contextMenu.material);
+    }
+    setContextMenu(null);
+    window.setTimeout(() => onAction(action), 0);
+  }
 
   return (
     <section className="product-module-shell material-module-shell" id="materials">
@@ -2223,14 +2838,17 @@ function MaterialsScreen({
             <span>Masaüstündeki kolonlar korunur; arama, filtre ve seçim işlemleri web ekranına taşındı.</span>
           </div>
           <div className="product-toolbar primary-toolbar">
-            <ProductActionButton emphasis icon={<PackagePlus size={18} />} label="Malzeme Ekle" onClick={() => onAction("add")} />
+            <ProductActionButton disabled={!selectedMaterial} icon={<FileText size={18} />} label="Detay" onClick={() => onAction("detail")} />
             <ProductActionButton icon={<Download size={18} />} label="Dışa Aktar" onClick={() => onAction("export")} />
             <ProductActionButton icon={<Upload size={18} />} label="Mamül İçe Aktar" onClick={() => onAction("import")} />
           </div>
           <div className="product-toolbar secondary-toolbar">
-            <ProductActionButton disabled={!selectedMaterial} icon={<Edit size={18} />} label="Malzeme Düzenle" onClick={() => onAction("edit")} />
+            <ProductActionButton emphasis icon={<PackagePlus size={18} />} label="Malzeme Ekle" onClick={() => onAction("add")} />
+            {isMaterialEditable ? (
+              <ProductActionButton disabled={!selectedMaterial} icon={<Edit size={18} />} label="Malzeme Düzenle" onClick={() => onAction("edit")} />
+            ) : null}
             {isMaster ? (
-              <ProductActionButton danger disabled={!selectedMaterial} icon={<Trash2 size={18} />} label="Malzeme Çıkart" onClick={() => onAction("delete")} />
+              <ProductActionButton danger disabled={!selectedMaterial} icon={<Trash2 size={18} />} label="Malzeme Sil" onClick={() => onAction("delete")} />
             ) : null}
           </div>
         </div>
@@ -2259,19 +2877,6 @@ function MaterialsScreen({
           </section>
         ) : null}
 
-        <div className="material-type-strip" aria-label="Malzeme tipi dağılımı">
-          {typeCounts.length ? (
-            typeCounts.map(([type, count]) => (
-              <div key={type}>
-                <span>{type}</span>
-                <strong>{count}</strong>
-              </div>
-            ))
-          ) : (
-            <span className="muted">Malzeme tipi özeti için kayıt bekleniyor.</span>
-          )}
-        </div>
-
         <div className="product-table-shell material-table-shell">
           <div className="product-table-header">
             <div>
@@ -2295,7 +2900,12 @@ function MaterialsScreen({
                 key={material.id}
                 type="button"
                 onClick={() => onSelectMaterial(material)}
-                onDoubleClick={() => onAction("edit")}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  onSelectMaterial(material);
+                  setContextMenu({ x: event.clientX, y: event.clientY, material });
+                }}
+                onDoubleClick={() => onAction(isMaterialEditable ? "edit" : "detail")}
               >
                 <span>{material.malzeme_kodu || "-"}</span>
                 <span>{material.malzeme_tipi || "-"}</span>
@@ -2308,83 +2918,1301 @@ function MaterialsScreen({
           </div>
         </div>
       </section>
+      {contextMenu ? (
+        <div
+          className="material-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          role="menu"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" onClick={() => handleContextAction("detail")}>
+            <FileText size={16} />
+            <span>Malzeme Detay</span>
+          </button>
+          {isMaterialEditable ? (
+            <button type="button" role="menuitem" onClick={() => handleContextAction("edit")}>
+              <Edit size={16} />
+              <span>Malzeme Düzenle</span>
+            </button>
+          ) : null}
+          {isMaster ? (
+            <button className="danger" type="button" role="menuitem" onClick={() => handleContextAction("delete")}>
+              <Trash2 size={16} />
+              <span>Malzeme Sil</span>
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
 
+function MaterialAddModal({
+  isLoading,
+  isSaving,
+  onClose,
+  onSave,
+  options,
+}: {
+  isLoading: boolean;
+  isSaving: boolean;
+  onClose: () => void;
+  onSave: (payload: MaterialCreatePayload) => Promise<void>;
+  options: MaterialAddOptions | null;
+}) {
+  const [materialCode, setMaterialCode] = useState("");
+  const [materialType, setMaterialType] = useState("Mamül");
+  const [materialName, setMaterialName] = useState("");
+  const [unitPrice, setUnitPrice] = useState("");
+  const [fixedCostName, setFixedCostName] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const isSemiFinished = materialType === "Yarı Mamül";
+
+  useEffect(() => {
+    if (!options || !isSemiFinished) {
+      return;
+    }
+    setMaterialCode(options.next_yari_mamul_code);
+  }, [isSemiFinished, options]);
+
+  function handleTypeChange(nextType: string) {
+    setMaterialType(nextType);
+    setFormError(null);
+    if (nextType === "Yarı Mamül") {
+      setMaterialCode(options?.next_yari_mamul_code ?? "");
+      setMaterialName("");
+      setUnitPrice("");
+      setFixedCostName("");
+      return;
+    }
+    setMaterialCode("");
+    setMaterialName("");
+    setUnitPrice("");
+    setFixedCostName("");
+  }
+
+  function handleFixedCostChange(nextName: string) {
+    setFixedCostName(nextName);
+    const selectedItem = options?.fixed_cost_items.find((item) => item.kalem_adi === nextName);
+    setMaterialName(selectedItem?.kalem_adi ?? "");
+    setUnitPrice(selectedItem?.birim_fiyat === null || selectedItem?.birim_fiyat === undefined ? "" : String(selectedItem.birim_fiyat));
+    setFormError(null);
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedPrice = unitPrice.trim().replace(",", ".");
+    if (!materialCode.trim()) {
+      setFormError("Malzeme kodu zorunludur.");
+      return;
+    }
+    if (!normalizedPrice || !Number.isFinite(Number(normalizedPrice))) {
+      setFormError("Birim fiyat geçerli bir sayı olmalıdır.");
+      return;
+    }
+    if (isSemiFinished && !fixedCostName) {
+      setFormError("Yarı Mamül için sabit maliyet kalemi seçin.");
+      return;
+    }
+    try {
+      setFormError(null);
+      await onSave({
+        malzeme_kodu: materialCode.trim(),
+        malzeme_tipi: materialType,
+        ad: materialName.trim(),
+        birim_fiyat: normalizedPrice,
+      });
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Malzeme eklenemedi.");
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="material-add-modal" role="dialog" aria-modal="true" aria-labelledby="material-add-title">
+        <header className="product-detail-header">
+          <div>
+            <span>Malzeme Yönetimi</span>
+            <h2 id="material-add-title">Yeni Malzeme Ekle</h2>
+          </div>
+          <button className="modal-close-button" type="button" onClick={onClose} title="Kapat" disabled={isSaving}>
+            <X size={20} />
+          </button>
+        </header>
+
+        {isLoading ? (
+          <div className="detail-loading">Malzeme seçenekleri yükleniyor...</div>
+        ) : (
+          <form className="material-add-form" onSubmit={handleSubmit}>
+            <label className="material-form-field">
+              <span>Malzeme Tipi</span>
+              <select value={materialType} onChange={(event) => handleTypeChange(event.target.value)} disabled={isSaving}>
+                <option value="Yarı Mamül">Yarı Mamül</option>
+                <option value="Mamül">Mamül</option>
+                <option value="Proje Mamül">Proje Mamül</option>
+              </select>
+            </label>
+
+            <label className="material-form-field">
+              <span>Malzeme Kodu</span>
+              <input
+                value={materialCode}
+                onChange={(event) => setMaterialCode(event.target.value)}
+                placeholder={isSemiFinished ? "Otomatik YMM kodu" : "Örn: MAM-001"}
+                readOnly={isSemiFinished}
+                disabled={isSaving}
+                autoFocus
+              />
+            </label>
+
+            {isSemiFinished ? (
+              <label className="material-form-field">
+                <span>Sabit Maliyet Kalemi</span>
+                <select value={fixedCostName} onChange={(event) => handleFixedCostChange(event.target.value)} disabled={isSaving}>
+                  <option value="">Kalem seçin</option>
+                  {(options?.fixed_cost_items ?? []).map((item) => (
+                    <option value={item.kalem_adi} key={item.kalem_adi}>
+                      {item.kalem_adi}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
+            <label className="material-form-field">
+              <span>Malzeme Adı</span>
+              <input
+                value={materialName}
+                onChange={(event) => setMaterialName(event.target.value)}
+                placeholder="Malzeme adını girin"
+                readOnly={isSemiFinished}
+                disabled={isSaving}
+              />
+            </label>
+
+            <label className="material-form-field">
+              <span>Birim Fiyat (EUR)</span>
+              <input
+                value={unitPrice}
+                onChange={(event) => setUnitPrice(event.target.value)}
+                placeholder="0.00"
+                readOnly={isSemiFinished}
+                disabled={isSaving}
+                inputMode="decimal"
+              />
+            </label>
+
+            <div className="material-add-info">
+              <Info size={18} />
+              <span>Yarı Mamül seçildiğinde kod otomatik oluşturulur; ad ve fiyat seçilen EUR/kg sabit maliyet kaleminden gelir.</span>
+            </div>
+
+            {formError ? (
+              <div className="auth-dialog-message">
+                <AlertCircle size={18} />
+                <span>{formError}</span>
+              </div>
+            ) : null}
+
+            <footer className="material-add-footer">
+              <button className="product-action" type="button" onClick={onClose} disabled={isSaving}>
+                İptal
+              </button>
+              <button className="product-action emphasis save-action" type="submit" disabled={isSaving}>
+                <Save size={18} />
+                <span>{isSaving ? "Kaydediliyor" : "Kaydet"}</span>
+              </button>
+            </footer>
+          </form>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function MaterialDetailModal({
+  detail,
+  isEditable,
+  isLoading,
+  isSaving,
+  mode,
+  onClose,
+  onSave,
+}: {
+  detail: MaterialDetail | null;
+  isEditable: boolean;
+  isLoading: boolean;
+  isSaving: boolean;
+  mode: "view" | "edit";
+  onClose: () => void;
+  onSave: (payload: MaterialCreatePayload) => Promise<void>;
+  options: MaterialAddOptions | null;
+}) {
+  const [materialCode, setMaterialCode] = useState("");
+  const [materialType, setMaterialType] = useState("Mamül");
+  const [materialName, setMaterialName] = useState("");
+  const [unitPrice, setUnitPrice] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+  const isEditMode = mode === "edit" && isEditable;
+  const isSemiFinished = materialType === "Yarı Mamül";
+
+  useEffect(() => {
+    if (!detail) {
+      return;
+    }
+    setMaterialCode(detail.material.malzeme_kodu ?? "");
+    setMaterialType(detail.material.malzeme_tipi ?? "Mamül");
+    setMaterialName(detail.material.ad ?? "");
+    setUnitPrice(detail.material.fiyat === null || detail.material.fiyat === undefined ? "" : String(detail.material.fiyat));
+    setFormError(null);
+  }, [detail]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const normalizedPrice = unitPrice.trim().replace(",", ".");
+    if (!materialCode.trim()) {
+      setFormError("Malzeme kodu zorunludur.");
+      return;
+    }
+    if (!normalizedPrice || !Number.isFinite(Number(normalizedPrice))) {
+      setFormError("Birim fiyat geçerli bir sayı olmalıdır.");
+      return;
+    }
+    try {
+      setFormError(null);
+      await onSave({
+        malzeme_kodu: materialCode.trim(),
+        malzeme_tipi: materialType,
+        ad: materialName.trim(),
+        birim_fiyat: normalizedPrice,
+      });
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Malzeme güncellenemedi.");
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="material-detail-modal" role="dialog" aria-modal="true" aria-labelledby="material-detail-title">
+        <header className="product-detail-header">
+          <div>
+            <span>{isEditMode ? "Malzeme Yönetimi" : "Malzeme Detayları"}</span>
+            <h2 id="material-detail-title">{formatValue(detail?.material.malzeme_kodu)}</h2>
+          </div>
+          <button className="modal-close-button" type="button" onClick={onClose} title="Kapat" disabled={isSaving}>
+            <X size={20} />
+          </button>
+        </header>
+
+        {isLoading ? (
+          <div className="detail-loading">Malzeme detayı yükleniyor...</div>
+        ) : detail ? (
+          <form className="material-detail-body" onSubmit={handleSubmit}>
+            <section className="material-detail-card">
+              <div className="detail-card-heading">
+                <strong>
+                  <ClipboardList size={18} />
+                  Malzeme Bilgileri
+                </strong>
+                <span>
+                  {isEditMode
+                    ? isSemiFinished
+                      ? "Yarı Mamül fiyatı sabit maliyet kaleminden gelir."
+                      : "Kod, tip, ad ve birim fiyat düzenlenebilir."
+                    : "Bu ekran görüntüleme modunda açıldı."}
+                </span>
+              </div>
+              <div className="material-detail-form-grid">
+                <label className="material-form-field">
+                  <span>Malzeme Kodu</span>
+                  <input value={materialCode} onChange={(event) => setMaterialCode(event.target.value)} readOnly={!isEditMode} disabled={isSaving} />
+                </label>
+                <label className="material-form-field">
+                  <span>Malzeme Tipi</span>
+                  <select value={materialType} onChange={(event) => setMaterialType(event.target.value)} disabled={!isEditMode || isSaving}>
+                    <option value="Yarı Mamül">Yarı Mamül</option>
+                    <option value="Mamül">Mamül</option>
+                    <option value="Proje Mamül">Proje Mamül</option>
+                  </select>
+                </label>
+                <label className="material-form-field">
+                  <span>Malzeme Adı</span>
+                  <input value={materialName} onChange={(event) => setMaterialName(event.target.value)} readOnly={!isEditMode} disabled={isSaving} />
+                </label>
+                <label className="material-form-field">
+                  <span>Birim Fiyat (EUR)</span>
+                  <input
+                    value={unitPrice}
+                    onChange={(event) => setUnitPrice(event.target.value)}
+                    readOnly={!isEditMode || isSemiFinished}
+                    disabled={isSaving}
+                    inputMode="decimal"
+                  />
+                </label>
+              </div>
+              <div className={isEditMode ? "material-add-info warning-info" : "material-add-info"}>
+                <Info size={18} />
+                <span>
+                  {isEditMode
+                    ? isSemiFinished
+                      ? "Yarı Mamül fiyatı burada düzenlenmez; fiyat sabit maliyet kalemindeki EUR/kg değerinden okunur."
+                      : "Mamül fiyatı manuel olarak düzenlenebilir."
+                    : "Bu malzemenin temel bilgileri ve ürün ağacı kullanımları aşağıda gösterilir."}
+                </span>
+              </div>
+              {formError ? (
+                <div className="auth-dialog-message">
+                  <AlertCircle size={18} />
+                  <span>{formError}</span>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="material-detail-card">
+              <div className="detail-card-heading">
+                <strong>
+                  <GitBranch size={18} />
+                  Kullanıldığı Ürünler
+                </strong>
+                <span>{detail.used_products.length ? `${detail.used_products.length} ürün ağacı kaydı` : "Kullanım bulunamadı"}</span>
+              </div>
+              <div className="material-usage-table">
+                <div className="material-usage-row header">
+                  <span>Ürün Kodu</span>
+                  <span>Ürün Adı</span>
+                </div>
+                {detail.used_products.length ? (
+                  detail.used_products.map((product, index) => (
+                    <div className="material-usage-row" key={`${product.urun_kodu}-${index}`}>
+                      <span>{product.urun_kodu || "-"}</span>
+                      <span>{product.urun_adi || "-"}</span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="material-usage-row">
+                    <span>-</span>
+                    <span>Bu malzeme şu anda hiçbir ürün ağacında kullanılmıyor.</span>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            <footer className="material-add-footer material-detail-footer">
+              <button className="product-action" type="button" onClick={onClose} disabled={isSaving}>
+                Kapat
+              </button>
+              {isEditMode ? (
+                <button className="product-action emphasis save-action" type="submit" disabled={isSaving}>
+                  <Save size={18} />
+                  <span>{isSaving ? "Güncelleniyor" : "Güncelle"}</span>
+                </button>
+              ) : null}
+            </footer>
+          </form>
+        ) : (
+          <div className="detail-loading">Malzeme detayı bulunamadı.</div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function MaterialImportModal({
+  isImporting,
+  onClose,
+  onImport,
+  result,
+}: {
+  isImporting: boolean;
+  onClose: () => void;
+  onImport: (file: File) => Promise<void>;
+  result: MaterialImportResponse | null;
+}) {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedFile) {
+      setFormError("Lütfen önce bir Excel dosyası seçin.");
+      return;
+    }
+    try {
+      setFormError(null);
+      await onImport(selectedFile);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Mamül içe aktarılamadı.");
+    }
+  }
+
+  function downloadTemplate() {
+    const rows = [
+      ["Malzeme Kodu", "Malzeme Adı", "Birim Fiyat"],
+      ["MAM-001", "Galvaniz Sac 1mm", "12.50"],
+      ["MAM-002", "Paslanmaz Çelik 2mm", "45.75"],
+      ["MAM-003", "Alüminyum Profil", "28.90"],
+      ["MAM-004", "Plastik Boru 50mm", "8.25"],
+      ["MAM-005", "Kauçuk Conta", "3.45"],
+    ];
+    const html = `
+      <html>
+        <head><meta charset="utf-8" /></head>
+        <body>
+          <table>
+            ${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell}</td>`).join("")}</tr>`).join("")}
+          </table>
+        </body>
+      </html>
+    `;
+    const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "malzeme_sablon.xls";
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="material-import-modal" role="dialog" aria-modal="true" aria-labelledby="material-import-title">
+        <header className="product-detail-header">
+          <div>
+            <span>Malzeme Yönetimi</span>
+            <h2 id="material-import-title">Mamül İçe Aktar</h2>
+          </div>
+          <button className="modal-close-button" type="button" onClick={onClose} title="Kapat" disabled={isImporting}>
+            <X size={20} />
+          </button>
+        </header>
+
+        <form className="material-import-body" onSubmit={handleSubmit}>
+          <section className="material-detail-card">
+            <div className="detail-card-heading">
+              <strong>
+                <Upload size={18} />
+                Excel Dosyası
+              </strong>
+              <span>Dosyada Malzeme Kodu, Malzeme Adı ve Birim Fiyat kolonları bulunmalıdır.</span>
+            </div>
+            <label className="material-file-drop">
+              <input
+                accept=".xlsx,.xls"
+                type="file"
+                onChange={(event) => {
+                  setSelectedFile(event.target.files?.[0] ?? null);
+                  setFormError(null);
+                }}
+                disabled={isImporting}
+              />
+              <FileText size={24} />
+              <strong>{selectedFile ? selectedFile.name : "Excel dosyası seçin"}</strong>
+              <span>Mevcut malzeme kodları masaüstündeki gibi atlanır; yeni kayıtlar Mamül tipiyle eklenir.</span>
+            </label>
+            <div className="material-import-actions">
+              <button className="product-action" type="button" onClick={downloadTemplate} disabled={isImporting}>
+                <Download size={18} />
+                <span>Excel Şablonu İndir</span>
+              </button>
+              <button className="product-action emphasis save-action" type="submit" disabled={isImporting || !selectedFile}>
+                <Upload size={18} />
+                <span>{isImporting ? "İçe Aktarılıyor" : "İçe Aktar"}</span>
+              </button>
+            </div>
+            {formError ? (
+              <div className="auth-dialog-message">
+                <AlertCircle size={18} />
+                <span>{formError}</span>
+              </div>
+            ) : null}
+          </section>
+
+          <section className="material-detail-card">
+            <div className="detail-card-heading">
+              <strong>
+                <ClipboardList size={18} />
+                İşlem Sonuçları
+              </strong>
+              <span>{result ? `${result.total_count} satır işlendi` : "İçe aktarma işlemi henüz başlatılmadı."}</span>
+            </div>
+            {result ? (
+              <>
+                <div className="import-result-summary">
+                  <div>
+                    <span>Başarılı</span>
+                    <strong>{result.inserted_count}</strong>
+                  </div>
+                  <div>
+                    <span>Mevcut</span>
+                    <strong>{result.existing_count}</strong>
+                  </div>
+                  <div>
+                    <span>Hatalı</span>
+                    <strong>{result.failed_count}</strong>
+                  </div>
+                </div>
+                <div className="material-usage-table import-result-table">
+                  <div className="import-result-row header">
+                    <span>Satır</span>
+                    <span>Kod</span>
+                    <span>Durum</span>
+                    <span>Açıklama</span>
+                  </div>
+                  {result.items.map((item, index) => (
+                    <div className={`import-result-row ${item.status}`} key={`${item.row_number}-${index}`}>
+                      <span>{item.row_number}</span>
+                      <span>{item.malzeme_kodu || "-"}</span>
+                      <span>{item.status === "inserted" ? "Eklendi" : item.status === "existing" ? "Mevcut" : "Hatalı"}</span>
+                      <span>{item.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="empty-state">Dosya seçip içe aktardığınızda sonuçlar burada gösterilecek.</div>
+            )}
+          </section>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function LeaveManagementScreen({ token }: { token: string }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [dashboard, setDashboard] = useState<LeaveDashboard | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedMyRequestId, setSelectedMyRequestId] = useState<number | null>(null);
+  const [selectedManagerRequestId, setSelectedManagerRequestId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const [reason, setReason] = useState("");
+  const [employeeNote, setEmployeeNote] = useState("");
+  const [approvalMode, setApprovalMode] = useState<"BAKIYEDEN_DUSECEK" | "YONETICI_IZNI">("BAKIYEDEN_DUSECEK");
+  const [actualDays, setActualDays] = useState("");
+  const [managerNote, setManagerNote] = useState("");
+  const [workdayCount, setWorkdayCount] = useState<number | null>(null);
+  const [workdayText, setWorkdayText] = useState("Tarih aralığı seçin.");
+
+  async function loadDashboard() {
+    setIsLoading(true);
+    setError(null);
+    try {
+      setDashboard(await fetchLeaveDashboard(token));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "İzin bilgileri yüklenemedi.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  async function calculateWorkdays() {
+    setError(null);
+    try {
+      const result = await fetchLeaveWorkdaySummary(token, startDate, endDate);
+      setWorkdayCount(result.work_days);
+      setWorkdayText(`${formatValue(result.work_days)} iş günü`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "İş günü hesaplanamadı.");
+    }
+  }
+
+  async function submitRequest() {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const result = await fetchLeaveWorkdaySummary(token, startDate, endDate);
+      if (result.work_days <= 0) {
+        throw new Error("Seçilen tarih aralığında izin düşülecek iş günü bulunamadı.");
+      }
+      await createLeaveRequest(token, {
+        leave_type: "YILLIK_IZIN",
+        start_date: startDate,
+        end_date: endDate,
+        requested_days: result.work_days,
+        reason: reason.trim() || null,
+        employee_note: employeeNote.trim() || null,
+      });
+      setReason("");
+      setEmployeeNote("");
+      setWorkdayCount(result.work_days);
+      setWorkdayText(`${formatValue(result.work_days)} iş günü`);
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "İzin talebi gönderilemedi.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function runLeaveAction(action: () => Promise<unknown>, fallbackMessage: string) {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await action();
+      setSelectedMyRequestId(null);
+      setSelectedManagerRequestId(null);
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : fallbackMessage);
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [token]);
+
+  const balance = dashboard?.balance ?? {};
+  const managerRows = dashboard?.pending_manager_requests?.length ? dashboard.pending_manager_requests : dashboard?.manager_requests ?? [];
+  const selectedMyRequest = dashboard?.my_requests?.find((row) => row.id === selectedMyRequestId) ?? null;
+  const selectedManagerRequest = managerRows.find((row) => row.id === selectedManagerRequestId) ?? null;
+
+  return (
+    <section className="leave-screen">
+      <header className="leave-header">
+        <div>
+          <h2>İzin Yönetim Modülü</h2>
+          <p>{isLoading ? "İzin bilgileri yükleniyor..." : "Masaüstündeki izin akışı web ekranına taşınıyor."}</p>
+        </div>
+        <button className="product-action" type="button" onClick={loadDashboard} disabled={isLoading}>
+          <RefreshCw size={18} />
+          <span>Yenile</span>
+        </button>
+      </header>
+
+      {error ? (
+        <div className="error-state inline-error">
+          <AlertCircle size={20} />
+          <span>{error}</span>
+        </div>
+      ) : null}
+
+      <div className="leave-metrics">
+        <LeaveMetric label="Kullanılabilir" value={balance.available_days} tone="green" />
+        <LeaveMetric label="Rezerve" value={balance.reserved_days} tone="amber" />
+        <LeaveMetric label="Kullanılan" value={balance.used_days} tone="blue" />
+        <LeaveMetric label="Onay Bekleyen" value={balance.pending_approval_days} tone="red" />
+      </div>
+
+      <div className="leave-grid">
+        <section className="leave-panel">
+          <h3>Yeni İzin Talebi</h3>
+          <div className="leave-form-grid">
+            <label>
+              Başlangıç
+              <input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} />
+            </label>
+            <label>
+              Bitiş
+              <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
+            </label>
+          </div>
+          <label className="leave-wide-field">
+            İzin nedeni
+            <input value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Örn. yıllık izin" />
+          </label>
+          <label className="leave-wide-field">
+            Çalışan notu
+            <input value={employeeNote} onChange={(event) => setEmployeeNote(event.target.value)} placeholder="İsteğe bağlı" />
+          </label>
+          <div className="leave-workday-result">{workdayText}</div>
+          <div className="leave-actions">
+            <button className="product-action" type="button" onClick={calculateWorkdays} disabled={isSubmitting}>
+              İş Günü Hesapla
+            </button>
+            <button className="product-action emphasis" type="button" onClick={submitRequest} disabled={isSubmitting || !startDate || !endDate}>
+              Talebi Gönder
+            </button>
+          </div>
+        </section>
+
+        <section className="leave-panel">
+          <h3>Bana Gelen Talepler ({managerRows.length})</h3>
+          <LeaveRequestList rows={managerRows} selectedId={selectedManagerRequestId} showUser onSelect={setSelectedManagerRequestId} />
+          <div className="leave-manager-actions">
+            <label>
+              Onay modu
+              <select value={approvalMode} onChange={(event) => setApprovalMode(event.target.value as "BAKIYEDEN_DUSECEK" | "YONETICI_IZNI")}>
+                <option value="BAKIYEDEN_DUSECEK">Bakiyeden Düşecek</option>
+                <option value="YONETICI_IZNI">Yönetici İzni</option>
+              </select>
+            </label>
+            <label>
+              Fiili gün
+              <input value={actualDays} onChange={(event) => setActualDays(event.target.value)} placeholder={formatValue(selectedManagerRequest?.approved_days ?? selectedManagerRequest?.requested_days ?? 0)} />
+            </label>
+            <label className="leave-wide-field">
+              Yönetici notu
+              <input value={managerNote} onChange={(event) => setManagerNote(event.target.value)} placeholder="İsteğe bağlı" />
+            </label>
+            <div className="leave-actions">
+              <button
+                className="product-action emphasis"
+                type="button"
+                disabled={!selectedManagerRequest || isSubmitting}
+                onClick={() => runLeaveAction(() => approveLeaveRequest(token, selectedManagerRequest!.id, {
+                  approval_mode: approvalMode,
+                  approved_days: selectedManagerRequest!.requested_days ?? workdayCount ?? 0,
+                  manager_note: managerNote,
+                }), "İzin talebi onaylanamadı.")}
+              >
+                Onayla
+              </button>
+              <button
+                className="product-action danger"
+                type="button"
+                disabled={!selectedManagerRequest || isSubmitting}
+                onClick={() => runLeaveAction(() => rejectLeaveRequest(token, selectedManagerRequest!.id, managerNote), "İzin talebi reddedilemedi.")}
+              >
+                Reddet
+              </button>
+              <button
+                className="product-action"
+                type="button"
+                disabled={!selectedManagerRequest || selectedManagerRequest.status !== "ONAYLANDI" || isSubmitting}
+                onClick={() => runLeaveAction(() => markLeaveUsageConfirmation(token, selectedManagerRequest!.id), "Kullanım onayı başlatılamadı.")}
+              >
+                Kullanım Onayı
+              </button>
+              <button
+                className="product-action"
+                type="button"
+                disabled={!selectedManagerRequest || isSubmitting}
+                onClick={() => {
+                  const days = Number(String(actualDays || selectedManagerRequest?.approved_days || selectedManagerRequest?.requested_days || 0).replace(",", "."));
+                  if (!Number.isFinite(days)) {
+                    setError("Fiili gün sayısı geçerli değil.");
+                    return;
+                  }
+                  void runLeaveAction(() => finalizeLeaveRequest(token, selectedManagerRequest!.id, days, managerNote), "İzin kullanımı kesinleştirilemedi.");
+                }}
+              >
+                Kullanımı Kesinleştir
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section className="leave-panel">
+        <h3>Taleplerim ({dashboard?.my_requests?.length ?? 0})</h3>
+        <LeaveRequestList rows={dashboard?.my_requests ?? []} selectedId={selectedMyRequestId} onSelect={setSelectedMyRequestId} />
+        <div className="leave-actions">
+          <button
+            className="product-action danger"
+            type="button"
+            disabled={!selectedMyRequest || ["REDDEDILDI", "TAMAMLANDI", "IPTAL_EDILDI"].includes(String(selectedMyRequest.status)) || isSubmitting}
+            onClick={() => {
+              if (!selectedMyRequest || !window.confirm("Seçili izin talebini iptal etmek istiyor musunuz?")) {
+                return;
+              }
+              void runLeaveAction(() => cancelLeaveRequest(token, selectedMyRequest.id), "İzin talebi iptal edilemedi.");
+            }}
+          >
+            Talebi İptal Et
+          </button>
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function LeaveMetric({ label, value, tone }: { label: string; value?: number | null; tone: "green" | "amber" | "blue" | "red" }) {
+  return (
+    <div className={`leave-metric ${tone}`}>
+      <span>{label}</span>
+      <strong>{formatValue(value ?? 0)} gün</strong>
+    </div>
+  );
+}
+
+function LeaveRequestList({
+  rows,
+  selectedId,
+  showUser = false,
+  onSelect,
+}: {
+  rows: LeaveRequestInfo[];
+  selectedId?: number | null;
+  showUser?: boolean;
+  onSelect?: (id: number) => void;
+}) {
+  if (!rows.length) {
+    return <div className="leave-empty">Kayıt bulunmuyor.</div>;
+  }
+  return (
+    <div className={showUser ? "leave-request-table show-user" : "leave-request-table"}>
+      <div className="leave-request-row header">
+        {showUser ? <span>Çalışan</span> : null}
+        <span>Tarih</span>
+        <span>Gün</span>
+        <span>Tip</span>
+        <span>Durum</span>
+        </div>
+        {rows.map((row) => (
+          <button
+            className={selectedId === row.id ? "leave-request-row selected" : "leave-request-row"}
+            key={row.id}
+            type="button"
+            onClick={() => onSelect?.(row.id)}
+          >
+            {showUser ? <span>{row.user_name || "-"}</span> : null}
+            <span>
+              {formatDate(row.start_date)} / {formatDate(row.end_date)}
+          </span>
+            <span>{formatValue(row.requested_days)}</span>
+            <span>{row.approval_mode || row.leave_type || "-"}</span>
+            <span>{displayLeaveStatus(row.status)}</span>
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+function formatDate(value?: string | null) {
+  if (!value) {
+    return "-";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value.slice(0, 10);
+  }
+  return new Intl.DateTimeFormat("tr-TR").format(date);
+}
+
+function displayLeaveStatus(value?: string | null) {
+  return {
+    BEKLEMEDE: "Beklemede",
+    ONAYLANDI: "Onaylandı",
+    REDDEDILDI: "Reddedildi",
+    KULLANIM_ONAYI_BEKLIYOR: "Kullanım Onayı Bekliyor",
+    TAMAMLANDI: "Tamamlandı",
+    IPTAL_EDILDI: "İptal Edildi",
+  }[String(value || "")] ?? String(value || "-");
+}
+
+function formatEuro(value?: number | null) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  return new Intl.NumberFormat("tr-TR", { style: "currency", currency: "EUR" }).format(value);
+}
+
+function TechnicalOverviewScreen({ setView }: { setView: (view: AppView) => void }) {
+  return (
+    <section className="desktop-menu-screen technical-overview-screen" id="technical-overview">
+      <div className="desktop-menu-welcome">
+        <h2>Teknik Hesaplamalar</h2>
+        <p>İhtiyacınız olan mühendislik hesap modülünü seçin.</p>
+      </div>
+
+      <div className="desktop-module-grid technical-overview-grid">
+        {technicalMenuItems.map((item) => (
+          <article className="desktop-module-card technical-overview-card" key={item.view}>
+            <div className="desktop-module-icon"><Gauge size={31} /></div>
+            <h3>{item.label}</h3>
+            <p>{item.description}</p>
+            <div className="desktop-module-card-actions">
+              <button type="button" onClick={() => setView(item.view)}>
+                Modülü Aç
+                <span aria-hidden="true">→</span>
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SelectionWizardScreen({ token }: { token: string }) {
+  const [products, setProducts] = useState<WizardProduct[]>([]);
+  const [selectedWizard, setSelectedWizard] = useState("alverpro");
+  const [schema, setSchema] = useState<WizardSchema | null>(null);
+  const [wizardState, setWizardState] = useState<Record<string, string>>({});
+  const [preview, setPreview] = useState<WizardPreview | null>(null);
+  const [activeStepIndex, setActiveStepIndex] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setIsLoading(true);
+    fetchWizardProducts(token)
+      .then((rows) => {
+        if (!isCurrent) {
+          return;
+        }
+        setProducts(rows);
+        setError(null);
+      })
+      .catch((err: Error) => {
+        if (isCurrent) {
+          setError(err.message);
+        }
+      })
+      .finally(() => {
+        if (isCurrent) {
+          setIsLoading(false);
+        }
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    let isCurrent = true;
+    setIsLoading(true);
+    setSchema(null);
+    setPreview(null);
+    setActiveStepIndex(0);
+    fetchWizardSchema(token, selectedWizard)
+      .then((nextSchema) => {
+        if (!isCurrent) {
+          return;
+        }
+        setSchema(nextSchema);
+        setWizardState(nextSchema.initial_state);
+        setError(null);
+      })
+      .catch((err: Error) => {
+        if (isCurrent) {
+          setError(err.message);
+        }
+      })
+      .finally(() => {
+        if (isCurrent) {
+          setIsLoading(false);
+        }
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [selectedWizard, token]);
+
+  useEffect(() => {
+    if (!schema) {
+      return;
+    }
+    let isCurrent = true;
+    setIsPreviewLoading(true);
+    previewWizard(token, selectedWizard, wizardState)
+      .then((nextPreview) => {
+        if (!isCurrent) {
+          return;
+        }
+        setPreview(nextPreview);
+        if (JSON.stringify(nextPreview.state) !== JSON.stringify(wizardState)) {
+          setWizardState(nextPreview.state);
+        }
+        setError(null);
+      })
+      .catch((err: Error) => {
+        if (isCurrent) {
+          setError(err.message);
+        }
+      })
+      .finally(() => {
+        if (isCurrent) {
+          setIsPreviewLoading(false);
+        }
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [schema, selectedWizard, token, wizardState]);
+
+  const sections = preview?.sections ?? schema?.sections ?? {};
+  const steps = schema?.steps ?? [];
+  const activeStep = steps[activeStepIndex];
+  const activeSections = activeStep ? sections[activeStep.key] ?? [] : [];
+  const selectedProduct = products.find((product) => product.key === selectedWizard);
+
+  const setOption = (field: string, value: string) => {
+    setWizardState((current) => {
+      const next = { ...current, [field]: value };
+      if (field === "capacity_code") {
+        return next;
+      }
+      if (field === "pollution_code") {
+        next.media_code = "";
+      }
+      return next;
+    });
+  };
+
+  const goNext = () => {
+    if (!schema) {
+      return;
+    }
+    setActiveStepIndex((current) => Math.min(current + 1, schema.steps.length - 1));
+  };
+
+  const goBack = () => {
+    setActiveStepIndex((current) => Math.max(current - 1, 0));
+  };
+
+  return (
+    <section className="selection-wizard-screen">
+      <div className="wizard-product-strip" aria-label="Ürün sihirbazları">
+        {products.map((product) => {
+          const isActive = product.key === selectedWizard;
+          const isEnabled = product.status === "active";
+          return (
+            <button
+              className={isActive ? "wizard-product-card active" : "wizard-product-card"}
+              disabled={!isEnabled}
+              key={product.key}
+              type="button"
+              onClick={() => setSelectedWizard(product.key)}
+              title={isEnabled ? `${product.title} sihirbazını aç` : "Henüz taşınmadı"}
+            >
+              <strong>{product.title}</strong>
+              <span>{product.description}</span>
+              <small>{isEnabled ? "Aktif" : "Sırada"}</small>
+            </button>
+          );
+        })}
+      </div>
+
+      {error ? (
+        <div className="error-state inline-error">
+          <AlertCircle size={20} />
+          <span>{error}</span>
+        </div>
+      ) : null}
+
+      <div className="wizard-workspace">
+        <div className="wizard-main-panel">
+          <div className="wizard-flow-header">
+            <div>
+              <span>{selectedProduct?.title ?? schema?.title ?? "Sihirbaz"}</span>
+              <h2>{activeStep?.title ?? "Yükleniyor"}</h2>
+            </div>
+            <div className="wizard-step-actions">
+              <button type="button" onClick={goBack} disabled={activeStepIndex === 0 || isLoading}>
+                Geri
+              </button>
+              <button type="button" onClick={goNext} disabled={!schema || activeStepIndex >= steps.length - 1 || isLoading}>
+                İleri
+              </button>
+            </div>
+          </div>
+
+          <div className="wizard-stepper">
+            {steps.map((step, index) => (
+              <button className={index === activeStepIndex ? "active" : ""} key={step.key} type="button" onClick={() => setActiveStepIndex(index)}>
+                <span>{index + 1}</span>
+                {step.title}
+              </button>
+            ))}
+          </div>
+
+          {isLoading ? (
+            <div className="empty-state">Sihirbaz yükleniyor...</div>
+          ) : activeStep?.key === "summary" ? (
+            <WizardSummary summary={preview?.summary} cost={preview?.cost} />
+          ) : (
+            <div className="wizard-option-sections">
+              {activeSections.length === 0 ? (
+                <div className="empty-state">Bu adım için seçim bulunamadı.</div>
+              ) : (
+                activeSections.map((section) => (
+                  <div className="wizard-option-section" key={section.field}>
+                    <h3>{section.title}</h3>
+                    <div className="wizard-options">
+                      {section.options.length === 0 ? (
+                        <span className="muted">Önce önceki adımı tamamlayın.</span>
+                      ) : (
+                        section.options.map((option) => (
+                          <button
+                            className={wizardState[section.field] === option.value ? "wizard-option active" : "wizard-option"}
+                            key={option.value}
+                            type="button"
+                            onClick={() => setOption(section.field, option.value)}
+                          >
+                            <strong>{option.label}</strong>
+                            <span>{option.value}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+
+        <aside className="wizard-summary-panel">
+          <div className="wizard-summary-title">
+            <Info size={18} />
+            <strong>Canlı Özet</strong>
+            {isPreviewLoading ? <span>Güncelleniyor...</span> : null}
+          </div>
+          <WizardSummary summary={preview?.summary} cost={preview?.cost} compact />
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function WizardSummary({ compact = false, cost, summary }: { compact?: boolean; cost?: WizardCostSummary; summary?: Record<string, string | number | null> | null }) {
+  const rows = summary
+    ? [
+        ["Article No", summary.articleNo],
+        ["Kapasite", summary.kapasite],
+        ["Kirlilik Tipi", summary.kirlilikTipi],
+        ["Filtre Medyası", summary.filtreMedyasi],
+        ["Filtre Adedi", summary.filtreAdedi],
+        ["Toplam Filtre Alanı", summary.toplamFiltreAlani ? `${summary.toplamFiltreAlani} m²` : null],
+        ["Motor Bilgisi", summary.motorBilgisi],
+        ["Kasa Kodu", summary.kasaKodu],
+        ["Pano Kodu", summary.panoKodu],
+        ["Filtre Set Kodu", summary.filtreSetKodu],
+      ]
+    : [];
+
+  if (!summary) {
+    return <div className="empty-state">Özet için tüm seçimleri tamamlayın.</div>;
+  }
+
+  return (
+    <div className={compact ? "wizard-summary compact" : "wizard-summary"}>
+      <dl>
+        {rows.map(([label, value]) => (
+          <div key={String(label)}>
+            <dt>{label}</dt>
+            <dd>{value || "-"}</dd>
+          </div>
+        ))}
+      </dl>
+      {cost ? (
+        <div className="wizard-cost-box">
+          <span>Toplam Maliyet</span>
+          <strong>{formatEuro(cost.total_cost)}</strong>
+          {cost.missing_codes.length > 0 ? <small>Bulunamayan kodlar: {cost.missing_codes.join(", ")}</small> : null}
+          {cost.zero_cost_codes.length > 0 ? <small>0 EUR gelen kodlar: {cost.zero_cost_codes.join(", ")}</small> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DashboardScreen({
-  firstPhaseModules,
+  isSidebarOpen,
   materials,
-  modules,
   products,
+  setIsSidebarOpen,
   setView,
 }: {
-  firstPhaseModules: ModuleInfo[];
+  isSidebarOpen: boolean;
   materials: MaterialInfo[];
-  modules: ModuleInfo[];
   products: ProductInfo[];
+  setIsSidebarOpen: (value: boolean | ((current: boolean) => boolean)) => void;
   setView: (view: AppView) => void;
 }) {
+  const menuCards: Array<{
+    title: string;
+    description: string;
+    icon: ReactNode;
+    actions: Array<{ label: string; onClick?: () => void; disabled?: boolean }>;
+  }> = [
+    {
+      title: "Ürünler",
+      description: "Ürün kataloğunu yönetin, maliyet analizi yapın.",
+      icon: <Boxes size={31} />,
+      actions: [{ label: "Modülü Aç", onClick: () => setView("products") }],
+    },
+    {
+      title: "Malzemeler",
+      description: "Hammadde ve malzeme stokları ile fiyat takibini yapın.",
+      icon: <Wrench size={31} />,
+      actions: [{ label: "Modülü Aç", onClick: () => setView("materials") }],
+    },
+    {
+      title: "Seçim Sihirbazı",
+      description: "Ürün seçim akışlarını web üzerinden çalıştırın.",
+      icon: <WandSparkles size={31} />,
+      actions: [{ label: "Modülü Aç", onClick: () => setView("selection-wizard") }],
+    },
+    {
+      title: "Emiş Kanalı Yönetimi",
+      description: "Emiş kanalları yönetimi ve maliyet analizleri.",
+      icon: <Gauge size={31} />,
+      actions: [
+        { label: "Kanal Maliyet Ekranı", disabled: true },
+        { label: "Kanal Listeleri Ekranı", disabled: true },
+      ],
+    },
+    {
+      title: "İzin Yönetim Modülü",
+      description: "İzin bakiyenizi görüntüleyin, yeni izin talebi oluşturun ve bekleyen talepleri yönetin.",
+      icon: <ClipboardList size={31} />,
+      actions: [{ label: "Modülü Aç", onClick: () => setView("leave-management") }],
+    },
+    {
+      title: "Proje Yönetim Modülü",
+      description: "Proje yönetimi süreçlerini takip etmek için hazırlanıyor.",
+      icon: <Database size={31} />,
+      actions: [{ label: "Yakında", disabled: true }],
+    },
+    {
+      title: "Dokümanlar",
+      description: "Merkezi doküman listesini görüntüleyin ve yetkiniz varsa PDF yükleyin.",
+      icon: <FileText size={31} />,
+      actions: [{ label: "Modülü Aç", disabled: true }],
+    },
+    {
+      title: "Teknik Hesaplamalar",
+      description: "Masaüstü teknik hesaplama araçlarına doğrudan erişin.",
+      icon: <Gauge size={31} />,
+      actions: technicalMenuItems.map((item) => ({ label: item.label, onClick: () => setView(item.view) })),
+    },
+  ];
+
   return (
-    <section className="workbench-grid">
-      <section className="status-grid wide-panel" id="dashboard">
-        <button className="status-panel status-button" type="button" onClick={() => setView("products")}>
-          <span>Ürünler</span>
-          <strong>{products.length} kayıt</strong>
-          <p>Ürün modülü ekranını açar.</p>
-        </button>
-        <button className="status-panel status-button" type="button" onClick={() => setView("materials")}>
-          <span>Malzemeler</span>
-          <strong>{materials.length} kayıt</strong>
-          <p>Malzeme modülü ekranını açar.</p>
-        </button>
-        <div className="status-panel">
-          <span>Modül Yetkisi</span>
-          <strong>{modules.length} modül</strong>
-          <p>Liste kullanıcının web yetkilerine göre süzülür.</p>
-        </div>
-      </section>
+    <section className="desktop-menu-screen" id="dashboard">
+      <button
+        className={isSidebarOpen ? "menu-toggle desktop-menu-toggle active" : "menu-toggle desktop-menu-toggle"}
+        type="button"
+        onClick={() => setIsSidebarOpen((current) => !current)}
+        aria-controls="main-navigation"
+        aria-expanded={isSidebarOpen}
+        title={isSidebarOpen ? "Menüyü gizle" : "Menüyü aç"}
+      >
+        <Menu size={20} />
+        <span>Menü</span>
+      </button>
 
-      <section className="module-section wide-panel" id="modules">
-        <div className="section-heading">
-          <div>
-            <h2>Taşınacak Modüller</h2>
-            <p>İlk fazdaki ana akışlar ürün, malzeme, fiyat listesi ve maliyet hesaplama üzerine kuruluyor.</p>
-          </div>
-        </div>
-        <div className="module-table" role="table" aria-label="Web app modül taşıma listesi">
-          <div className="module-row header" role="row">
-            <span>Modül</span>
-            <span>Faz</span>
-            <span>Durum</span>
-          </div>
-          {modules.map((module, index) => {
-            const Icon = moduleIcons[index % moduleIcons.length];
-            return (
-              <div className="module-row" role="row" key={module.key}>
-                <span className="module-title">
-                  <Icon size={18} />
-                  {module.title}
-                </span>
-                <span>{phaseLabels[module.phase] ?? `${module.phase}. faz`}</span>
-                <span className={module.phase === 1 ? "tag active-tag" : "tag"}>{module.phase === 1 ? "Öncelikli" : "Planlandı"}</span>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      <div className="desktop-menu-welcome">
+        <h2>Hoş geldiniz!</h2>
+        <p>Maliyet analizi modüllerinize aşağıdan erişebilirsiniz.</p>
+      </div>
 
-      <section className="migration-panel wide-panel" id="migration">
-        <div>
-          <h2>İlk Faz Odağı</h2>
-          <p>Ürün modülü masaüstü davranışına yaklaştırıldı; sırada buton aksiyonlarının gerçek web API karşılıkları var.</p>
-        </div>
-        <ul>
-          {firstPhaseModules.map((module) => (
-            <li key={module.key}>{module.title}</li>
-          ))}
-        </ul>
-      </section>
+      <div className="desktop-module-grid">
+        {menuCards.map((card) => (
+          <article className={card.title === "Teknik Hesaplamalar" ? "desktop-module-card technical-dashboard-card" : "desktop-module-card"} key={card.title}>
+            <div className="desktop-module-icon">{card.icon}</div>
+            <h3>{card.title}</h3>
+            <p>{card.description}</p>
+            <div className="desktop-module-card-actions">
+              {card.actions.map((action) => (
+                <button disabled={action.disabled} key={action.label} type="button" onClick={action.onClick}>
+                  {action.label}
+                  {!action.disabled ? <span aria-hidden="true">→</span> : null}
+                </button>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }
@@ -2424,12 +4252,11 @@ function exportProducts(products: ProductInfo[]) {
   URL.revokeObjectURL(url);
 }
 
-
 function exportMaterials(materials: MaterialInfo[]) {
   const header = materialColumns.map((column) => column.label);
   const rows = materials.map((material) =>
     materialColumns.map((column) => {
-      const value = column.key === "fiyat" ? material.fiyat : material[column.key];
+      const value = column.key === "fiyat" ? formatMoney(material.fiyat) : material[column.key];
       return `"${String(value ?? "").replace(/"/g, '""')}"`;
     }),
   );

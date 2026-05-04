@@ -4,6 +4,53 @@ export type ModuleInfo = {
   phase: number;
 };
 
+export type WizardProduct = {
+  key: string;
+  title: string;
+  description: string;
+  status: "active" | "planned" | string;
+};
+
+export type WizardOption = {
+  label: string;
+  value: string;
+};
+
+export type WizardSection = {
+  title: string;
+  field: string;
+  options: WizardOption[];
+};
+
+export type WizardStep = {
+  key: string;
+  title: string;
+};
+
+export type WizardSchema = {
+  key: string;
+  title: string;
+  description: string;
+  initial_state: Record<string, string>;
+  steps: WizardStep[];
+  sections: Record<string, WizardSection[]>;
+};
+
+export type WizardCostSummary = {
+  total_cost?: number | null;
+  found_codes: string[];
+  missing_codes: string[];
+  zero_cost_codes: string[];
+  costs: Record<string, number | null>;
+};
+
+export type WizardPreview = {
+  state: Record<string, string>;
+  sections: Record<string, WizardSection[]>;
+  summary?: Record<string, string | number | null> | null;
+  cost: WizardCostSummary;
+};
+
 export type UserInfo = {
   id: number;
   kullanici_adi: string;
@@ -18,6 +65,11 @@ export type LoginResponse = {
   user: UserInfo;
 };
 
+export type MessageResponse = {
+  status: string;
+  message: string;
+};
+
 export type MaterialInfo = {
   id: number;
   malzeme_kodu?: string | null;
@@ -25,6 +77,54 @@ export type MaterialInfo = {
   ad?: string | null;
   fiyat?: number | null;
   guncelleme_tarihi?: string | null;
+};
+
+export type MaterialFixedCostItem = {
+  kalem_adi: string;
+  birim_fiyat?: number | null;
+};
+
+export type MaterialAddOptions = {
+  next_yari_mamul_code: string;
+  fixed_cost_items: MaterialFixedCostItem[];
+};
+
+export type MaterialCreatePayload = {
+  malzeme_kodu: string;
+  malzeme_tipi: string;
+  ad: string;
+  birim_fiyat: string | number;
+};
+
+export type MaterialUsageProduct = {
+  urun_kodu?: string | null;
+  urun_adi?: string | null;
+};
+
+export type MaterialDetail = {
+  material: MaterialInfo;
+  used_products: MaterialUsageProduct[];
+};
+
+export type MaterialDeleteResponse = {
+  material_id: number;
+  message: string;
+};
+
+export type MaterialImportResultItem = {
+  row_number: number;
+  malzeme_kodu?: string | null;
+  ad?: string | null;
+  status: "inserted" | "existing" | "failed" | string;
+  message: string;
+};
+
+export type MaterialImportResponse = {
+  total_count: number;
+  inserted_count: number;
+  existing_count: number;
+  failed_count: number;
+  items: MaterialImportResultItem[];
 };
 
 export type ProductInfo = {
@@ -173,6 +273,68 @@ export type ProductTree = {
   iscilikler: ProductLabor[];
 };
 
+export type LeaveBalance = {
+  annual_allowance_days?: number | null;
+  carried_over_days?: number | null;
+  reserved_days?: number | null;
+  used_days?: number | null;
+  pending_approval_days?: number | null;
+  available_days?: number | null;
+  updated_at?: string | null;
+};
+
+export type LeaveRequestInfo = {
+  id: number;
+  user_id?: number | null;
+  user_name?: string | null;
+  manager_user_id?: number | null;
+  leave_type?: string | null;
+  approval_mode?: string | null;
+  status?: string | null;
+  start_date?: string | null;
+  end_date?: string | null;
+  requested_days?: number | null;
+  reserved_days?: number | null;
+  approved_days?: number | null;
+  actual_used_days?: number | null;
+  remaining_days_after?: number | null;
+  reason?: string | null;
+  employee_note?: string | null;
+  manager_note?: string | null;
+  usage_confirmation_requested_at?: string | null;
+  finalized_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type LeaveDashboard = {
+  balance: LeaveBalance;
+  my_requests: LeaveRequestInfo[];
+  manager_requests: LeaveRequestInfo[];
+  pending_manager_requests: LeaveRequestInfo[];
+};
+
+export type LeaveWorkdaySummary = {
+  start_date: string;
+  end_date: string;
+  work_days: number;
+};
+
+export type LeaveCreatePayload = {
+  leave_type: string;
+  start_date: string;
+  end_date: string;
+  requested_days: number;
+  reason?: string | null;
+  employee_note?: string | null;
+};
+
+export type LeaveApprovePayload = {
+  approval_mode: "BAKIYEDEN_DUSECEK" | "YONETICI_IZNI";
+  approved_days?: number | null;
+  manager_note?: string | null;
+};
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8100";
 const REQUEST_TIMEOUT_MS = 15000;
 const LOGIN_TIMEOUT_MS = 60000;
@@ -228,6 +390,84 @@ export async function login(kullaniciAdi: string, sifre: string): Promise<LoginR
   return (await response.json()) as LoginResponse;
 }
 
+export async function signup(kullaniciAdi: string, email: string, sifre: string): Promise<MessageResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/auth/signup`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      kullanici_adi: kullaniciAdi,
+      email,
+      sifre,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MessageResponse;
+}
+
+export async function sendEmailVerification(email: string): Promise<MessageResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/auth/email/send-verification`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MessageResponse;
+}
+
+export async function verifyEmailCode(email: string, code: string): Promise<MessageResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/auth/email/verify`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, code }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MessageResponse;
+}
+
+export async function sendPasswordResetCode(identifier: string): Promise<MessageResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/auth/password/send-reset-code`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ identifier }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MessageResponse;
+}
+
+export async function resetPasswordWithCode(identifier: string, code: string, newPassword: string): Promise<MessageResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/auth/password/reset`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      identifier,
+      code,
+      new_password: newPassword,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MessageResponse;
+}
+
 export async function fetchMe(token: string): Promise<UserInfo> {
   const response = await apiFetch(`${API_BASE_URL}/auth/me`, {
     headers: authHeaders(token),
@@ -249,8 +489,147 @@ export async function fetchModules(token: string): Promise<ModuleInfo[]> {
   return payload.modules ?? [];
 }
 
+export async function fetchWizardProducts(token: string): Promise<WizardProduct[]> {
+  const response = await apiFetch(`${API_BASE_URL}/selection-wizard/products`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  const payload = (await response.json()) as { products?: WizardProduct[] };
+  return payload.products ?? [];
+}
+
+export async function fetchWizardSchema(token: string, wizardKey: string): Promise<WizardSchema> {
+  const response = await apiFetch(`${API_BASE_URL}/selection-wizard/${wizardKey}/schema`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as WizardSchema;
+}
+
+export async function previewWizard(token: string, wizardKey: string, state: Record<string, string>): Promise<WizardPreview> {
+  const response = await apiFetch(`${API_BASE_URL}/selection-wizard/${wizardKey}/preview`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ state }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as WizardPreview;
+}
+
+export async function fetchLeaveDashboard(token: string): Promise<LeaveDashboard> {
+  const response = await apiFetch(`${API_BASE_URL}/leave/dashboard`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as LeaveDashboard;
+}
+
+export async function fetchLeaveWorkdaySummary(token: string, startDate: string, endDate: string): Promise<LeaveWorkdaySummary> {
+  const params = new URLSearchParams({ start_date: startDate, end_date: endDate });
+  const response = await apiFetch(`${API_BASE_URL}/leave/workday-summary?${params.toString()}`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as LeaveWorkdaySummary;
+}
+
+export async function createLeaveRequest(token: string, payload: LeaveCreatePayload): Promise<LeaveRequestInfo> {
+  const response = await apiFetch(`${API_BASE_URL}/leave/requests`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as LeaveRequestInfo;
+}
+
+export async function cancelLeaveRequest(token: string, requestId: number): Promise<LeaveRequestInfo> {
+  const response = await apiFetch(`${API_BASE_URL}/leave/requests/${requestId}/cancel`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as LeaveRequestInfo;
+}
+
+export async function approveLeaveRequest(token: string, requestId: number, payload: LeaveApprovePayload): Promise<LeaveRequestInfo> {
+  const response = await apiFetch(`${API_BASE_URL}/leave/requests/${requestId}/approve`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as LeaveRequestInfo;
+}
+
+export async function rejectLeaveRequest(token: string, requestId: number, managerNote?: string): Promise<LeaveRequestInfo> {
+  const response = await apiFetch(`${API_BASE_URL}/leave/requests/${requestId}/reject`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ manager_note: managerNote?.trim() || null }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as LeaveRequestInfo;
+}
+
+export async function markLeaveUsageConfirmation(token: string, requestId: number): Promise<LeaveRequestInfo> {
+  const response = await apiFetch(`${API_BASE_URL}/leave/requests/${requestId}/mark-usage-confirmation`, {
+    method: "POST",
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as LeaveRequestInfo;
+}
+
+export async function finalizeLeaveRequest(token: string, requestId: number, actualUsedDays: number, managerNote?: string): Promise<LeaveRequestInfo> {
+  const response = await apiFetch(`${API_BASE_URL}/leave/requests/${requestId}/finalize`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ actual_used_days: actualUsedDays, manager_note: managerNote?.trim() || null }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as LeaveRequestInfo;
+}
+
 export async function fetchMaterials(token: string, search = ""): Promise<MaterialInfo[]> {
-  const params = new URLSearchParams({ limit: "100" });
+  const params = new URLSearchParams({ limit: "500" });
   if (search.trim()) {
     params.set("search", search.trim());
   }
@@ -261,6 +640,81 @@ export async function fetchMaterials(token: string, search = ""): Promise<Materi
     throw new Error(await parseError(response));
   }
   return (await response.json()) as MaterialInfo[];
+}
+
+export async function fetchMaterialAddOptions(token: string): Promise<MaterialAddOptions> {
+  const response = await apiFetch(`${API_BASE_URL}/materials/add-options`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MaterialAddOptions;
+}
+
+export async function createMaterial(token: string, payload: MaterialCreatePayload): Promise<MaterialInfo> {
+  const response = await apiFetch(`${API_BASE_URL}/materials`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MaterialInfo;
+}
+
+export async function fetchMaterialDetail(token: string, materialId: number): Promise<MaterialDetail> {
+  const response = await apiFetch(`${API_BASE_URL}/materials/${materialId}/detail`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MaterialDetail;
+}
+
+export async function updateMaterial(token: string, materialId: number, payload: MaterialCreatePayload): Promise<MaterialDetail> {
+  const response = await apiFetch(`${API_BASE_URL}/materials/${materialId}`, {
+    method: "PUT",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MaterialDetail;
+}
+
+export async function deleteMaterial(token: string, materialId: number): Promise<MaterialDeleteResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/materials/${materialId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MaterialDeleteResponse;
+}
+
+export async function importMamulMaterials(token: string, file: File): Promise<MaterialImportResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await apiFetch(`${API_BASE_URL}/materials/import`, {
+    method: "POST",
+    headers: authHeaders(token),
+    body: formData,
+  }, 60000);
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as MaterialImportResponse;
 }
 
 export async function fetchProducts(token: string, search = ""): Promise<ProductInfo[]> {
