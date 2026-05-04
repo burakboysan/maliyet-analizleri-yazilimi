@@ -33,21 +33,30 @@ a {
 }
 
 .app-shell {
-  display: block;
+  display: grid;
+  grid-template-columns: 0 minmax(0, 1fr);
   min-height: 100vh;
   background: #f5f7fb;
+  overflow-x: hidden;
+  transition: grid-template-columns 180ms ease;
+}
+
+.app-shell.sidebar-open {
+  grid-template-columns: 280px minmax(0, 1fr);
 }
 
 .sidebar {
-  position: fixed;
-  inset: 0 auto 0 0;
+  position: sticky;
+  top: 0;
   z-index: 30;
   width: 280px;
+  height: 100vh;
   border-right: 1px solid #ead4d4;
   background: #ffffff;
   color: #1f3147;
   padding: 28px 22px;
   box-shadow: none;
+  overflow: hidden;
   transform: translateX(-100%);
   transition:
     transform 180ms ease,
@@ -55,8 +64,12 @@ a {
 }
 
 .app-shell.sidebar-open .sidebar {
-  box-shadow: 18px 0 45px rgb(64 18 18 / 14%);
+  box-shadow: 12px 0 28px rgb(64 18 18 / 8%);
   transform: translateX(0);
+}
+
+.app-shell:not(.sidebar-open) .sidebar {
+  pointer-events: none;
 }
 
 .brand {
@@ -64,6 +77,28 @@ a {
   align-items: center;
   gap: 12px;
   margin-bottom: 36px;
+}
+
+.sidebar-close {
+  display: inline-grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  margin-left: auto;
+  border: 1px solid #e0baba;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #b92727;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.sidebar-close:hover {
+  border-color: #d32f2f;
+  background: #d32f2f;
+  color: #ffffff;
 }
 
 .brand-mark {
@@ -1687,6 +1722,10 @@ button.data-row.selected {
   .sidebar {
     width: min(280px, calc(100vw - 32px));
     padding: 18px;
+  }
+
+  .app-shell.sidebar-open {
+    grid-template-columns: min(280px, calc(100vw - 32px)) minmax(0, 1fr);
   }
 
   .nav-list {

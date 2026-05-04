@@ -793,6 +793,15 @@ export function App() {
             <strong>Bomaksan</strong>
             <span>Maliyet Web</span>
           </div>
+          <button
+            className="sidebar-close"
+            type="button"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-label="Menüyü kapat"
+            title="Menüyü kapat"
+          >
+            <X size={18} />
+          </button>
         </div>
         <nav className="nav-list" aria-label="Modül navigasyonu">
           <button className={view === "dashboard" ? "active" : ""} type="button" onClick={() => setView("dashboard")}>
