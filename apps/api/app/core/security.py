@@ -121,3 +121,16 @@ def require_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Kullanici bulunamadi.")
     user["module_permissions"] = parse_module_permissions(user.get("module_permissions"))
     return user
+
+
+def user_can_access_module(user: dict[str, Any], module_key: str) -> bool:
+    role_name = str(user.get("rol_adi") or "").strip().lower()
+    if role_name == "owner":
+        return True
+    permissions = user.get("module_permissions") or {}
+    return not permissions or bool(permissions.get(module_key))
+
+
+def require_module_access(user: dict[str, Any], module_key: str) -> None:
+    if not user_can_access_module(user, module_key):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Bu modül için yetkiniz yok.")
