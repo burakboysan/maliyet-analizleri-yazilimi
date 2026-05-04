@@ -3957,10 +3957,31 @@ function SelectionWizardScreen({ token }: { token: string }) {
       }
       if (field === "filter_length") {
         next.filter_variant = "";
+        next.case = "";
         next.cleaning = "";
       }
       if (field === "filter_variant") {
         next.cleaning = "";
+      }
+      if (field === "case") {
+        next.type = "";
+      }
+      if (field === "type") {
+        next.fan_power = "";
+        next.fan_cabin = "";
+        next.sound = "";
+        next.panel = "";
+      }
+      if (field === "fan_cabin") {
+        next.sound = "";
+      }
+      if (field === "is_fan_excluded" && value === "true") {
+        next.fan_type = "";
+        next.fan_power = "";
+        next.fan_cabin = "";
+        next.sound = "";
+        next.panel = "";
+        next.silencer = "";
       }
       return next;
     });
@@ -4106,10 +4127,14 @@ function WizardSummary({ compact = false, cost, summary }: { compact?: boolean; 
         ["Filtre Medyası", summary.filtreMedyasi],
         ["Filtre Boyu", summary.filtreBoyu],
         ["Kasa", summary.kasa],
+        ["Tip", summary.tip],
         ["Temizlik", summary.temizlik],
         ["Fan Tipi", summary.fanTipi],
         ["Fan Gücü", summary.fanGucu],
+        ["Fan Kabini", summary.fanKabini],
+        ["Ses İzolasyonu", summary.sesIzolasyonu],
         ["Pano", summary.pano],
+        ["Susturucu", summary.susturucu],
         ["Filtre Adedi", summary.filtreAdedi],
         ["Toplam Filtre Alanı", summary.toplamFiltreAlani ? `${summary.toplamFiltreAlani} m²` : null],
         ["Kesit Alanı", summary.kesitAlani ? `${summary.kesitAlani} m²` : null],
@@ -4122,7 +4147,10 @@ function WizardSummary({ compact = false, cost, summary }: { compact?: boolean; 
         ["Filtre Set Kodu", summary.filtreSetKodu],
         ["Temizlik Kodu", summary.temizlikKodu],
         ["Fan Kodu", summary.fanKodu],
+        ["Fan Kabini Kodu", summary.fanKabiniKodu],
+        ["Ses İzolasyon Kodu", summary.sesIzolasyonKodu],
         ["Pano Kodu", summary.panoKodu],
+        ["Susturucu Kodu", summary.susturucuKodu],
       ].filter(([, value]) => value !== undefined && value !== null && value !== "")
     : [];
 

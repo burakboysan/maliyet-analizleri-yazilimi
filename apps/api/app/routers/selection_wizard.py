@@ -184,6 +184,66 @@ CARTRIDGE_CONFIGS = {
     },
 }
 
+HEXAFIL_FILTER_CODES = {
+    ("nanoBLEND FR", "660 mm"): "HTM/410/660/B135FR/20 X 6",
+    ("polyMIGHT 55", "660 mm"): "HTM/410/660/255P/10 X 6",
+    ("polyMIGHT PTFE 65", "660 mm"): "HTM/410/660/265PTFE/10 X 6",
+    ("polyMIGHT ALU", "660 mm"): "HTM/410/660/260ALU/10 X 6",
+    ("polyMIGHT HO 55", "660 mm"): "HTM/410/660/255HO/10 X 6",
+    ("polyMIGHT ALU PTFE 65", "660 mm"): "HTM/410/660/265ALUPTFE/10 X 6",
+    ("nanoBLEND FR", "1.000 mm"): "HTM/410/1000/B135FR/30 X 6",
+    ("polyMIGHT 55", "1.000 mm"): "HTM/410/1000/255P/15 X 6",
+    ("polyMIGHT PTFE 65", "1.000 mm"): "HTM/410/1000/265PTFE/15 X 6",
+    ("polyMIGHT ALU", "1.000 mm"): "HTM/410/1000/260ALU/15 X 6",
+    ("polyMIGHT HO 55", "1.000 mm"): "HTM/410/1000/255HO/15 X 6",
+    ("polyMIGHT ALU PTFE 65", "1.000 mm"): "HTM/410/1000/265ALUPTFE/15 X 6",
+    ("polyMIGHT 55", "1.200 mm"): "HTM/410/1200/255P/25 X 6",
+    ("polyMIGHT PTFE 65", "1.200 mm"): "HTM/410/1200/265PTFE/25 X 6",
+    ("polyMIGHT ALU", "1.200 mm"): "HTM/410/1200/260ALU/25 X 6",
+    ("polyMIGHT HO 55", "1.200 mm"): "HTM/410/1200/255HO/25 X 6",
+    ("polyMIGHT ALU PTFE 65", "1.200 mm"): "HTM/410/1200/265ALUPTFE/25 X 6",
+    ("nanoBLEND FR", "1.320 mm"): "HTM/410/1320/B135FR/40 X 6",
+}
+
+HEXAFIL_FILTER_AREAS = {
+    "HTM/410/660/B135FR/20 X 6": 120.0,
+    "HTM/410/660/255P/10 X 6": 60.0,
+    "HTM/410/660/265PTFE/10 X 6": 60.0,
+    "HTM/410/660/260ALU/10 X 6": 60.0,
+    "HTM/410/660/255HO/10 X 6": 60.0,
+    "HTM/410/660/265ALUPTFE/10 X 6": 60.0,
+    "HTM/410/1000/B135FR/30 X 6": 180.0,
+    "HTM/410/1000/255P/15 X 6": 90.0,
+    "HTM/410/1000/265PTFE/15 X 6": 90.0,
+    "HTM/410/1000/260ALU/15 X 6": 90.0,
+    "HTM/410/1000/255HO/15 X 6": 90.0,
+    "HTM/410/1000/265ALUPTFE/15 X 6": 90.0,
+    "HTM/410/1200/255P/25 X 6": 150.0,
+    "HTM/410/1200/265PTFE/25 X 6": 150.0,
+    "HTM/410/1200/260ALU/25 X 6": 150.0,
+    "HTM/410/1200/255HO/25 X 6": 150.0,
+    "HTM/410/1200/265ALUPTFE/25 X 6": 150.0,
+    "HTM/410/1320/B135FR/40 X 6": 240.0,
+}
+
+HEXAFIL_FILTER_LENGTHS = {
+    "nanoBLEND FR": ["660 mm", "1.000 mm", "1.320 mm"],
+    "polyMIGHT 55": ["660 mm", "1.000 mm", "1.200 mm"],
+    "polyMIGHT PTFE 65": ["660 mm", "1.000 mm", "1.200 mm"],
+    "polyMIGHT ALU": ["660 mm", "1.000 mm", "1.200 mm"],
+    "polyMIGHT HO 55": ["660 mm", "1.000 mm", "1.200 mm"],
+    "polyMIGHT ALU PTFE 65": ["660 mm", "1.000 mm", "1.200 mm"],
+}
+
+HEXAFIL_MEDIA = ["nanoBLEND FR", "polyMIGHT 55", "polyMIGHT PTFE 65", "polyMIGHT ALU", "polyMIGHT ALU PTFE 65", "polyMIGHT HO 55"]
+HEXAFIL_CASES_BY_LENGTH = {"660 mm": ["V66 Kasa", "V100 Kasa", "V132 Kasa"], "1.000 mm": ["V100 Kasa", "V132 Kasa"], "1.200 mm": ["V132 Kasa"], "1.320 mm": ["V132 Kasa"]}
+HEXAFIL_TYPES = ["Tip 1", "Tip 2", "Tip 2R", "Tip 2+", "Tip 3", "Tip 3+"]
+HEXAFIL_TYPE_AREAS = {"Tip 1": 1.23, "Tip 2": 1.69, "Tip 2R": 1.60, "Tip 2+": 2.15, "Tip 3": 2.20, "Tip 3+": 2.79}
+HEXAFIL_CLEANING = ["ECON", "B-CONTROL", "HARIC"]
+HEXAFIL_FAN_CABINS = {"Plug Fan": ["Fan Kabini"], "Salyangoz Fan": ["Fan Kabini", "HARIC"]}
+HEXAFIL_SOUND_OPTIONS = {"Fan Kabini": ["EKLE", "HARIC"], "HARIC": ["HARIC"]}
+HEXAFIL_SILENCERS = ["Kanal Tipi", "Dirsek Tipi", "HARIC"]
+
 
 def _normalize(value: Any) -> str:
     return str(value or "").strip()
@@ -272,7 +332,7 @@ def _summary_product_codes(summary: dict[str, Any] | None) -> list[str]:
         return []
     result = []
     seen = set()
-    for key in ("kasaKodu", "filtreSetKodu", "temizlikKodu", "fanKodu", "panoKodu"):
+    for key in ("kasaKodu", "filtreSetKodu", "temizlikKodu", "fanKodu", "fanKabiniKodu", "sesIzolasyonKodu", "panoKodu", "susturucuKodu"):
         code = _normalize(summary.get(key)).upper()
         if code and code not in seen:
             seen.add(code)
@@ -693,6 +753,113 @@ def _cartridge_summary(config: dict[str, Any], state: dict[str, Any]) -> dict[st
     return summary
 
 
+def _hexafil_case_code(case_title: str, selected_type: str) -> str | None:
+    if not case_title or not selected_type:
+        return None
+    return f"HEXA.{selected_type.replace(' ', '')}.{case_title.replace(' Kasa', '').replace(' ', '')}"
+
+
+def _hexafil_cleaning_code(cleaning: str) -> str | None:
+    return {"ECON": "HEXAFIL.ECON.8", "B-CONTROL": "SCHDL.CLEAN"}.get(_normalize(cleaning))
+
+
+def _hexafil_fan_code(fan_type: str, fan_power: str) -> str | None:
+    if _normalize(fan_type) == "Plug Fan" and _parse_kw(fan_power) > 11.0:
+        return None
+    if _normalize(fan_type) == "Salyangoz Fan" and _parse_kw(fan_power) > 22.0:
+        return None
+    return _ecog_fan_code(fan_type, fan_power)
+
+
+def _hexafil_fan_cabin_code(selected_type: str, fan_cabin: str) -> str | None:
+    if fan_cabin != "Fan Kabini":
+        return None
+    return f"HEXAFIL.FANCABIN.{_normalize(selected_type).replace(' ', '').upper()}" if selected_type else None
+
+
+def _hexafil_sound_code(selected_type: str, sound: str) -> str | None:
+    if sound != "EKLE":
+        return None
+    return f"HEXAFIL.SOUNDINS.{_normalize(selected_type).replace(' ', '').upper()}" if selected_type else None
+
+
+def _hexafil_panel_code(panel: str, fan_power: str) -> str | None:
+    if _normalize(panel) == "Motor Koruma Salteri":
+        return {"2.2 kW": "VERTY.MPS.380.50.22", "3.0 kW": "VERTY.MPS.380.50.30", "4.0 kW": "VERTY.MPS.380.50.40", "5.5 kW": "VERTY.MPS.380.50.55"}.get(_normalize(fan_power))
+    if _normalize(panel) == "Yildiz Ucgen":
+        return {
+            "5.5 kW": "VERTY.DS.380.50.55",
+            "7.5 kW": "VERTY.DS.380.50.75",
+            "11.0 kW": "VERTY.DS.380.50.110",
+            "15.0 kW": "VERTY.DS.380.50.150",
+            "18.5 kW": "VERTY.DS.380.50.185",
+            "22.0 kW": "VERTY.DS.380.50.220",
+        }.get(_normalize(fan_power))
+    if _normalize(panel) == "Frekans Invertoru":
+        return _ecog_panel_code(panel, fan_power)
+    return None
+
+
+def _hexafil_summary(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any] | None:
+    required = ("filter_media", "filter_length", "case", "type", "cleaning")
+    if any(not _normalize(state.get(key)) for key in required):
+        return None
+    is_fan_excluded = str(state.get("is_fan_excluded") or "").lower() == "true"
+    fan_required = () if is_fan_excluded else ("fan_type", "fan_power", "fan_cabin", "sound", "panel", "silencer")
+    if any(not _normalize(state.get(key)) for key in fan_required):
+        return None
+    filter_code = HEXAFIL_FILTER_CODES.get((_normalize(state.get("filter_media")), _normalize(state.get("filter_length"))))
+    filter_area = HEXAFIL_FILTER_AREAS.get(_normalize(filter_code).upper())
+    section_area = HEXAFIL_TYPE_AREAS.get(_normalize(state.get("type")))
+    airflow = _parse_decimal(state.get("airflow_text"))
+    article_key_parts = [
+        "HEXAFIL",
+        state.get("case"),
+        state.get("type"),
+        state.get("filter_media"),
+        state.get("filter_length"),
+        state.get("cleaning"),
+        "HARIC" if is_fan_excluded else state.get("fan_type"),
+        "HARIC" if is_fan_excluded else state.get("fan_power"),
+        "HARIC" if is_fan_excluded else state.get("fan_cabin"),
+        "HARIC" if is_fan_excluded else state.get("sound"),
+        "HARIC" if is_fan_excluded else state.get("panel"),
+        "HARIC" if is_fan_excluded else state.get("silencer"),
+    ]
+    article_key = "|".join(_normalize(part) for part in article_key_parts)
+    silencer_code = {"Kanal Tipi": "SILENCER.DUCT.500", "Dirsek Tipi": "SILENCER.ELBOW"}.get(_normalize(state.get("silencer")))
+    summary = {
+        "combinationKey": article_key,
+        "articleNo": _lookup_article(connection, "HEXAFIL", article_key),
+        "kasa": _normalize(state.get("case")),
+        "tip": _normalize(state.get("type")),
+        "filtreMedyasi": _normalize(state.get("filter_media")),
+        "filtreBoyu": _normalize(state.get("filter_length")),
+        "temizlik": _normalize(state.get("cleaning")),
+        "fanTipi": "HARİÇ" if is_fan_excluded else _normalize(state.get("fan_type")),
+        "fanGucu": "HARİÇ" if is_fan_excluded else _normalize(state.get("fan_power")),
+        "fanKabini": "HARİÇ" if is_fan_excluded else _normalize(state.get("fan_cabin")),
+        "sesIzolasyonu": "HARİÇ" if is_fan_excluded else _normalize(state.get("sound")),
+        "pano": "HARİÇ" if is_fan_excluded else _display_label(state.get("panel")),
+        "susturucu": "HARİÇ" if is_fan_excluded else _normalize(state.get("silencer")),
+        "kasaKodu": _hexafil_case_code(state.get("case"), state.get("type")),
+        "filtreSetKodu": filter_code,
+        "temizlikKodu": _hexafil_cleaning_code(state.get("cleaning")),
+        "fanKodu": None if is_fan_excluded else _hexafil_fan_code(state.get("fan_type"), state.get("fan_power")),
+        "fanKabiniKodu": None if is_fan_excluded else _hexafil_fan_cabin_code(state.get("type"), state.get("fan_cabin")),
+        "sesIzolasyonKodu": None if is_fan_excluded else _hexafil_sound_code(state.get("type"), state.get("sound")),
+        "panoKodu": None if is_fan_excluded else _hexafil_panel_code(state.get("panel"), state.get("fan_power")),
+        "susturucuKodu": None if is_fan_excluded else silencer_code,
+        "kesitAlani": section_area,
+        "toplamFiltreAlani": filter_area,
+        "yukselmeHizi": airflow / section_area / 3600.0 if airflow and section_area else None,
+        "filtrasyonHizi": airflow / filter_area / 60.0 if airflow and filter_area else None,
+        "milGucu": state.get("shaft_power"),
+        "onerilenMotor": state.get("recommended_motor_kw"),
+    }
+    return summary
+
+
 def _alverpro_schema() -> dict[str, Any]:
     return {
         "key": "alverpro",
@@ -905,6 +1072,124 @@ def _cartridge_preview(wizard_key: str, state: dict[str, Any], connection: MySQL
     return {"state": state, "sections": schema["sections"], "summary": summary, "cost": _cost_summary(connection, summary)}
 
 
+def _hexafil_initial_state() -> dict[str, str]:
+    state = _ecog_initial_state()
+    state.update({"is_fan_excluded": "false", "case": "", "type": "", "fan_cabin": "", "sound": "", "silencer": ""})
+    return state
+
+
+def _hexafil_schema() -> dict[str, Any]:
+    criteria_sections = _ecog_schema()["sections"]["criteria"] + [
+        {
+            "title": "Fan Durumu",
+            "field": "is_fan_excluded",
+            "options": [{"label": "Fan dahil", "value": "false"}, {"label": "Fan hariç", "value": "true"}],
+        }
+    ]
+    return {
+        "key": "hexafil",
+        "title": "HEXAFIL",
+        "description": "HEXAFIL filtre, kasa, tip ve fan opsiyon seçim akışı.",
+        "initial_state": _hexafil_initial_state(),
+        "steps": [
+            {"key": "criteria", "title": "Kriterler"},
+            {"key": "fan", "title": "Fan Seçimi"},
+            {"key": "filter", "title": "Filtre Seçimi"},
+            {"key": "case", "title": "Kasa"},
+            {"key": "type", "title": "Tip"},
+            {"key": "cleaning", "title": "Temizlik"},
+            {"key": "fan_cabin", "title": "Fan Kabini"},
+            {"key": "sound", "title": "Ses İzolasyonu"},
+            {"key": "panel", "title": "Pano"},
+            {"key": "silencer", "title": "Susturucu"},
+            {"key": "summary", "title": "Özet"},
+        ],
+        "sections": {
+            "criteria": criteria_sections,
+            "fan": [{"title": "Fan Tipi", "field": "fan_type", "options": []}, {"title": "Fan Gücü", "field": "fan_power", "options": []}],
+            "filter": [
+                {"title": "Filtre Medyası", "field": "filter_media", "options": _option_items(HEXAFIL_MEDIA)},
+                {"title": "Filtre Boyu", "field": "filter_length", "options": []},
+            ],
+            "case": [{"title": "Kasa Seçimi", "field": "case", "options": []}],
+            "type": [{"title": "Tip Seçimi", "field": "type", "options": _option_items(HEXAFIL_TYPES)}],
+            "cleaning": [{"title": "Temizlik Sistemi", "field": "cleaning", "options": _option_items(HEXAFIL_CLEANING)}],
+            "fan_cabin": [{"title": "Fan Kabini", "field": "fan_cabin", "options": []}],
+            "sound": [{"title": "Ses İzolasyonu", "field": "sound", "options": []}],
+            "panel": [{"title": "Pano", "field": "panel", "options": []}],
+            "silencer": [{"title": "Susturucu", "field": "silencer", "options": []}],
+        },
+    }
+
+
+def _hexafil_fan_power_options(state: dict[str, Any]) -> list[str]:
+    if not state.get("fan_type"):
+        return []
+    if state.get("fan_type") == "Plug Fan":
+        base = ["2.2 kW", "3.0 kW", "4.0 kW", "5.5 kW", "7.5 kW", "11.0 kW"]
+    elif state.get("type") in ("Tip 1", "Tip 2R"):
+        base = ["2.2 kW", "3.0 kW", "4.0 kW", "5.5 kW", "7.5 kW", "11.0 kW", "15.0 kW"]
+    else:
+        base = ["2.2 kW", "3.0 kW", "4.0 kW", "5.5 kW", "7.5 kW", "11.0 kW", "15.0 kW", "18.5 kW", "22.0 kW"]
+    return [power for power in base if not state.get("shaft_power") or _parse_kw(power) >= float(state.get("shaft_power") or 0)]
+
+
+def _hexafil_preview(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any]:
+    state.update(_ecog_motor_result(state))
+    is_fan_excluded = str(state.get("is_fan_excluded") or "").lower() == "true"
+    allowed_fan_types = [] if is_fan_excluded else _ecog_allowed_fan_types(state.get("pressure_value"))
+    if is_fan_excluded:
+        for key in ("fan_type", "fan_power", "fan_cabin", "sound", "panel", "silencer"):
+            state[key] = ""
+    elif state.get("fan_type") not in allowed_fan_types:
+        state["fan_type"] = ""
+        state["fan_power"] = ""
+    fan_power_options = [] if is_fan_excluded else _hexafil_fan_power_options(state)
+    if state.get("fan_power") not in fan_power_options:
+        state["fan_power"] = state.get("recommended_fan_power") if state.get("recommended_fan_power") in fan_power_options else ""
+    if state.get("filter_media") not in HEXAFIL_MEDIA:
+        state["filter_media"] = ""
+        state["filter_length"] = ""
+        state["case"] = ""
+    length_options = HEXAFIL_FILTER_LENGTHS.get(_normalize(state.get("filter_media")), [])
+    if state.get("filter_length") not in length_options:
+        state["filter_length"] = ""
+        state["case"] = ""
+    case_options = HEXAFIL_CASES_BY_LENGTH.get(_normalize(state.get("filter_length")), [])
+    if state.get("case") not in case_options:
+        state["case"] = ""
+    if state.get("type") not in HEXAFIL_TYPES:
+        state["type"] = ""
+    if state.get("cleaning") not in HEXAFIL_CLEANING:
+        state["cleaning"] = ""
+    cabin_options = [] if is_fan_excluded else HEXAFIL_FAN_CABINS.get(_normalize(state.get("fan_type")), [])
+    if state.get("fan_cabin") not in cabin_options:
+        state["fan_cabin"] = ""
+    sound_options = [] if is_fan_excluded else HEXAFIL_SOUND_OPTIONS.get(_normalize(state.get("fan_cabin")), [])
+    if len(sound_options) == 1:
+        state["sound"] = sound_options[0]
+    elif state.get("sound") not in sound_options:
+        state["sound"] = ""
+    panel_options = [] if is_fan_excluded else _ecog_panel_options(state.get("fan_power"))
+    if state.get("panel") not in panel_options:
+        state["panel"] = ""
+    silencer_options = [] if is_fan_excluded else HEXAFIL_SILENCERS
+    if state.get("silencer") not in silencer_options:
+        state["silencer"] = ""
+
+    schema = _hexafil_schema()
+    schema["sections"]["fan"][0]["options"] = _option_items(allowed_fan_types)
+    schema["sections"]["fan"][1]["options"] = _option_items(fan_power_options)
+    schema["sections"]["filter"][1]["options"] = _option_items(length_options)
+    schema["sections"]["case"][0]["options"] = _option_items(case_options)
+    schema["sections"]["fan_cabin"][0]["options"] = _option_items(cabin_options)
+    schema["sections"]["sound"][0]["options"] = _option_items(sound_options)
+    schema["sections"]["panel"][0]["options"] = _display_option_items(panel_options)
+    schema["sections"]["silencer"][0]["options"] = _option_items(silencer_options)
+    summary = _hexafil_summary(state, connection)
+    return {"state": state, "sections": schema["sections"], "summary": summary, "cost": _cost_summary(connection, summary)}
+
+
 @router.get("/products")
 def list_wizard_products(_current_user: dict = Depends(_require_access)):
     return {
@@ -913,7 +1198,7 @@ def list_wizard_products(_current_user: dict = Depends(_require_access)):
             {"key": "ecog", "title": "ECOG", "description": "Fan, filtre, kasa, temizlik ve pano seçimi.", "status": "active"},
             {"key": "line", "title": "LINE", "description": "Kartuş filtre seçim akışı.", "status": "active"},
             {"key": "pkfc", "title": "PKFC", "description": "Kartuş filtre seçim akışı.", "status": "active"},
-            {"key": "hexafil", "title": "HEXAFIL", "description": "Filtre, fan kabini ve opsiyon seçimleri.", "status": "planned"},
+            {"key": "hexafil", "title": "HEXAFIL", "description": "Filtre, fan kabini ve opsiyon seçimleri.", "status": "active"},
             {"key": "verty", "title": "VERTY", "description": "Geniş ürün konfigürasyon seçimi.", "status": "planned"},
         ]
     }
@@ -927,6 +1212,8 @@ def get_wizard_schema(wizard_key: str, _current_user: dict = Depends(_require_ac
         return _ecog_schema()
     if wizard_key.lower() in CARTRIDGE_CONFIGS:
         return _cartridge_schema(wizard_key.lower())
+    if wizard_key.lower() == "hexafil":
+        return _hexafil_schema()
     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bu sihirbaz henüz web'e taşınmadı.")
 
 
@@ -941,6 +1228,8 @@ def preview_wizard(
         return _ecog_preview(dict(payload.get("state") or {}), connection)
     if wizard_key.lower() in CARTRIDGE_CONFIGS:
         return _cartridge_preview(wizard_key.lower(), dict(payload.get("state") or {}), connection)
+    if wizard_key.lower() == "hexafil":
+        return _hexafil_preview(dict(payload.get("state") or {}), connection)
     if wizard_key.lower() != "alverpro":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bu sihirbaz henüz web'e taşınmadı.")
     state = dict(payload.get("state") or {})
