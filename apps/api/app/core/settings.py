@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     db_user: str
     db_password: str
     db_name: str = "urun_maliyet_db"
+    token_secret: str = "local-dev-secret-change-me"
+    token_expire_hours: int = 12
 
     model_config = SettingsConfigDict(
         env_file=".env",

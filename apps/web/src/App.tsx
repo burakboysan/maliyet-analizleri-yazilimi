@@ -1,7 +1,7 @@
 import { AlertCircle, Boxes, Database, FileText, Gauge, ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
-import { fetchModules, type ModuleInfo } from "./api";
+import { fetchMe, fetchModules, login, type ModuleInfo, type UserInfo } from "./api";
 
 const phaseLabels: Record<number, string> = {
   1: "İlk faz",
@@ -14,15 +14,97 @@ const moduleIcons = [Boxes, Database, Gauge, FileText, ShieldCheck];
 
 export function App() {
   const [modules, setModules] = useState<ModuleInfo[]>([]);
+  const [token, setToken] = useState<string>(() => window.localStorage.getItem("maliyet_web_token") ?? "");
+  const [user, setUser] = useState<UserInfo | null>(null);
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchModules()
-      .then(setModules)
-      .catch((err: Error) => setError(err.message));
-  }, []);
+    if (!token) {
+      setModules([]);
+      setUser(null);
+      return;
+    }
+    Promise.all([fetchMe(token), fetchModules(token)])
+      .then(([currentUser, moduleRows]) => {
+        setUser(currentUser);
+        setModules(moduleRows);
+        setError(null);
+      })
+      .catch((err: Error) => {
+        setError(err.message);
+        setToken("");
+        setUser(null);
+        setModules([]);
+        window.localStorage.removeItem("maliyet_web_token");
+      });
+  }, [token]);
 
   const firstPhaseModules = useMemo(() => modules.filter((module) => module.phase === 1), [modules]);
+
+  async function handleLogin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const response = await login(username, password);
+      window.localStorage.setItem("maliyet_web_token", response.access_token);
+      setToken(response.access_token);
+      setUser(response.user);
+      setPassword("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Giriş yapılamadı.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  function handleLogout() {
+    window.localStorage.removeItem("maliyet_web_token");
+    setToken("");
+    setUser(null);
+    setModules([]);
+  }
+
+  if (!token || !user) {
+    return (
+      <main className="login-shell">
+        <section className="login-panel">
+          <div className="login-copy">
+            <div className="brand-mark">B</div>
+            <h1>Bomaksan Maliyet Web</h1>
+            <p>Masaüstü yazılımla aynı veritabanını kullanan web arayüzüne giriş yapın.</p>
+          </div>
+          <form className="login-form" onSubmit={handleLogin}>
+            <label>
+              Kullanıcı adı
+              <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+            </label>
+            <label>
+              Şifre
+              <input
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                type="password"
+                autoComplete="current-password"
+              />
+            </label>
+            {error ? (
+              <div className="error-state">
+                <AlertCircle size={20} />
+                <span>{error}</span>
+              </div>
+            ) : null}
+            <button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? "Giriş yapılıyor..." : "Giriş Yap"}
+            </button>
+          </form>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="app-shell">
@@ -47,9 +129,18 @@ export function App() {
             <h1>Maliyet Analizleri Web App</h1>
             <p>Masaüstü yazılım korunarak aynı veritabanı üzerinde web arayüzüne geçiş başlatıldı.</p>
           </div>
-          <div className="db-badge">
-            <Database size={18} />
-            <span>urun_maliyet_db</span>
+          <div className="topbar-actions">
+            <div className="user-chip">
+              <strong>{user.kullanici_adi}</strong>
+              <span>{user.rol_adi || "Rol yok"}</span>
+            </div>
+            <div className="db-badge">
+              <Database size={18} />
+              <span>urun_maliyet_db</span>
+            </div>
+            <button className="ghost-button" type="button" onClick={handleLogout}>
+              Çıkış
+            </button>
           </div>
         </header>
 

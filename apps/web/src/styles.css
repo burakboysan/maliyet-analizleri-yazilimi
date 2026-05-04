@@ -16,6 +16,15 @@ body {
   min-height: 100vh;
 }
 
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -82,12 +91,90 @@ a {
   padding: 30px;
 }
 
+.login-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.login-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  width: min(920px, 100%);
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.login-copy {
+  display: grid;
+  align-content: center;
+  gap: 14px;
+  background: #0f243d;
+  color: #ffffff;
+  padding: 42px;
+}
+
+.login-copy p {
+  color: #c8d7e7;
+  line-height: 1.55;
+}
+
+.login-form {
+  display: grid;
+  align-content: center;
+  gap: 16px;
+  padding: 42px;
+}
+
+.login-form label {
+  display: grid;
+  gap: 8px;
+  color: #31445a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.login-form input {
+  width: 100%;
+  border: 1px solid #cfd9e6;
+  border-radius: 8px;
+  color: #162033;
+  padding: 12px;
+}
+
+.login-form button,
+.ghost-button {
+  border: 0;
+  border-radius: 8px;
+  font-weight: 800;
+}
+
+.login-form button {
+  background: #2f9e7e;
+  color: #ffffff;
+  min-height: 44px;
+}
+
+.login-form button:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
 .topbar {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
   margin-bottom: 24px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 h1,
@@ -124,6 +211,27 @@ h2 {
   color: #24415f;
   padding: 10px 12px;
   white-space: nowrap;
+}
+
+.user-chip {
+  display: grid;
+  border: 1px solid #cfd9e6;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.user-chip span {
+  color: #63758a;
+  font-size: 12px;
+}
+
+.ghost-button {
+  border: 1px solid #cfd9e6;
+  background: #ffffff;
+  color: #24415f;
+  padding: 11px 12px;
 }
 
 .status-grid {
@@ -261,6 +369,7 @@ h2 {
   }
 
   .topbar,
+  .topbar-actions,
   .section-heading,
   .migration-panel {
     display: grid;
@@ -290,5 +399,9 @@ h2 {
 
   .module-row.header {
     display: none;
+  }
+
+  .login-panel {
+    grid-template-columns: 1fr;
   }
 }
