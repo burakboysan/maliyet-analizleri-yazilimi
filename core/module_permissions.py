@@ -18,7 +18,6 @@ MODULES = [
     {"key": "project_management", "title": "Proje Yönetim Modülü", "menu_title": "Proje Yönetim Modülü"},
     {"key": "technical_calculations", "title": "Teknik Hesaplamalar", "menu_title": "Teknik Hesaplamalar"},
     {"key": "documents", "title": "Dokümanlar", "menu_title": "Dokümanlar"},
-    {"key": "lead_automation", "title": "Lead Otomasyonu", "menu_title": "Lead Otomasyonu"},
 ]
 
 MOBILE_MODULES = [
