@@ -162,6 +162,29 @@ class ProductTreeDeleteResponse(BaseModel):
     message: str
 
 
+class ProductTreeMaterialSearchResponse(BaseModel):
+    kod: str
+    ad: str
+    malzeme_tipi: str
+
+
+class ProductTreeMaterialAddItem(BaseModel):
+    kod: str
+    ad: str
+    miktar: float | int | str
+    malzeme_tipi: str
+
+
+class ProductTreeMaterialAddRequest(BaseModel):
+    product_id: int
+    items: list[ProductTreeMaterialAddItem]
+
+
+class ProductTreeMaterialAddResponse(BaseModel):
+    inserted_count: int
+    message: str
+
+
 class ProductTreeLaborUpdateRequest(BaseModel):
     labor_rows: list[ProductLaborUpdateRequest]
     recalculate_cost: bool = True

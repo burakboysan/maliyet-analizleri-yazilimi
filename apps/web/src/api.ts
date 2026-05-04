@@ -136,6 +136,21 @@ export type ProductTreeDeleteResponse = {
   message: string;
 };
 
+export type ProductTreeMaterial = {
+  kod: string;
+  ad: string;
+  malzeme_tipi: string;
+};
+
+export type ProductTreeMaterialAddItem = ProductTreeMaterial & {
+  miktar: number;
+};
+
+export type ProductTreeMaterialAddResponse = {
+  inserted_count: number;
+  message: string;
+};
+
 export type ProductTreeRecalculateResponse = {
   product_id: number;
   cost_recalculated: boolean;
@@ -369,6 +384,35 @@ export async function deleteProductTreeItems(token: string, itemIds: number[]): 
     throw new Error(await parseError(response));
   }
   return (await response.json()) as ProductTreeDeleteResponse;
+}
+
+export async function searchProductTreeMaterials(token: string, materialType: string, search = ""): Promise<ProductTreeMaterial[]> {
+  const params = new URLSearchParams({ material_type: materialType });
+  if (search.trim()) {
+    params.set("q", search.trim());
+  }
+  const response = await apiFetch(`${API_BASE_URL}/products/tree-materials/search?${params.toString()}`, {
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductTreeMaterial[];
+}
+
+export async function addProductTreeMaterials(token: string, productId: number, items: ProductTreeMaterialAddItem[]): Promise<ProductTreeMaterialAddResponse> {
+  const response = await apiFetch(`${API_BASE_URL}/products/tree-materials`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ product_id: productId, items }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductTreeMaterialAddResponse;
 }
 
 export async function saveProductTreeLabor(token: string, productId: number, laborRows: ProductLabor[]): Promise<ProductTreeRecalculateResponse> {

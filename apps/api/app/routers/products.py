@@ -23,6 +23,9 @@ from app.models import (
     ProductTreeItemResponse,
     ProductTreeDeleteRequest,
     ProductTreeDeleteResponse,
+    ProductTreeMaterialAddRequest,
+    ProductTreeMaterialAddResponse,
+    ProductTreeMaterialSearchResponse,
     ProductTreeLaborUpdateRequest,
     ProductTreeQuantityUpdateRequest,
     ProductTreeRecalculateResponse,
@@ -811,6 +814,91 @@ def delete_product_tree_items_route(
         raise HTTPException(status_code=500, detail=f"Silme işlemi tamamlanamadı: {exc}") from exc
 
     return ProductTreeDeleteResponse(deleted_count=deleted_count, message=f"{deleted_count} ürün ağacı kaydı silindi.")
+
+
+@router.get("/tree-materials/search", response_model=list[ProductTreeMaterialSearchResponse])
+def search_product_tree_materials_route(
+    material_type: str = Query(..., max_length=80),
+    q: str = Query(default="", max_length=120),
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    normalized_type = material_type.strip()
+    if not normalized_type:
+        raise HTTPException(status_code=422, detail="Malzeme tipi zorunludur.")
+
+    params: list[Any] = []
+    if normalized_type == "Mamül":
+        where_sql = "malzeme_tipi IN ('Mamül', 'Proje Mamül')"
+    else:
+        where_sql = "malzeme_tipi = %s"
+        params.append(normalized_type)
+
+    search_text = q.strip()
+    if search_text:
+        where_sql += " AND (malzeme_kodu LIKE %s OR ad LIKE %s)"
+        params.extend([f"%{search_text}%", f"%{search_text}%"])
+
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute(
+        f"""
+        SELECT malzeme_kodu, ad, malzeme_tipi
+        FROM malzemeler
+        WHERE {where_sql}
+        ORDER BY ad
+        LIMIT 200
+        """,
+        tuple(params),
+    )
+    return [
+        ProductTreeMaterialSearchResponse(
+            kod=str(row.get("malzeme_kodu") or ""),
+            ad=str(row.get("ad") or ""),
+            malzeme_tipi=str(row.get("malzeme_tipi") or ""),
+        )
+        for row in cursor.fetchall()
+    ]
+
+
+@router.post("/tree-materials", response_model=ProductTreeMaterialAddResponse)
+def add_product_tree_materials_route(
+    payload: ProductTreeMaterialAddRequest,
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    if not _is_master_user(current_user):
+        raise HTTPException(status_code=403, detail="Ürün ağacı düzenleme yetkiniz yok.")
+
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute("SELECT id FROM urunler WHERE id = %s LIMIT 1", (payload.product_id,))
+    if not cursor.fetchone():
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı.")
+
+    inserted_count = 0
+    try:
+        for item in payload.items:
+            code = item.kod.strip()
+            name = item.ad.strip()
+            material_type = item.malzeme_tipi.strip()
+            quantity = _to_decimal(item.miktar)
+            if not code or not name or not material_type or quantity <= 0:
+                continue
+            cursor.execute(
+                """
+                INSERT INTO urun_agaci (urun_id, malzeme_kodu, malzeme_adi, miktar, malzeme_tipi)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (payload.product_id, code, name, quantity, material_type),
+            )
+            inserted_count += 1
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Malzeme eklenemedi: {exc}") from exc
+
+    return ProductTreeMaterialAddResponse(inserted_count=inserted_count, message=f"{inserted_count} malzeme ürün ağacına eklendi.")
 
 
 @router.put("/{product_id}/tree/labor", response_model=ProductTreeRecalculateResponse)

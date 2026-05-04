@@ -25,6 +25,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
+  addProductTreeMaterials,
   copyProduct,
   deleteProduct,
   deleteProductTreeItems,
@@ -38,6 +39,7 @@ import {
   login,
   recalculateProductTreeCost,
   reviseProductCosts,
+  searchProductTreeMaterials,
   saveProductTreeLabor,
   updateProduct,
   updateProductTreeItemQuantity,
@@ -49,6 +51,8 @@ import {
   type ProductInfo,
   type ProductTree,
   type ProductTreeItem,
+  type ProductTreeMaterial,
+  type ProductTreeMaterialAddItem,
   type UserInfo,
 } from "./api";
 
@@ -575,6 +579,27 @@ export function App() {
     }
   }
 
+  async function handleSearchTreeMaterials(materialType: string, search: string) {
+    return searchProductTreeMaterials(token, materialType, search);
+  }
+
+  async function handleAddTreeMaterials(items: ProductTreeMaterialAddItem[]) {
+    if (!selectedProduct || !items.length) {
+      return;
+    }
+    setIsSavingTree(true);
+    setDataError(null);
+    try {
+      const response = await addProductTreeMaterials(token, selectedProduct.id, items);
+      await refreshProductTree(selectedProduct.id);
+      setNotice(response.message);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Malzeme ürün ağacına eklenemedi.");
+    } finally {
+      setIsSavingTree(false);
+    }
+  }
+
   async function handleSaveTreeLabor(laborRows: ProductLabor[]) {
     if (!selectedProduct) {
       return;
@@ -831,10 +856,12 @@ export function App() {
           isLoading={isLoadingTree}
           isSaving={isSavingTree}
           isMaster={isMasterUser(user)}
+          onAddMaterials={handleAddTreeMaterials}
           onClose={() => setIsTreeOpen(false)}
           onDeleteItems={handleDeleteTreeItems}
           onSave={handleSaveProductTree}
           onSaveLabor={handleSaveTreeLabor}
+          onSearchMaterials={handleSearchTreeMaterials}
           onUpdateQuantity={handleUpdateTreeQuantity}
           product={selectedProduct}
           tree={productTree}
@@ -1044,10 +1071,12 @@ function ProductTreeModal({
   isLoading,
   isSaving,
   isMaster,
+  onAddMaterials,
   onClose,
   onDeleteItems,
   onSave,
   onSaveLabor,
+  onSearchMaterials,
   onUpdateQuantity,
   product,
   tree,
@@ -1055,10 +1084,12 @@ function ProductTreeModal({
   isLoading: boolean;
   isSaving: boolean;
   isMaster: boolean;
+  onAddMaterials: (items: ProductTreeMaterialAddItem[]) => Promise<void>;
   onClose: () => void;
   onDeleteItems: (itemIds: number[]) => void;
   onSave: () => void;
   onSaveLabor: (laborRows: ProductLabor[]) => void;
+  onSearchMaterials: (materialType: string, search: string) => Promise<ProductTreeMaterial[]>;
   onUpdateQuantity: (item: ProductTreeItem) => void;
   product: ProductInfo | null;
   tree: ProductTree | null;
@@ -1066,6 +1097,13 @@ function ProductTreeModal({
   const [activeTab, setActiveTab] = useState<"yari" | "mamul" | "alt" | "labor">("yari");
   const [selectedItems, setSelectedItems] = useState<Record<string, number[]>>({});
   const [laborRows, setLaborRows] = useState<ProductLabor[]>([]);
+  const [isAddPanelOpen, setIsAddPanelOpen] = useState(false);
+  const [materialSearch, setMaterialSearch] = useState("");
+  const [materialQuantity, setMaterialQuantity] = useState("1");
+  const [materialResults, setMaterialResults] = useState<ProductTreeMaterial[]>([]);
+  const [selectedMaterialCodes, setSelectedMaterialCodes] = useState<string[]>([]);
+  const [isSearchingMaterials, setIsSearchingMaterials] = useState(false);
+  const [addPanelError, setAddPanelError] = useState<string | null>(null);
   const tabItems = [
     { key: "yari" as const, label: "Yarı Mamüller", items: tree?.yari_mamuller ?? [] },
     { key: "mamul" as const, label: "Mamüller", items: tree?.mamuller ?? [] },
@@ -1073,6 +1111,8 @@ function ProductTreeModal({
   ];
   const activeItems = tabItems.find((tab) => tab.key === activeTab)?.items ?? [];
   const activeSelection = selectedItems[activeTab] ?? [];
+  const activeMaterialType = activeTab === "yari" ? "Yarı Mamül" : activeTab === "mamul" ? "Mamül" : "";
+  const canAddMaterial = isMaster && Boolean(activeMaterialType);
 
   useEffect(() => {
     const laborByType = new Map((tree?.iscilikler ?? []).map((row) => [row.iscilik_tipi ?? "", row]));
@@ -1089,6 +1129,54 @@ function ProductTreeModal({
     setSelectedItems({});
   }, [tree]);
 
+  useEffect(() => {
+    setIsAddPanelOpen(false);
+    setMaterialSearch("");
+    setMaterialResults([]);
+    setSelectedMaterialCodes([]);
+    setAddPanelError(null);
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (!isAddPanelOpen || !activeMaterialType || materialSearch.trim().length < 2) {
+      setMaterialResults([]);
+      setSelectedMaterialCodes([]);
+      setIsSearchingMaterials(false);
+      return;
+    }
+
+    let isCurrent = true;
+    setIsSearchingMaterials(true);
+    setAddPanelError(null);
+    const timeoutId = window.setTimeout(() => {
+      onSearchMaterials(activeMaterialType, materialSearch)
+        .then((rows) => {
+          if (!isCurrent) {
+            return;
+          }
+          setMaterialResults(rows);
+          setSelectedMaterialCodes((codes) => codes.filter((code) => rows.some((row) => row.kod === code)));
+        })
+        .catch((err) => {
+          if (!isCurrent) {
+            return;
+          }
+          setAddPanelError(err instanceof Error ? err.message : "Malzeme aranamadı.");
+          setMaterialResults([]);
+        })
+        .finally(() => {
+          if (isCurrent) {
+            setIsSearchingMaterials(false);
+          }
+        });
+    }, 300);
+
+    return () => {
+      isCurrent = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [activeMaterialType, isAddPanelOpen, materialSearch, onSearchMaterials]);
+
   function toggleItem(tabKey: string, itemId: number) {
     setSelectedItems((current) => {
       const existing = current[tabKey] ?? [];
@@ -1099,6 +1187,29 @@ function ProductTreeModal({
 
   function updateLabor(index: number, key: "usta_saat" | "yardimci_saat", value: string) {
     setLaborRows((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, [key]: value === "" ? 0 : value } : row)));
+  }
+
+  function toggleMaterial(code: string) {
+    setSelectedMaterialCodes((current) => (current.includes(code) ? current.filter((item) => item !== code) : [...current, code]));
+  }
+
+  async function handleAddSelectedMaterials() {
+    const quantity = Number(materialQuantity.replace(",", "."));
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setAddPanelError("Lütfen geçerli bir miktar girin.");
+      return;
+    }
+    const rows = materialResults.filter((row) => selectedMaterialCodes.includes(row.kod));
+    if (!rows.length) {
+      setAddPanelError("Lütfen listeden en az bir malzeme seçin.");
+      return;
+    }
+    await onAddMaterials(rows.map((row) => ({ ...row, miktar: quantity })));
+    setSelectedMaterialCodes([]);
+    setMaterialSearch("");
+    setMaterialResults([]);
+    setMaterialQuantity("1");
+    setAddPanelError(null);
   }
 
   return (
@@ -1187,6 +1298,50 @@ function ProductTreeModal({
                 </section>
               ) : (
                 <section className="tree-panel-table">
+                  {canAddMaterial ? (
+                    <div className="tree-add-panel">
+                      <div className="tree-add-panel-header">
+                        <div>
+                          <strong>{activeMaterialType} Ekle</strong>
+                          <span>Masaüstündeki seçim akışıyla aynı malzeme listesinden ekleme yapar.</span>
+                        </div>
+                        <button className="product-action compact-action" type="button" onClick={() => setIsAddPanelOpen((value) => !value)} disabled={isSaving}>
+                          {isAddPanelOpen ? "Ekleme Alanını Kapat" : `${activeMaterialType} Ekle`}
+                        </button>
+                      </div>
+                      {isAddPanelOpen ? (
+                        <div className="tree-add-panel-body">
+                          <label>
+                            Arama
+                            <input value={materialSearch} onChange={(event) => setMaterialSearch(event.target.value)} placeholder="En az 2 karakter yazın" />
+                          </label>
+                          <label>
+                            Miktar
+                            <input value={materialQuantity} onChange={(event) => setMaterialQuantity(event.target.value)} inputMode="decimal" />
+                          </label>
+                          <div className="tree-material-results">
+                            {materialSearch.trim().length < 2 ? <div className="table-empty-state">Arama için en az 2 karakter yazın.</div> : null}
+                            {isSearchingMaterials ? <div className="table-empty-state">Malzemeler aranıyor...</div> : null}
+                            {!isSearchingMaterials && materialSearch.trim().length >= 2 && !materialResults.length ? <div className="table-empty-state">Sonuç bulunamadı.</div> : null}
+                            {materialResults.map((row) => (
+                              <label className="tree-material-result" key={row.kod}>
+                                <input checked={selectedMaterialCodes.includes(row.kod)} type="checkbox" onChange={() => toggleMaterial(row.kod)} />
+                                <span>{row.kod}</span>
+                                <strong>{row.ad}</strong>
+                                <em>{row.malzeme_tipi}</em>
+                              </label>
+                            ))}
+                          </div>
+                          {addPanelError ? <div className="inline-error">{addPanelError}</div> : null}
+                          <div className="tree-panel-actions inline-actions">
+                            <button className="product-action emphasis" type="button" onClick={handleAddSelectedMaterials} disabled={isSaving || !selectedMaterialCodes.length}>
+                              Seçili Malzemeleri Ekle
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="tree-table-row header">
                     <span></span>
                     <span>Kod</span>
