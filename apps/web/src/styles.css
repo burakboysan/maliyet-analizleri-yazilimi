@@ -961,8 +961,9 @@ button.data-row.selected {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;
   grid-template-rows: minmax(0, auto) minmax(0, 1fr);
-  align-items: start;
+  align-items: stretch;
   gap: 14px;
+  height: calc(100vh - 206px);
   min-height: 0;
   overflow: hidden;
   padding: 16px;
@@ -979,8 +980,8 @@ button.data-row.selected {
   grid-row: 1 / 3;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
   min-height: 0;
-  max-height: calc(100vh - 214px);
   border-color: #c8dbee;
   background: #f7fbff;
 }
@@ -1076,7 +1077,10 @@ button.data-row.selected {
 
 .labor-card {
   grid-column: 2;
-  align-self: start;
+  align-self: stretch;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
   border-color: #c9e1d5;
   background: #f7fcf8;
 }
@@ -1088,7 +1092,7 @@ button.data-row.selected {
 
 .labor-table {
   display: grid;
-  max-height: 230px;
+  min-height: 0;
   overflow: auto;
 }
 
@@ -1258,6 +1262,7 @@ button.data-row.selected {
 
   .product-info-card {
     grid-row: auto;
+    height: auto;
     max-height: 520px;
   }
 
