@@ -10,7 +10,9 @@ import {
   FileText,
   Gauge,
   GitBranch,
+  Eye,
   Info,
+  LockKeyhole,
   LogOut,
   Menu,
   PackagePlus,
@@ -20,6 +22,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
+  Upload,
+  User,
   Wrench,
   X,
 } from "lucide-react";
@@ -59,8 +63,10 @@ import {
   type ProductTreeMaterialResolveItem,
   type UserInfo,
 } from "./api";
+import bomaksanLogo from "./assets/logo.png";
 
 type AppView = "dashboard" | "products" | "materials";
+type MaterialFilterKey = "malzeme_kodu" | "malzeme_tipi" | "ad" | "fiyat" | "guncelleme_tarihi";
 type ProductFilterKey =
   | "urun_kodu"
   | "urun_adi"
@@ -104,6 +110,31 @@ const productColumns: Array<{ key: ProductFilterKey | "maliyet"; label: string; 
   { key: "fan_kumanda_tipi", label: "Fan Pano Tipi", filterType: "select" },
   { key: "patlama_kapagi", label: "Patlama Kapağı", filterType: "text" },
   { key: "filtre_elemani_sayisi", label: "Filtre Sayısı", filterType: "text" },
+];
+
+const materialColumns: Array<{ key: MaterialFilterKey; label: string; filterType?: "text" | "select" }> = [
+  { key: "malzeme_kodu", label: "Malzeme Kodu", filterType: "text" },
+  { key: "malzeme_tipi", label: "Tipi", filterType: "select" },
+  { key: "ad", label: "Adı", filterType: "text" },
+  { key: "fiyat", label: "Fiyat (EUR)", filterType: "text" },
+  { key: "guncelleme_tarihi", label: "Güncelleme", filterType: "text" },
+];
+
+const materialFilterGroups: Array<{
+  title: string;
+  description: string;
+  keys: MaterialFilterKey[];
+}> = [
+  {
+    title: "Ana filtreler",
+    description: "Malzemeyi kod, tip veya ad üzerinden daraltın.",
+    keys: ["malzeme_kodu", "malzeme_tipi", "ad"],
+  },
+  {
+    title: "Fiyat ve tarih",
+    description: "Birim fiyat veya güncelleme tarihine göre süzün.",
+    keys: ["fiyat", "guncelleme_tarihi"],
+  },
 ];
 
 const productFilterGroups: Array<{
@@ -234,11 +265,15 @@ export function App() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [materials, setMaterials] = useState<MaterialInfo[]>([]);
   const [products, setProducts] = useState<ProductInfo[]>([]);
   const [materialSearch, setMaterialSearch] = useState("");
+  const [materialFilters, setMaterialFilters] = useState<Partial<Record<MaterialFilterKey, string>>>({});
+  const [selectedMaterial, setSelectedMaterial] = useState<MaterialInfo | null>(null);
   const [productSearch, setProductSearch] = useState("");
   const [productFilters, setProductFilters] = useState<Partial<Record<ProductFilterKey, string>>>({});
   const [selectedProduct, setSelectedProduct] = useState<ProductInfo | null>(null);
@@ -294,6 +329,7 @@ export function App() {
         ]);
         setProducts(productRows);
         setMaterials(materialRows);
+        setSelectedMaterial((current) => (current && !materialRows.some((material) => material.id === current.id) ? null : current));
         if (selectedProduct && !productRows.some((product) => product.id === selectedProduct.id)) {
           setSelectedProduct(null);
           setProductTree(null);
@@ -324,6 +360,55 @@ export function App() {
     () => Object.values(productFilters).filter((value) => String(value ?? "").trim()).length + (productSearch.trim() ? 1 : 0),
     [productFilters, productSearch],
   );
+  const activeMaterialFilterEntries = useMemo(() => {
+    const entries = materialColumns
+      .filter((column) => column.filterType)
+      .map((column) => {
+        const value = String(materialFilters[column.key] ?? "").trim();
+        return value ? { key: column.key, label: column.label, value } : null;
+      })
+      .filter((entry): entry is { key: MaterialFilterKey; label: string; value: string } => entry !== null);
+    return materialSearch.trim()
+      ? [{ key: "ad" as MaterialFilterKey, label: "Genel arama", value: materialSearch.trim() }, ...entries]
+      : entries;
+  }, [materialFilters, materialSearch]);
+  const activeMaterialFilterCount = useMemo(
+    () => Object.values(materialFilters).filter((value) => String(value ?? "").trim()).length + (materialSearch.trim() ? 1 : 0),
+    [materialFilters, materialSearch],
+  );
+  const materialFilterOptions = useMemo(() => {
+    const options: Partial<Record<MaterialFilterKey, string[]>> = {};
+    for (const column of materialColumns) {
+      if (column.filterType !== "select") {
+        continue;
+      }
+      const values = new Set<string>();
+      for (const material of materials) {
+        const value = material[column.key];
+        if (value !== null && value !== undefined && String(value).trim()) {
+          values.add(String(value));
+        }
+      }
+      options[column.key] = Array.from(values).sort((a, b) => a.localeCompare(b, "tr"));
+    }
+    return options;
+  }, [materials]);
+  const filteredMaterials = useMemo(() => {
+    return materials.filter((material) => {
+      return materialColumns.every((column) => {
+        if (!column.filterType) {
+          return true;
+        }
+        const filterValue = String(materialFilters[column.key] ?? "").trim().toLocaleLowerCase("tr-TR");
+        if (!filterValue) {
+          return true;
+        }
+        const rawValue = column.key === "fiyat" ? formatMoney(material.fiyat) : material[column.key];
+        const cellValue = String(rawValue ?? "").toLocaleLowerCase("tr-TR");
+        return cellValue.includes(filterValue);
+      });
+    });
+  }, [materialFilters, materials]);
   const productFilterOptions = useMemo(() => {
     const options: Partial<Record<ProductFilterKey, string[]>> = {};
     for (const column of productColumns) {
@@ -367,6 +452,9 @@ export function App() {
       window.localStorage.setItem("maliyet_web_token", response.access_token);
       setToken(response.access_token);
       setUser(response.user);
+      if (!rememberMe) {
+        setUsername("");
+      }
       setPassword("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Giriş yapılamadı.");
@@ -733,6 +821,34 @@ export function App() {
     setProductFilters({});
   }
 
+  function updateMaterialFilter(key: MaterialFilterKey, value: string) {
+    setMaterialFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function clearMaterialFilters() {
+    setMaterialSearch("");
+    setMaterialFilters({});
+  }
+
+  function handleMaterialAction(action: string) {
+    if (action === "export") {
+      exportMaterials(filteredMaterials);
+      setNotice("Görünen malzeme listesi CSV olarak hazırlandı.");
+      return;
+    }
+    if (!selectedMaterial && ["edit", "delete"].includes(action)) {
+      setNotice("İşlem yapmak için önce tablodan bir malzeme seçin.");
+      return;
+    }
+    const actionMessages: Record<string, string> = {
+      add: "Malzeme ekleme API akışı hazırlandığında bu buton aktif edilecek.",
+      edit: "Malzeme düzenleme API akışı hazırlandığında bu buton seçili malzemeyi açacak.",
+      delete: "Malzeme silme API akışı hazırlandığında bu buton onayla silme yapacak.",
+      import: "Mamül içe aktarma masaüstündeki import akışı web API'ye taşındığında aktif edilecek.",
+    };
+    setNotice(actionMessages[action] ?? "Bu malzeme aksiyonu henüz web API'ye bağlanmadı.");
+  }
+
   function handleLogout() {
     window.localStorage.removeItem("maliyet_web_token");
     setToken("");
@@ -749,26 +865,65 @@ export function App() {
   if (!token || !user) {
     return (
       <main className="login-shell">
-        <section className="login-panel">
-          <div className="login-copy">
-            <div className="brand-mark">B</div>
-            <h1>Bomaksan Maliyet Web</h1>
-            <p>Masaüstü yazılımla aynı veritabanını kullanan web arayüzüne giriş yapın.</p>
+        <section className="login-panel" aria-label="Bomaksan Maliyet Analizleri giriş ekranı">
+          <div className="login-header">
+            <img className="login-logo" src={bomaksanLogo} alt="Bomaksan" />
+            <h1>Maliyet Analizleri Yazılımı</h1>
+            <p>Web arayüzü</p>
+            <span className="login-version">Sürüm Web</span>
           </div>
           <form className="login-form" onSubmit={handleLogin}>
-            <label>
-              Kullanıcı adı
-              <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
+            <label className="login-field">
+              <span>Kullanıcı Adı</span>
+              <div className="login-input-wrap">
+                <User size={17} aria-hidden="true" />
+                <input
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  autoComplete="username"
+                  autoFocus
+                />
+              </div>
             </label>
-            <label>
-              Şifre
-              <input
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                type="password"
-                autoComplete="current-password"
-              />
+            <label className="login-field">
+              <span>Şifre</span>
+              <div className="login-input-wrap">
+                <LockKeyhole size={17} aria-hidden="true" />
+                <input
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  type={isPasswordVisible ? "text" : "password"}
+                  autoComplete="current-password"
+                />
+                <button
+                  className="password-toggle"
+                  type="button"
+                  onClick={() => setIsPasswordVisible((current) => !current)}
+                  aria-label={isPasswordVisible ? "Şifreyi gizle" : "Şifreyi göster"}
+                  title={isPasswordVisible ? "Şifreyi gizle" : "Şifreyi göster"}
+                >
+                  <Eye size={16} />
+                </button>
+              </div>
             </label>
+            <div className="login-options">
+              <label className="remember-option">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(event) => setRememberMe(event.target.checked)}
+                />
+                <span>Beni Hatırla</span>
+              </label>
+              <div className="login-links" aria-label="Hesap işlemleri">
+                <button type="button" onClick={() => setError("E-posta doğrulama akışı web arayüzüne henüz bağlanmadı.")}>
+                  E-posta Doğrula
+                </button>
+                <button type="button" onClick={() => setError("Şifre sıfırlama akışı web arayüzüne henüz bağlanmadı.")}>
+                  Şifremi Unuttum
+                </button>
+              </div>
+            </div>
             {error ? (
               <div className="error-state">
                 <AlertCircle size={20} />
@@ -778,6 +933,12 @@ export function App() {
             <button type="submit" disabled={isSubmitting}>
               {isSubmitting ? "Giriş yapılıyor..." : "Giriş Yap"}
             </button>
+            <div className="login-footer">
+              <span>Henüz hesabınız yok mu?</span>
+              <button type="button" onClick={() => setError("Hesap oluşturma akışı web arayüzüne henüz bağlanmadı.")}>
+                Hesap Oluştur
+              </button>
+            </div>
           </form>
         </section>
       </main>
@@ -896,7 +1057,23 @@ export function App() {
             totalProductCount={products.length}
           />
         ) : view === "materials" ? (
-          <MaterialsScreen materials={materials} materialSearch={materialSearch} onMaterialSearchChange={setMaterialSearch} />
+          <MaterialsScreen
+            activeFilterCount={activeMaterialFilterCount}
+            activeFilterEntries={activeMaterialFilterEntries}
+            filterOptions={materialFilterOptions}
+            filters={materialFilters}
+            isLoading={isLoadingData}
+            isMaster={isMasterUser(user)}
+            materialSearch={materialSearch}
+            materials={filteredMaterials}
+            onAction={handleMaterialAction}
+            onClearFilters={clearMaterialFilters}
+            onFilterChange={updateMaterialFilter}
+            onMaterialSearchChange={setMaterialSearch}
+            onSelectMaterial={setSelectedMaterial}
+            selectedMaterial={selectedMaterial}
+            totalMaterialCount={materials.length}
+          />
         ) : (
           <DashboardScreen firstPhaseModules={firstPhaseModules} materials={materials} modules={modules} products={products} setView={setView} />
         )}
@@ -1891,45 +2068,246 @@ function FilterGroup({
   );
 }
 
-function MaterialsScreen({
-  materials,
-  materialSearch,
-  onMaterialSearchChange,
+function MaterialFilterGroup({
+  defaultOpen,
+  filterOptions,
+  filters,
+  group,
+  onFilterChange,
 }: {
-  materials: MaterialInfo[];
-  materialSearch: string;
-  onMaterialSearchChange: (value: string) => void;
+  defaultOpen: boolean;
+  filterOptions: Partial<Record<MaterialFilterKey, string[]>>;
+  filters: Partial<Record<MaterialFilterKey, string>>;
+  group: (typeof materialFilterGroups)[number];
+  onFilterChange: (key: MaterialFilterKey, value: string) => void;
 }) {
   return (
-    <section className="data-panel wide-panel" id="materials">
-      <div className="panel-heading">
-        <div>
-          <h2>Malzemeler</h2>
-          <p>Masaüstüyle aynı malzeme fiyat kaynağı kullanılır.</p>
-        </div>
-        <label className="search-box">
-          <Search size={18} />
-          <input value={materialSearch} onChange={(event) => onMaterialSearchChange(event.target.value)} placeholder="Malzeme ara" />
-        </label>
+    <details className="filter-group" open={defaultOpen}>
+      <summary>
+        <span>
+          <strong>{group.title}</strong>
+          <small>{group.description}</small>
+        </span>
+      </summary>
+      <div className="filter-grid">
+        {group.keys.map((key) => {
+          const column = materialColumns.find((item) => item.key === key);
+          if (!column) {
+            return null;
+          }
+          return (
+            <label className="filter-control" key={key}>
+              <span>{column.label}</span>
+              {column.filterType === "select" ? (
+                <select value={filters[key] ?? ""} onChange={(event) => onFilterChange(key, event.target.value)}>
+                  <option value="">Tümü</option>
+                  {(filterOptions[key] ?? []).map((value) => (
+                    <option value={value} key={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input value={filters[key] ?? ""} onChange={(event) => onFilterChange(key, event.target.value)} placeholder={`${column.label} ara`} />
+              )}
+            </label>
+          );
+        })}
       </div>
-      <div className="data-table material-table" role="table" aria-label="Malzeme listesi">
-        <div className="data-row header" role="row">
-          <span>Kod</span>
-          <span>Tip</span>
-          <span>Ad</span>
-          <span>Fiyat EUR</span>
-          <span>Güncelleme</span>
-        </div>
-        {materials.map((material) => (
-          <div className="data-row" role="row" key={material.id}>
-            <span>{material.malzeme_kodu || "-"}</span>
-            <span>{material.malzeme_tipi || "-"}</span>
-            <span>{material.ad || "-"}</span>
-            <span>{formatMoney(material.fiyat)}</span>
-            <span>{material.guncelleme_tarihi || "-"}</span>
+    </details>
+  );
+}
+
+function MaterialsScreen({
+  activeFilterCount,
+  activeFilterEntries,
+  filterOptions,
+  filters,
+  isLoading,
+  isMaster,
+  materials,
+  materialSearch,
+  onAction,
+  onClearFilters,
+  onFilterChange,
+  onMaterialSearchChange,
+  onSelectMaterial,
+  selectedMaterial,
+  totalMaterialCount,
+}: {
+  activeFilterCount: number;
+  activeFilterEntries: Array<{ key: MaterialFilterKey; label: string; value: string }>;
+  filterOptions: Partial<Record<MaterialFilterKey, string[]>>;
+  filters: Partial<Record<MaterialFilterKey, string>>;
+  isLoading: boolean;
+  isMaster: boolean;
+  materials: MaterialInfo[];
+  materialSearch: string;
+  onAction: (action: string) => void;
+  onClearFilters: () => void;
+  onFilterChange: (key: MaterialFilterKey, value: string) => void;
+  onMaterialSearchChange: (value: string) => void;
+  onSelectMaterial: (material: MaterialInfo) => void;
+  selectedMaterial: MaterialInfo | null;
+  totalMaterialCount: number;
+}) {
+  const typeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const material of materials) {
+      const type = String(material.malzeme_tipi || "Tipsiz");
+      counts.set(type, (counts.get(type) ?? 0) + 1);
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 4);
+  }, [materials]);
+
+  return (
+    <section className="product-module-shell material-module-shell" id="materials">
+      <aside className="product-filter-panel material-filter-panel">
+        <div className="filter-panel-header">
+          <div className="filter-title">
+            <SlidersHorizontal size={20} />
+            <strong>Filtreleme</strong>
           </div>
-        ))}
-      </div>
+          <span>{activeFilterCount ? `${activeFilterCount} aktif` : "Temiz"}</span>
+        </div>
+
+        <label className="search-box full-search">
+          <Search size={18} />
+          <input value={materialSearch} onChange={(event) => onMaterialSearchChange(event.target.value)} placeholder="Kod, tip veya ad ara" />
+        </label>
+
+        <div className="filter-summary-card">
+          <strong>{materials.length}</strong>
+          <span>{totalMaterialCount === materials.length ? "malzeme gösteriliyor" : `${totalMaterialCount} malzeme içinden gösteriliyor`}</span>
+        </div>
+
+        {activeFilterEntries.length ? (
+          <div className="active-filter-list" aria-label="Aktif filtreler">
+            {activeFilterEntries.map((entry, index) => (
+              <button
+                className="active-filter-chip"
+                key={`${entry.key}-${index}`}
+                type="button"
+                onClick={() => (entry.label === "Genel arama" ? onMaterialSearchChange("") : onFilterChange(entry.key, ""))}
+              >
+                <span>{entry.label}</span>
+                <strong>{entry.value}</strong>
+                <X size={14} />
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <button className="filter-clear-button" type="button" onClick={onClearFilters} disabled={!activeFilterCount}>
+          Filtreleri Temizle
+        </button>
+
+        <div className="filter-groups">
+          {materialFilterGroups.map((group, index) => (
+            <MaterialFilterGroup
+              defaultOpen={index === 0}
+              filterOptions={filterOptions}
+              filters={filters}
+              group={group}
+              key={group.title}
+              onFilterChange={onFilterChange}
+            />
+          ))}
+        </div>
+      </aside>
+
+      <section className="product-workspace material-workspace">
+        <div className="product-commandbar material-commandbar">
+          <div className="commandbar-copy">
+            <strong>Malzeme Tablosu</strong>
+            <span>Masaüstündeki kolonlar korunur; arama, filtre ve seçim işlemleri web ekranına taşındı.</span>
+          </div>
+          <div className="product-toolbar primary-toolbar">
+            <ProductActionButton emphasis icon={<PackagePlus size={18} />} label="Malzeme Ekle" onClick={() => onAction("add")} />
+            <ProductActionButton icon={<Download size={18} />} label="Dışa Aktar" onClick={() => onAction("export")} />
+            <ProductActionButton icon={<Upload size={18} />} label="Mamül İçe Aktar" onClick={() => onAction("import")} />
+          </div>
+          <div className="product-toolbar secondary-toolbar">
+            <ProductActionButton disabled={!selectedMaterial} icon={<Edit size={18} />} label="Malzeme Düzenle" onClick={() => onAction("edit")} />
+            {isMaster ? (
+              <ProductActionButton danger disabled={!selectedMaterial} icon={<Trash2 size={18} />} label="Malzeme Çıkart" onClick={() => onAction("delete")} />
+            ) : null}
+          </div>
+        </div>
+
+        {selectedMaterial ? (
+          <section className="selected-product-summary selected-material-summary">
+            <div>
+              <span>Seçili Malzeme</span>
+              <strong>{selectedMaterial.malzeme_kodu || "-"}</strong>
+              <p>{selectedMaterial.ad || "Malzeme adı yok"}</p>
+            </div>
+            <dl>
+              <div>
+                <dt>Tipi</dt>
+                <dd>{selectedMaterial.malzeme_tipi || "-"}</dd>
+              </div>
+              <div>
+                <dt>Fiyat</dt>
+                <dd>{formatCurrency(selectedMaterial.fiyat)}</dd>
+              </div>
+              <div>
+                <dt>Güncelleme</dt>
+                <dd>{selectedMaterial.guncelleme_tarihi || "-"}</dd>
+              </div>
+            </dl>
+          </section>
+        ) : null}
+
+        <div className="material-type-strip" aria-label="Malzeme tipi dağılımı">
+          {typeCounts.length ? (
+            typeCounts.map(([type, count]) => (
+              <div key={type}>
+                <span>{type}</span>
+                <strong>{count}</strong>
+              </div>
+            ))
+          ) : (
+            <span className="muted">Malzeme tipi özeti için kayıt bekleniyor.</span>
+          )}
+        </div>
+
+        <div className="product-table-shell material-table-shell">
+          <div className="product-table-header">
+            <div>
+              <strong>{materials.length} malzeme</strong>
+              <span>{totalMaterialCount !== materials.length ? `${totalMaterialCount} toplam kayıttan filtrelendi` : "Veritabanından gelen güncel liste"}</span>
+            </div>
+            <div className={selectedMaterial ? "selected-product-pill" : "selected-product-pill muted-pill"}>
+              {isLoading ? "Veriler yükleniyor..." : selectedMaterial ? `${selectedMaterial.malzeme_kodu || selectedMaterial.ad} seçili` : "Tablodan malzeme seçin"}
+            </div>
+          </div>
+          <div className="data-table desktop-material-table" role="table" aria-label="Malzeme listesi">
+            <div className="data-row header" role="row">
+              {materialColumns.map((column) => (
+                <span key={column.key}>{column.label}</span>
+              ))}
+            </div>
+            {materials.map((material) => (
+              <button
+                className={selectedMaterial?.id === material.id ? "data-row selected" : "data-row"}
+                role="row"
+                key={material.id}
+                type="button"
+                onClick={() => onSelectMaterial(material)}
+                onDoubleClick={() => onAction("edit")}
+              >
+                <span>{material.malzeme_kodu || "-"}</span>
+                <span>{material.malzeme_tipi || "-"}</span>
+                <span>{material.ad || "-"}</span>
+                <span>{formatMoney(material.fiyat)}</span>
+                <span>{material.guncelleme_tarihi || "-"}</span>
+              </button>
+            ))}
+            {!materials.length ? <div className="table-empty-state">Bu filtrelerle eşleşen malzeme bulunamadı.</div> : null}
+          </div>
+        </div>
+      </section>
     </section>
   );
 }
@@ -2042,6 +2420,25 @@ function exportProducts(products: ProductInfo[]) {
   const link = document.createElement("a");
   link.href = url;
   link.download = "urunler.csv";
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+
+function exportMaterials(materials: MaterialInfo[]) {
+  const header = materialColumns.map((column) => column.label);
+  const rows = materials.map((material) =>
+    materialColumns.map((column) => {
+      const value = column.key === "fiyat" ? material.fiyat : material[column.key];
+      return `"${String(value ?? "").replace(/"/g, '""')}"`;
+    }),
+  );
+  const csv = [header, ...rows].map((row) => row.join(";")).join("\n");
+  const blob = new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "malzemeler.csv";
   link.click();
   URL.revokeObjectURL(url);
 }
