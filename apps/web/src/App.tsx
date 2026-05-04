@@ -891,7 +891,6 @@ export function App() {
             onSearchChange={setProductSearch}
             onSelectProduct={handleProductSelect}
             productSearch={productSearch}
-            productTree={productTree}
             products={filteredProducts}
             selectedProduct={selectedProduct}
             totalProductCount={products.length}
@@ -952,7 +951,6 @@ function ProductModuleScreen({
   onSearchChange,
   onSelectProduct,
   productSearch,
-  productTree,
   products,
   selectedProduct,
   totalProductCount,
@@ -971,7 +969,6 @@ function ProductModuleScreen({
   onSearchChange: (value: string) => void;
   onSelectProduct: (product: ProductInfo) => void;
   productSearch: string;
-  productTree: ProductTree | null;
   products: ProductInfo[];
   selectedProduct: ProductInfo | null;
   totalProductCount: number;
@@ -1056,6 +1053,30 @@ function ProductModuleScreen({
           </div>
         </div>
 
+        {selectedProduct ? (
+          <section className="selected-product-summary">
+            <div>
+              <span>Seçili Ürün</span>
+              <strong>{selectedProduct.urun_kodu}</strong>
+              <p>{selectedProduct.urun_adi || "Ürün adı yok"}</p>
+            </div>
+            <dl>
+              <div>
+                <dt>Kategori</dt>
+                <dd>{selectedProduct.urun_kategorisi || "-"}</dd>
+              </div>
+              <div>
+                <dt>Model</dt>
+                <dd>{selectedProduct.urun_modeli || "-"}</dd>
+              </div>
+              <div>
+                <dt>Maliyet</dt>
+                <dd>{formatMoney(selectedProduct.maliyet)}</dd>
+              </div>
+            </dl>
+          </section>
+        ) : null}
+
         <div className="product-table-shell">
           <div className="product-table-header">
             <div>
@@ -1088,46 +1109,6 @@ function ProductModuleScreen({
             {!products.length ? <div className="table-empty-state">Bu filtrelerle eşleşen ürün bulunamadı.</div> : null}
           </div>
         </div>
-
-        {selectedProduct ? (
-          <section className="selected-product-summary">
-            <div>
-              <span>Seçili Ürün</span>
-              <strong>{selectedProduct.urun_kodu}</strong>
-              <p>{selectedProduct.urun_adi || "Ürün adı yok"}</p>
-            </div>
-            <dl>
-              <div>
-                <dt>Kategori</dt>
-                <dd>{selectedProduct.urun_kategorisi || "-"}</dd>
-              </div>
-              <div>
-                <dt>Model</dt>
-                <dd>{selectedProduct.urun_modeli || "-"}</dd>
-              </div>
-              <div>
-                <dt>Maliyet</dt>
-                <dd>{formatMoney(selectedProduct.maliyet)}</dd>
-              </div>
-            </dl>
-          </section>
-        ) : null}
-
-        {productTree ? (
-          <section className="product-tree-detail">
-            <div className="tree-stats">
-              <span>Yarı Mamül: {productTree.stats.yari_mamul_count ?? 0}</span>
-              <span>Mamül: {productTree.stats.mamul_count ?? 0}</span>
-              <span>Alt Ürün: {productTree.stats.alt_urun_count ?? 0}</span>
-              <span>İşçilik: {formatMoney(productTree.stats.iscilik_toplam)} saat</span>
-            </div>
-            <div className="tree-lists">
-              <TreeList title="Yarı Mamüller" items={productTree.yari_mamuller} />
-              <TreeList title="Mamüller" items={productTree.mamuller} />
-              <TreeList title="Alt Ürünler" items={productTree.alt_urunler} />
-            </div>
-          </section>
-        ) : null}
       </section>
     </section>
   );

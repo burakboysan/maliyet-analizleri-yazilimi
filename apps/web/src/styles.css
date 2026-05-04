@@ -774,6 +774,7 @@ button.data-row.selected {
   gap: 14px;
   border: 0;
   background: transparent;
+  min-height: 0;
 }
 
 .product-commandbar {
@@ -896,6 +897,9 @@ button.data-row.selected {
 }
 
 .product-table-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -940,7 +944,9 @@ button.data-row.selected {
 }
 
 .desktop-product-table {
-  max-height: calc(100vh - 270px);
+  height: calc(100vh - 430px);
+  min-height: 360px;
+  max-height: none;
 }
 
 .desktop-product-table .data-row {
