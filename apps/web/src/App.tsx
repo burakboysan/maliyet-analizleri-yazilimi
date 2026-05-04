@@ -12,6 +12,7 @@ import {
   GitBranch,
   Info,
   LogOut,
+  Menu,
   PackagePlus,
   RefreshCw,
   Save,
@@ -252,6 +253,7 @@ export function App() {
   const [isSavingDetail, setIsSavingDetail] = useState(false);
   const [isSavingTree, setIsSavingTree] = useState(false);
   const [isProductActionRunning, setIsProductActionRunning] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [view, setView] = useState<AppView>("dashboard");
   const [dataError, setDataError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -783,8 +785,8 @@ export function App() {
   }
 
   return (
-    <main className="app-shell">
-      <aside className="sidebar">
+    <main className={isSidebarOpen ? "app-shell sidebar-open" : "app-shell"}>
+      <aside className="sidebar" id="main-navigation">
         <div className="brand">
           <div className="brand-mark">B</div>
           <div>
@@ -811,13 +813,26 @@ export function App() {
 
       <section className="content">
         <header className="topbar">
-          <div>
-            <h1>{view === "products" ? "Ürünler" : view === "materials" ? "Malzemeler" : "Maliyet Analizleri Web App"}</h1>
-            <p>
-              {view === "products"
-                ? "Masaüstü Ürünler ekranındaki tablo, filtreler ve aksiyonlar web modül ekranına taşındı."
-                : "Ürün ve malzeme modülleri aynı veritabanı üzerinden çalışıyor."}
-            </p>
+          <div className="topbar-title">
+            <button
+              className={isSidebarOpen ? "menu-toggle active" : "menu-toggle"}
+              type="button"
+              onClick={() => setIsSidebarOpen((current) => !current)}
+              aria-controls="main-navigation"
+              aria-expanded={isSidebarOpen}
+              title={isSidebarOpen ? "Menüyü gizle" : "Menüyü aç"}
+            >
+              <Menu size={20} />
+              <span>Menü</span>
+            </button>
+            <div>
+              <h1>{view === "products" ? "Ürünler" : view === "materials" ? "Malzemeler" : "Maliyet Analizleri Web App"}</h1>
+              <p>
+                {view === "products"
+                  ? "Masaüstü Ürünler ekranındaki tablo, filtreler ve aksiyonlar web modül ekranına taşındı."
+                  : "Ürün ve malzeme modülleri aynı veritabanı üzerinden çalışıyor."}
+              </p>
+            </div>
           </div>
           <div className="topbar-actions">
             <div className="user-chip">
