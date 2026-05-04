@@ -153,6 +153,26 @@ export type ProductTree = {
 };
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8100";
+const REQUEST_TIMEOUT_MS = 15000;
+
+async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("API yanıt vermedi. Lütfen backend servisinin çalıştığını kontrol edin.");
+    }
+    throw err;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
 
 async function parseError(response: Response): Promise<string> {
   try {
@@ -170,7 +190,7 @@ function authHeaders(token: string): HeadersInit {
 }
 
 export async function login(kullaniciAdi: string, sifre: string): Promise<LoginResponse> {
-  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+  const response = await apiFetch(`${API_BASE_URL}/auth/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -187,7 +207,7 @@ export async function login(kullaniciAdi: string, sifre: string): Promise<LoginR
 }
 
 export async function fetchMe(token: string): Promise<UserInfo> {
-  const response = await fetch(`${API_BASE_URL}/auth/me`, {
+  const response = await apiFetch(`${API_BASE_URL}/auth/me`, {
     headers: authHeaders(token),
   });
   if (!response.ok) {
@@ -197,7 +217,7 @@ export async function fetchMe(token: string): Promise<UserInfo> {
 }
 
 export async function fetchModules(token: string): Promise<ModuleInfo[]> {
-  const response = await fetch(`${API_BASE_URL}/modules`, {
+  const response = await apiFetch(`${API_BASE_URL}/modules`, {
     headers: authHeaders(token),
   });
   if (!response.ok) {
@@ -212,7 +232,7 @@ export async function fetchMaterials(token: string, search = ""): Promise<Materi
   if (search.trim()) {
     params.set("search", search.trim());
   }
-  const response = await fetch(`${API_BASE_URL}/materials?${params.toString()}`, {
+  const response = await apiFetch(`${API_BASE_URL}/materials?${params.toString()}`, {
     headers: authHeaders(token),
   });
   if (!response.ok) {
@@ -226,7 +246,7 @@ export async function fetchProducts(token: string, search = ""): Promise<Product
   if (search.trim()) {
     params.set("search", search.trim());
   }
-  const response = await fetch(`${API_BASE_URL}/products?${params.toString()}`, {
+  const response = await apiFetch(`${API_BASE_URL}/products?${params.toString()}`, {
     headers: authHeaders(token),
   });
   if (!response.ok) {
@@ -236,7 +256,7 @@ export async function fetchProducts(token: string, search = ""): Promise<Product
 }
 
 export async function fetchProductTree(token: string, productId: number): Promise<ProductTree> {
-  const response = await fetch(`${API_BASE_URL}/products/${productId}/tree`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/${productId}/tree`, {
     headers: authHeaders(token),
   });
   if (!response.ok) {
@@ -246,7 +266,7 @@ export async function fetchProductTree(token: string, productId: number): Promis
 }
 
 export async function fetchProductDetail(token: string, productId: number): Promise<ProductDetail> {
-  const response = await fetch(`${API_BASE_URL}/products/${productId}/detail`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/${productId}/detail`, {
     headers: authHeaders(token),
   });
   if (!response.ok) {
@@ -256,7 +276,7 @@ export async function fetchProductDetail(token: string, productId: number): Prom
 }
 
 export async function fetchProductEditOptions(token: string): Promise<ProductEditOptions> {
-  const response = await fetch(`${API_BASE_URL}/products/edit-options`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/edit-options`, {
     headers: authHeaders(token),
   });
   if (!response.ok) {
@@ -266,7 +286,7 @@ export async function fetchProductEditOptions(token: string): Promise<ProductEdi
 }
 
 export async function updateProduct(token: string, productId: number, payload: ProductUpdatePayload): Promise<ProductUpdateResponse> {
-  const response = await fetch(`${API_BASE_URL}/products/${productId}`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/${productId}`, {
     method: "PUT",
     headers: {
       ...authHeaders(token),
@@ -281,7 +301,7 @@ export async function updateProduct(token: string, productId: number, payload: P
 }
 
 export async function deleteProduct(token: string, productId: number): Promise<ProductDeleteResponse> {
-  const response = await fetch(`${API_BASE_URL}/products/${productId}`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/${productId}`, {
     method: "DELETE",
     headers: authHeaders(token),
   });
@@ -292,7 +312,7 @@ export async function deleteProduct(token: string, productId: number): Promise<P
 }
 
 export async function copyProduct(token: string, productId: number, newProductCode: string): Promise<ProductCopyResponse> {
-  const response = await fetch(`${API_BASE_URL}/products/${productId}/copy`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/${productId}/copy`, {
     method: "POST",
     headers: {
       ...authHeaders(token),
@@ -307,7 +327,7 @@ export async function copyProduct(token: string, productId: number, newProductCo
 }
 
 export async function reviseProductCosts(token: string, productIds: number[]): Promise<ProductCostRevisionResponse> {
-  const response = await fetch(`${API_BASE_URL}/products/revise-costs`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/revise-costs`, {
     method: "POST",
     headers: {
       ...authHeaders(token),
@@ -322,7 +342,7 @@ export async function reviseProductCosts(token: string, productIds: number[]): P
 }
 
 export async function updateProductTreeItemQuantity(token: string, itemId: number, miktar: number): Promise<ProductTreeItem> {
-  const response = await fetch(`${API_BASE_URL}/products/tree-items/${itemId}`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/tree-items/${itemId}`, {
     method: "PATCH",
     headers: {
       ...authHeaders(token),
@@ -337,7 +357,7 @@ export async function updateProductTreeItemQuantity(token: string, itemId: numbe
 }
 
 export async function deleteProductTreeItems(token: string, itemIds: number[]): Promise<ProductTreeDeleteResponse> {
-  const response = await fetch(`${API_BASE_URL}/products/tree-items/delete`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/tree-items/delete`, {
     method: "POST",
     headers: {
       ...authHeaders(token),
@@ -352,7 +372,7 @@ export async function deleteProductTreeItems(token: string, itemIds: number[]): 
 }
 
 export async function saveProductTreeLabor(token: string, productId: number, laborRows: ProductLabor[]): Promise<ProductTreeRecalculateResponse> {
-  const response = await fetch(`${API_BASE_URL}/products/${productId}/tree/labor`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/${productId}/tree/labor`, {
     method: "PUT",
     headers: {
       ...authHeaders(token),
@@ -367,7 +387,7 @@ export async function saveProductTreeLabor(token: string, productId: number, lab
 }
 
 export async function recalculateProductTreeCost(token: string, productId: number): Promise<ProductTreeRecalculateResponse> {
-  const response = await fetch(`${API_BASE_URL}/products/${productId}/tree/recalculate`, {
+  const response = await apiFetch(`${API_BASE_URL}/products/${productId}/tree/recalculate`, {
     method: "POST",
     headers: authHeaders(token),
   });
