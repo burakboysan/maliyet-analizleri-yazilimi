@@ -108,6 +108,22 @@ export type ProductUpdateResponse = {
   detail: ProductDetail;
 };
 
+export type ProductDeleteResponse = {
+  product_id: number;
+  deleted_count: number;
+  blocked_count: number;
+  message: string;
+};
+
+export type ProductCopyResponse = {
+  source_product_id: number;
+  new_product_id: number;
+  new_product_code: string;
+  cost_recalculated: boolean;
+  recalculation_error?: string | null;
+  detail: ProductDetail;
+};
+
 export type ProductTree = {
   product_id: number;
   stats: Record<string, number>;
@@ -243,4 +259,30 @@ export async function updateProduct(token: string, productId: number, payload: P
     throw new Error(await parseError(response));
   }
   return (await response.json()) as ProductUpdateResponse;
+}
+
+export async function deleteProduct(token: string, productId: number): Promise<ProductDeleteResponse> {
+  const response = await fetch(`${API_BASE_URL}/products/${productId}`, {
+    method: "DELETE",
+    headers: authHeaders(token),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductDeleteResponse;
+}
+
+export async function copyProduct(token: string, productId: number, newProductCode: string): Promise<ProductCopyResponse> {
+  const response = await fetch(`${API_BASE_URL}/products/${productId}/copy`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ new_product_code: newProductCode }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductCopyResponse;
 }

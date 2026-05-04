@@ -24,6 +24,8 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
+  copyProduct,
+  deleteProduct,
   fetchMaterials,
   fetchMe,
   fetchModules,
@@ -184,6 +186,7 @@ export function App() {
   const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [isSavingDetail, setIsSavingDetail] = useState(false);
+  const [isProductActionRunning, setIsProductActionRunning] = useState(false);
   const [view, setView] = useState<AppView>("dashboard");
   const [dataError, setDataError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -379,6 +382,73 @@ export function App() {
     }
   }
 
+  async function refreshProductRows(nextSelectedProductId?: number | null) {
+    const productRows = await fetchProducts(token, productSearch);
+    setProducts(productRows);
+    if (nextSelectedProductId) {
+      setSelectedProduct(productRows.find((product) => product.id === nextSelectedProductId) ?? null);
+    } else {
+      setSelectedProduct(null);
+    }
+    setProductTree(null);
+    return productRows;
+  }
+
+  async function handleDeleteProduct() {
+    if (!selectedProduct) {
+      setNotice("Silmek için önce tablodan bir ürün seçin.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `'${selectedProduct.urun_kodu}' kodlu ürünü ve bağlı tüm verilerini (ürün ağacı, işçilik) kalıcı olarak silmek istediğinize emin misiniz?`,
+    );
+    if (!confirmed) {
+      return;
+    }
+    setIsProductActionRunning(true);
+    setDataError(null);
+    try {
+      const response = await deleteProduct(token, selectedProduct.id);
+      await refreshProductRows(null);
+      setNotice(response.message);
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Ürün silinemedi.");
+    } finally {
+      setIsProductActionRunning(false);
+    }
+  }
+
+  async function handleCopyProduct() {
+    if (!selectedProduct) {
+      setNotice("Kopyalamak için önce tablodan bir ürün seçin.");
+      return;
+    }
+    const newProductCode = window.prompt(`${selectedProduct.urun_kodu} için yeni ürün kodunu girin:`, "");
+    if (newProductCode === null) {
+      return;
+    }
+    const trimmedCode = newProductCode.trim();
+    if (!trimmedCode) {
+      setNotice("Ürün kodu boş olamaz.");
+      return;
+    }
+    setIsProductActionRunning(true);
+    setDataError(null);
+    try {
+      const response = await copyProduct(token, selectedProduct.id, trimmedCode);
+      await refreshProductRows(response.new_product_id);
+      setNotice(
+        response.recalculation_error
+          ? `${selectedProduct.urun_kodu} -> ${response.new_product_code} kopyalandı, ancak maliyet hesaplanamadı: ${response.recalculation_error}`
+          : `${selectedProduct.urun_kodu} -> ${response.new_product_code} kopyalandı.`,
+      );
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Ürün kopyalanamadı.");
+    } finally {
+      setIsProductActionRunning(false);
+    }
+  }
+
   function handleProductAction(action: string) {
     if (action === "detail") {
       handleOpenProductDetail();
@@ -386,6 +456,14 @@ export function App() {
     }
     if (action === "edit") {
       handleOpenProductDetail(undefined, "edit");
+      return;
+    }
+    if (action === "delete") {
+      handleDeleteProduct();
+      return;
+    }
+    if (action === "copy") {
+      handleCopyProduct();
       return;
     }
     if (action === "tree") {
@@ -544,6 +622,7 @@ export function App() {
             filterOptions={productFilterOptions}
             filters={productFilters}
             isLoading={isLoadingData}
+            isActionRunning={isProductActionRunning}
             isMaster={isMasterUser(user)}
             onAction={handleProductAction}
             onClearFilters={clearProductFilters}
@@ -586,6 +665,7 @@ function ProductModuleScreen({
   activeFilterEntries,
   filterOptions,
   filters,
+  isActionRunning,
   isLoading,
   isMaster,
   onAction,
@@ -604,6 +684,7 @@ function ProductModuleScreen({
   activeFilterEntries: Array<{ key: ProductFilterKey; label: string; value: string }>;
   filterOptions: Partial<Record<ProductFilterKey, string[]>>;
   filters: Partial<Record<ProductFilterKey, string>>;
+  isActionRunning: boolean;
   isLoading: boolean;
   isMaster: boolean;
   onAction: (action: string) => void;
@@ -681,21 +762,21 @@ function ProductModuleScreen({
             <span>Masaüstündeki kolon yapısı korunur, filtreler soldan yönetilir.</span>
           </div>
           <div className="product-toolbar primary-toolbar">
-            <ProductActionButton emphasis icon={<PackagePlus size={18} />} label="Ürün Ekle" onClick={() => onAction("add")} />
-            <ProductActionButton icon={<FileText size={18} />} label="Detay" onClick={() => onAction("detail")} />
-            <ProductActionButton icon={<GitBranch size={18} />} label="Ürün Ağacı" onClick={() => onAction("tree")} />
-            <ProductActionButton icon={<Download size={18} />} label="Dışa Aktar" onClick={() => onAction("export")} />
+            <ProductActionButton disabled={isActionRunning} emphasis icon={<PackagePlus size={18} />} label="Ürün Ekle" onClick={() => onAction("add")} />
+            <ProductActionButton disabled={isActionRunning} icon={<FileText size={18} />} label="Detay" onClick={() => onAction("detail")} />
+            <ProductActionButton disabled={isActionRunning} icon={<GitBranch size={18} />} label="Ürün Ağacı" onClick={() => onAction("tree")} />
+            <ProductActionButton disabled={isActionRunning} icon={<Download size={18} />} label="Dışa Aktar" onClick={() => onAction("export")} />
           </div>
           <div className="product-toolbar secondary-toolbar">
             {isMaster ? (
               <>
-                <ProductActionButton danger icon={<Trash2 size={18} />} label="Ürün Sil" onClick={() => onAction("delete")} />
-                <ProductActionButton icon={<Edit size={18} />} label="Düzenle" onClick={() => onAction("edit")} />
+                <ProductActionButton danger disabled={isActionRunning} icon={<Trash2 size={18} />} label="Ürün Sil" onClick={() => onAction("delete")} />
+                <ProductActionButton disabled={isActionRunning} icon={<Edit size={18} />} label="Düzenle" onClick={() => onAction("edit")} />
               </>
             ) : null}
-            <ProductActionButton danger icon={<RefreshCw size={18} />} label="Fiyatları Revize Et" onClick={() => onAction("revise")} />
-            <ProductActionButton icon={<Copy size={18} />} label="Kopyala" onClick={() => onAction("copy")} />
-            <ProductActionButton icon={<X size={18} />} label="Kapat" onClick={() => onAction("close")} />
+            <ProductActionButton danger disabled={isActionRunning} icon={<RefreshCw size={18} />} label="Fiyatları Revize Et" onClick={() => onAction("revise")} />
+            <ProductActionButton disabled={isActionRunning} icon={<Copy size={18} />} label={isActionRunning ? "İşleniyor" : "Kopyala"} onClick={() => onAction("copy")} />
+            <ProductActionButton disabled={isActionRunning} icon={<X size={18} />} label="Kapat" onClick={() => onAction("close")} />
           </div>
         </div>
 
@@ -1029,19 +1110,21 @@ function ProductDetailModal({
 
 function ProductActionButton({
   danger = false,
+  disabled = false,
   emphasis = false,
   icon,
   label,
   onClick,
 }: {
   danger?: boolean;
+  disabled?: boolean;
   emphasis?: boolean;
   icon: ReactNode;
   label: string;
   onClick: () => void;
 }) {
   return (
-    <button className={danger ? "product-action danger" : emphasis ? "product-action emphasis" : "product-action"} type="button" onClick={onClick}>
+    <button className={danger ? "product-action danger" : emphasis ? "product-action emphasis" : "product-action"} type="button" onClick={onClick} disabled={disabled}>
       {icon}
       <span>{label}</span>
     </button>

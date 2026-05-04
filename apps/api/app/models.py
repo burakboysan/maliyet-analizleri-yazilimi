@@ -118,6 +118,26 @@ class ProductUpdateResponse(BaseModel):
     detail: ProductDetailResponse
 
 
+class ProductDeleteResponse(BaseModel):
+    product_id: int
+    deleted_count: int
+    blocked_count: int = 0
+    message: str
+
+
+class ProductCopyRequest(BaseModel):
+    new_product_code: str
+
+
+class ProductCopyResponse(BaseModel):
+    source_product_id: int
+    new_product_id: int
+    new_product_code: str
+    cost_recalculated: bool = False
+    recalculation_error: str | None = None
+    detail: ProductDetailResponse
+
+
 class ProductTreeResponse(BaseModel):
     product_id: int
     stats: dict[str, float | int]

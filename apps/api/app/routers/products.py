@@ -8,6 +8,9 @@ from app.core.db import get_connection
 from app.core.security import require_current_user, require_module_access
 from app.models import (
     ProductCostBreakdownResponse,
+    ProductCopyRequest,
+    ProductCopyResponse,
+    ProductDeleteResponse,
     ProductDetailFieldResponse,
     ProductDetailResponse,
     ProductEditOptionsResponse,
@@ -524,6 +527,143 @@ def update_product(
         cost_recalculated=cost_recalculated,
         recalculation_error=recalculation_error,
         detail=_get_product_detail_response(connection, product_id),
+    )
+
+
+@router.delete("/{product_id}", response_model=ProductDeleteResponse)
+def delete_product(
+    product_id: int,
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    if not _is_master_user(current_user):
+        raise HTTPException(status_code=403, detail="Ürün silme yetkiniz yok.")
+
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute("SELECT id, urun_kodu FROM urunler WHERE id = %s LIMIT 1", (product_id,))
+    product = cursor.fetchone()
+    if not product:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı.")
+
+    cursor.execute("SELECT COUNT(*) AS value FROM proje_listesi_icerigi WHERE urun_id = %s", (product_id,))
+    usage_count = int((cursor.fetchone() or {}).get("value") or 0)
+    if usage_count > 0:
+        return ProductDeleteResponse(
+            product_id=product_id,
+            deleted_count=0,
+            blocked_count=1,
+            message="Ürün silinemedi; proje listesinde kullanılıyor.",
+        )
+
+    try:
+        cursor.execute("DELETE FROM urun_agaci WHERE urun_id = %s", (product_id,))
+        cursor.execute("DELETE FROM urun_iscilik WHERE urun_id = %s", (product_id,))
+        cursor.execute("DELETE FROM urunler WHERE id = %s", (product_id,))
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Ürün silinemedi: {exc}") from exc
+
+    return ProductDeleteResponse(
+        product_id=product_id,
+        deleted_count=1,
+        blocked_count=0,
+        message="Ürün ve bağlı tüm verileri başarıyla silindi.",
+    )
+
+
+@router.post("/{product_id}/copy", response_model=ProductCopyResponse)
+def copy_product(
+    product_id: int,
+    payload: ProductCopyRequest,
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    new_product_code = payload.new_product_code.strip()
+    if not new_product_code:
+        raise HTTPException(status_code=422, detail="Yeni ürün kodu boş olamaz.")
+
+    cursor = connection.cursor(buffered=True)
+    cursor.execute("SELECT * FROM urunler WHERE id = %s LIMIT 1", (product_id,))
+    source_product = cursor.fetchone()
+    if not source_product:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı.")
+    product_columns = [column[0] for column in cursor.description]
+
+    cursor.execute("SELECT COUNT(*) FROM urunler WHERE urun_kodu = %s", (new_product_code,))
+    if int((cursor.fetchone() or [0])[0] or 0) > 0:
+        raise HTTPException(status_code=409, detail="Bu ürün kodu zaten mevcut.")
+
+    try:
+        insert_columns = [column for column in product_columns if column not in ("id", "urun_kodu")]
+        insert_values = [source_product[product_columns.index(column)] for column in insert_columns]
+        placeholders = ", ".join(["%s"] * len(insert_columns))
+        cursor.execute(
+            f"INSERT INTO urunler (urun_kodu, {', '.join(insert_columns)}) VALUES (%s, {placeholders})",
+            (new_product_code, *insert_values),
+        )
+        new_product_id = int(cursor.lastrowid)
+
+        cursor.execute(
+            """
+            SELECT malzeme_kodu, malzeme_adi, miktar, malzeme_tipi, alt_urun_id
+            FROM urun_agaci
+            WHERE urun_id = %s
+            """,
+            (product_id,),
+        )
+        tree_rows = cursor.fetchall()
+        if tree_rows:
+            cursor.executemany(
+                """
+                INSERT INTO urun_agaci (urun_id, malzeme_kodu, malzeme_adi, miktar, malzeme_tipi, alt_urun_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                [(new_product_id, *row) for row in tree_rows],
+            )
+
+        cursor.execute(
+            """
+            SELECT iscilik_tipi, usta_saat, yardimci_saat
+            FROM urun_iscilik
+            WHERE urun_id = %s
+            """,
+            (product_id,),
+        )
+        labor_rows = cursor.fetchall()
+        if labor_rows:
+            cursor.executemany(
+                """
+                INSERT INTO urun_iscilik (urun_id, iscilik_tipi, usta_saat, yardimci_saat)
+                VALUES (%s, %s, %s, %s)
+                """,
+                [(new_product_id, *row) for row in labor_rows],
+            )
+
+        connection.commit()
+    except Exception as exc:
+        connection.rollback()
+        raise HTTPException(status_code=500, detail=f"Ürün kopyalanamadı: {exc}") from exc
+
+    cost_recalculated = False
+    recalculation_error: str | None = None
+    try:
+        from maliyet.cost_calculator import maliyet_hesapla
+
+        maliyet_hesapla(new_product_id)
+        cost_recalculated = True
+    except Exception as exc:
+        recalculation_error = str(exc)
+
+    return ProductCopyResponse(
+        source_product_id=product_id,
+        new_product_id=new_product_id,
+        new_product_code=new_product_code,
+        cost_recalculated=cost_recalculated,
+        recalculation_error=recalculation_error,
+        detail=_get_product_detail_response(connection, new_product_id),
     )
 
 
