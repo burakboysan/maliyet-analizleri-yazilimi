@@ -56,30 +56,30 @@ type ProductFilterKey =
   | "filtre_elemani_sayisi";
 
 const phaseLabels: Record<number, string> = {
-  1: "Ä°lk faz",
-  2: "Ä°kinci faz",
-  3: "ÃœÃ§Ã¼ncÃ¼ faz",
-  4: "YÃ¶netici fazÄ±",
+  1: "İlk faz",
+  2: "İkinci faz",
+  3: "Üçüncü faz",
+  4: "Yönetici fazı",
 };
 
 const productColumns: Array<{ key: ProductFilterKey | "maliyet"; label: string; filterType?: "text" | "select" }> = [
-  { key: "urun_kodu", label: "ÃœrÃ¼n Kodu", filterType: "text" },
-  { key: "urun_adi", label: "ÃœrÃ¼n AdÄ±", filterType: "text" },
+  { key: "urun_kodu", label: "Ürün Kodu", filterType: "text" },
+  { key: "urun_adi", label: "Ürün Adı", filterType: "text" },
   { key: "urun_kategorisi", label: "Kategori", filterType: "select" },
-  { key: "urun_tipi", label: "ÃœrÃ¼n Tipi", filterType: "select" },
+  { key: "urun_tipi", label: "Ürün Tipi", filterType: "select" },
   { key: "urun_modeli", label: "Model", filterType: "text" },
   { key: "maliyet", label: "Genel Toplam Maliyet" },
-  { key: "filtre_medyasi", label: "Filtre MedyasÄ±", filterType: "select" },
-  { key: "filtre_medyasi_kodu", label: "Filtre MedyasÄ± Kodu", filterType: "text" },
-  { key: "patlac_kumanda_tipi", label: "PatlaÃ§ Kontrol", filterType: "select" },
-  { key: "toplam_filtre_alani", label: "Toplam Filtre AlanÄ±", filterType: "text" },
+  { key: "filtre_medyasi", label: "Filtre Medyası", filterType: "select" },
+  { key: "filtre_medyasi_kodu", label: "Filtre Medyası Kodu", filterType: "text" },
+  { key: "patlac_kumanda_tipi", label: "Patlaç Kontrol", filterType: "select" },
+  { key: "toplam_filtre_alani", label: "Toplam Filtre Alanı", filterType: "text" },
   { key: "debi", label: "Debi", filterType: "text" },
-  { key: "fan_basinc", label: "BasÄ±nÃ§", filterType: "text" },
-  { key: "fan_basinc_birimi", label: "BasÄ±nÃ§ Birimi", filterType: "select" },
+  { key: "fan_basinc", label: "Basınç", filterType: "text" },
+  { key: "fan_basinc_birimi", label: "Basınç Birimi", filterType: "select" },
   { key: "motor", label: "Motor", filterType: "text" },
   { key: "fan_kumanda_tipi", label: "Fan Pano Tipi", filterType: "select" },
-  { key: "patlama_kapagi", label: "Patlama KapaÄŸÄ±", filterType: "text" },
-  { key: "filtre_elemani_sayisi", label: "Filtre SayÄ±sÄ±", filterType: "text" },
+  { key: "patlama_kapagi", label: "Patlama Kapağı", filterType: "text" },
+  { key: "filtre_elemani_sayisi", label: "Filtre Sayısı", filterType: "text" },
 ];
 
 const productFilterGroups: Array<{
@@ -89,17 +89,17 @@ const productFilterGroups: Array<{
 }> = [
   {
     title: "Ana filtreler",
-    description: "ÃœrÃ¼nÃ¼ kod, ad, kategori ve model Ã¼zerinden daraltÄ±n.",
+    description: "Ürünü kod, ad, kategori ve model üzerinden daraltın.",
     keys: ["urun_kodu", "urun_adi", "urun_kategorisi", "urun_tipi", "urun_modeli"],
   },
   {
     title: "Filtre ve pano",
-    description: "Filtre medyasÄ±, patlaÃ§ kontrol ve fan pano bilgilerine gÃ¶re sÃ¼zÃ¼n.",
+    description: "Filtre medyası, patlaç kontrol ve fan pano bilgilerine göre süzün.",
     keys: ["filtre_medyasi", "filtre_medyasi_kodu", "patlac_kumanda_tipi", "fan_kumanda_tipi"],
   },
   {
-    title: "Teknik deÄŸerler",
-    description: "Debi, basÄ±nÃ§, motor ve filtre sayÄ±sÄ± gibi teknik alanlarÄ± kullanÄ±n.",
+    title: "Teknik değerler",
+    description: "Debi, basınç, motor ve filtre sayısı gibi teknik alanları kullanın.",
     keys: ["toplam_filtre_alani", "debi", "fan_basinc", "fan_basinc_birimi", "motor", "patlama_kapagi", "filtre_elemani_sayisi"],
   },
 ];
@@ -192,7 +192,7 @@ export function App() {
           setProductTree(null);
         }
       } catch (err) {
-        setDataError(err instanceof Error ? err.message : "Veriler yÃ¼klenemedi.");
+        setDataError(err instanceof Error ? err.message : "Veriler yüklenemedi.");
       } finally {
         setIsLoadingData(false);
       }
@@ -262,7 +262,7 @@ export function App() {
       setUser(response.user);
       setPassword("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "GiriÅŸ yapÄ±lamadÄ±.");
+      setError(err instanceof Error ? err.message : "Giriş yapılamadı.");
     } finally {
       setIsSubmitting(false);
     }
@@ -275,14 +275,14 @@ export function App() {
     try {
       setProductTree(await fetchProductTree(token, product.id));
     } catch (err) {
-      setDataError(err instanceof Error ? err.message : "ÃœrÃ¼n aÄŸacÄ± yÃ¼klenemedi.");
+      setDataError(err instanceof Error ? err.message : "Ürün ağacı yüklenemedi.");
     }
   }
 
   async function handleOpenProductDetail(product?: ProductInfo) {
     const targetProduct = product ?? selectedProduct;
     if (!targetProduct) {
-      setNotice("ÃœrÃ¼n detayÄ±nÄ± aÃ§mak iÃ§in Ã¶nce tablodan bir Ã¼rÃ¼n seÃ§in.");
+      setNotice("Ürün detayını açmak için önce tablodan bir ürün seçin.");
       return;
     }
 
@@ -294,7 +294,7 @@ export function App() {
     try {
       setProductDetail(await fetchProductDetail(token, targetProduct.id));
     } catch (err) {
-      setDataError(err instanceof Error ? err.message : "ÃœrÃ¼n detayÄ± yÃ¼klenemedi.");
+      setDataError(err instanceof Error ? err.message : "Ürün detayı yüklenemedi.");
       setIsDetailOpen(false);
     } finally {
       setIsLoadingDetail(false);
@@ -310,20 +310,20 @@ export function App() {
       if (selectedProduct) {
         handleProductSelect(selectedProduct);
       } else {
-        setNotice("ÃœrÃ¼n aÄŸacÄ±nÄ± aÃ§mak iÃ§in Ã¶nce tablodan bir Ã¼rÃ¼n seÃ§in.");
+        setNotice("Ürün ağacını açmak için önce tablodan bir ürün seçin.");
       }
       return;
     }
     if (action === "export") {
       exportProducts(filteredProducts);
-      setNotice("GÃ¶rÃ¼nen Ã¼rÃ¼n listesi CSV olarak hazÄ±rlandÄ±.");
+      setNotice("Görünen ürün listesi CSV olarak hazırlandı.");
       return;
     }
     if (action === "close") {
       setView("dashboard");
       return;
     }
-    setNotice("Bu masaÃ¼stÃ¼ aksiyonu web API'ye taÅŸÄ±nacaÄŸÄ± sÄ±radaki adÄ±m iÃ§in ekranda hazÄ±r tutuluyor.");
+    setNotice("Bu masaüstü aksiyonu web API'ye taşınacağı sıradaki adım için ekranda hazır tutuluyor.");
   }
 
   function updateProductFilter(key: ProductFilterKey, value: string) {
@@ -355,15 +355,15 @@ export function App() {
           <div className="login-copy">
             <div className="brand-mark">B</div>
             <h1>Bomaksan Maliyet Web</h1>
-            <p>MasaÃ¼stÃ¼ yazÄ±lÄ±mla aynÄ± veritabanÄ±nÄ± kullanan web arayÃ¼zÃ¼ne giriÅŸ yapÄ±n.</p>
+            <p>Masaüstü yazılımla aynı veritabanını kullanan web arayüzüne giriş yapın.</p>
           </div>
           <form className="login-form" onSubmit={handleLogin}>
             <label>
-              KullanÄ±cÄ± adÄ±
+              Kullanıcı adı
               <input value={username} onChange={(event) => setUsername(event.target.value)} autoComplete="username" />
             </label>
             <label>
-              Åifre
+              Şifre
               <input
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
@@ -378,7 +378,7 @@ export function App() {
               </div>
             ) : null}
             <button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? "GiriÅŸ yapÄ±lÄ±yor..." : "GiriÅŸ Yap"}
+              {isSubmitting ? "Giriş yapılıyor..." : "Giriş Yap"}
             </button>
           </form>
         </section>
@@ -396,13 +396,13 @@ export function App() {
             <span>Maliyet Web</span>
           </div>
         </div>
-        <nav className="nav-list" aria-label="ModÃ¼l navigasyonu">
+        <nav className="nav-list" aria-label="Modül navigasyonu">
           <button className={view === "dashboard" ? "active" : ""} type="button" onClick={() => setView("dashboard")}>
-            Genel BakÄ±ÅŸ
+            Genel Bakış
           </button>
           {canSeeModule(modules, "products") ? (
             <button className={view === "products" ? "active" : ""} type="button" onClick={() => setView("products")}>
-              ÃœrÃ¼nler
+              Ürünler
             </button>
           ) : null}
           {canSeeModule(modules, "materials") ? (
@@ -416,11 +416,11 @@ export function App() {
       <section className="content">
         <header className="topbar">
           <div>
-            <h1>{view === "products" ? "ÃœrÃ¼nler" : view === "materials" ? "Malzemeler" : "Maliyet Analizleri Web App"}</h1>
+            <h1>{view === "products" ? "Ürünler" : view === "materials" ? "Malzemeler" : "Maliyet Analizleri Web App"}</h1>
             <p>
               {view === "products"
-                ? "MasaÃ¼stÃ¼ ÃœrÃ¼nler ekranÄ±ndaki tablo, filtreler ve aksiyonlar web modÃ¼l ekranÄ±na taÅŸÄ±ndÄ±."
-                : "ÃœrÃ¼n ve malzeme modÃ¼lleri aynÄ± veritabanÄ± Ã¼zerinden Ã§alÄ±ÅŸÄ±yor."}
+                ? "Masaüstü Ürünler ekranındaki tablo, filtreler ve aksiyonlar web modül ekranına taşındı."
+                : "Ürün ve malzeme modülleri aynı veritabanı üzerinden çalışıyor."}
             </p>
           </div>
           <div className="topbar-actions">
@@ -432,9 +432,9 @@ export function App() {
               <Database size={18} />
               <span>urun_maliyet_db</span>
             </div>
-            <button className="ghost-button icon-button" type="button" onClick={handleLogout} title="Ã‡Ä±kÄ±ÅŸ">
+            <button className="ghost-button icon-button" type="button" onClick={handleLogout} title="Çıkış">
               <LogOut size={18} />
-              <span>Ã‡Ä±kÄ±ÅŸ</span>
+              <span>Çıkış</span>
             </button>
           </div>
         </header>
@@ -550,7 +550,7 @@ function ProductModuleScreen({
 
         <div className="filter-summary-card">
           <strong>{products.length}</strong>
-          <span>{totalProductCount === products.length ? "Ã¼rÃ¼n gÃ¶steriliyor" : `${totalProductCount} Ã¼rÃ¼n iÃ§inden gÃ¶steriliyor`}</span>
+          <span>{totalProductCount === products.length ? "ürün gösteriliyor" : `${totalProductCount} ürün içinden gösteriliyor`}</span>
         </div>
 
         {activeFilterEntries.length ? (
@@ -591,23 +591,23 @@ function ProductModuleScreen({
       <section className="product-workspace">
         <div className="product-commandbar">
           <div className="commandbar-copy">
-            <strong>ÃœrÃ¼n Tablosu</strong>
-            <span>MasaÃ¼stÃ¼ndeki kolon yapÄ±sÄ± korunur, filtreler soldan yÃ¶netilir.</span>
+            <strong>Ürün Tablosu</strong>
+            <span>Masaüstündeki kolon yapısı korunur, filtreler soldan yönetilir.</span>
           </div>
           <div className="product-toolbar primary-toolbar">
-            <ProductActionButton emphasis icon={<PackagePlus size={18} />} label="ÃœrÃ¼n Ekle" onClick={() => onAction("add")} />
+            <ProductActionButton emphasis icon={<PackagePlus size={18} />} label="Ürün Ekle" onClick={() => onAction("add")} />
             <ProductActionButton icon={<FileText size={18} />} label="Detay" onClick={() => onAction("detail")} />
-            <ProductActionButton icon={<GitBranch size={18} />} label="ÃœrÃ¼n AÄŸacÄ±" onClick={() => onAction("tree")} />
-            <ProductActionButton icon={<Download size={18} />} label="DÄ±ÅŸa Aktar" onClick={() => onAction("export")} />
+            <ProductActionButton icon={<GitBranch size={18} />} label="Ürün Ağacı" onClick={() => onAction("tree")} />
+            <ProductActionButton icon={<Download size={18} />} label="Dışa Aktar" onClick={() => onAction("export")} />
           </div>
           <div className="product-toolbar secondary-toolbar">
             {isMaster ? (
               <>
-                <ProductActionButton danger icon={<Trash2 size={18} />} label="ÃœrÃ¼n Sil" onClick={() => onAction("delete")} />
-                <ProductActionButton icon={<Edit size={18} />} label="DÃ¼zenle" onClick={() => onAction("edit")} />
+                <ProductActionButton danger icon={<Trash2 size={18} />} label="Ürün Sil" onClick={() => onAction("delete")} />
+                <ProductActionButton icon={<Edit size={18} />} label="Düzenle" onClick={() => onAction("edit")} />
               </>
             ) : null}
-            <ProductActionButton danger icon={<RefreshCw size={18} />} label="FiyatlarÄ± Revize Et" onClick={() => onAction("revise")} />
+            <ProductActionButton danger icon={<RefreshCw size={18} />} label="Fiyatları Revize Et" onClick={() => onAction("revise")} />
             <ProductActionButton icon={<Copy size={18} />} label="Kopyala" onClick={() => onAction("copy")} />
             <ProductActionButton icon={<X size={18} />} label="Kapat" onClick={() => onAction("close")} />
           </div>
@@ -616,14 +616,14 @@ function ProductModuleScreen({
         <div className="product-table-shell">
           <div className="product-table-header">
             <div>
-              <strong>{products.length} Ã¼rÃ¼n</strong>
-              <span>{totalProductCount !== products.length ? `${totalProductCount} toplam kayÄ±ttan filtrelendi` : "VeritabanÄ±ndan gelen gÃ¼ncel liste"}</span>
+              <strong>{products.length} ürün</strong>
+              <span>{totalProductCount !== products.length ? `${totalProductCount} toplam kayıttan filtrelendi` : "Veritabanından gelen güncel liste"}</span>
             </div>
             <div className={selectedProduct ? "selected-product-pill" : "selected-product-pill muted-pill"}>
-              {isLoading ? "Veriler yÃ¼kleniyor..." : selectedProduct ? `${selectedProduct.urun_kodu} seÃ§ili` : "Tablodan Ã¼rÃ¼n seÃ§in"}
+              {isLoading ? "Veriler yükleniyor..." : selectedProduct ? `${selectedProduct.urun_kodu} seçili` : "Tablodan ürün seçin"}
             </div>
           </div>
-          <div className="data-table desktop-product-table" role="table" aria-label="ÃœrÃ¼nler">
+          <div className="data-table desktop-product-table" role="table" aria-label="Ürünler">
             <div className="data-row header" role="row">
               {productColumns.map((column) => (
                 <span key={column.key}>{column.label}</span>
@@ -642,16 +642,16 @@ function ProductModuleScreen({
                 ))}
               </button>
             ))}
-            {!products.length ? <div className="table-empty-state">Bu filtrelerle eÅŸleÅŸen Ã¼rÃ¼n bulunamadÄ±.</div> : null}
+            {!products.length ? <div className="table-empty-state">Bu filtrelerle eşleşen ürün bulunamadı.</div> : null}
           </div>
         </div>
 
         {selectedProduct ? (
           <section className="selected-product-summary">
             <div>
-              <span>SeÃ§ili ÃœrÃ¼n</span>
+              <span>Seçili Ürün</span>
               <strong>{selectedProduct.urun_kodu}</strong>
-              <p>{selectedProduct.urun_adi || "ÃœrÃ¼n adÄ± yok"}</p>
+              <p>{selectedProduct.urun_adi || "Ürün adı yok"}</p>
             </div>
             <dl>
               <div>
@@ -673,15 +673,15 @@ function ProductModuleScreen({
         {productTree ? (
           <section className="product-tree-detail">
             <div className="tree-stats">
-              <span>YarÄ± MamÃ¼l: {productTree.stats.yari_mamul_count ?? 0}</span>
-              <span>MamÃ¼l: {productTree.stats.mamul_count ?? 0}</span>
-              <span>Alt ÃœrÃ¼n: {productTree.stats.alt_urun_count ?? 0}</span>
-              <span>Ä°ÅŸÃ§ilik: {formatMoney(productTree.stats.iscilik_toplam)} saat</span>
+              <span>Yarı Mamül: {productTree.stats.yari_mamul_count ?? 0}</span>
+              <span>Mamül: {productTree.stats.mamul_count ?? 0}</span>
+              <span>Alt Ürün: {productTree.stats.alt_urun_count ?? 0}</span>
+              <span>İşçilik: {formatMoney(productTree.stats.iscilik_toplam)} saat</span>
             </div>
             <div className="tree-lists">
-              <TreeList title="YarÄ± MamÃ¼ller" items={productTree.yari_mamuller} />
-              <TreeList title="MamÃ¼ller" items={productTree.mamuller} />
-              <TreeList title="Alt ÃœrÃ¼nler" items={productTree.alt_urunler} />
+              <TreeList title="Yarı Mamüller" items={productTree.yari_mamuller} />
+              <TreeList title="Mamüller" items={productTree.mamuller} />
+              <TreeList title="Alt Ürünler" items={productTree.alt_urunler} />
             </div>
           </section>
         ) : null}
@@ -703,10 +703,10 @@ function ProductDetailModal({
   const costRows = detail
     ? [
         { label: "Malzeme Maliyeti", value: detail.cost_breakdown.malzeme_maliyeti },
-        { label: "Ä°ÅŸÃ§ilik Maliyeti", value: detail.cost_breakdown.iscilik_maliyeti },
-        { label: "Ãœretim Gideri", value: detail.cost_breakdown.uretim_gideri },
-        { label: "YÃ¶netim Gideri", value: detail.cost_breakdown.yonetim_gideri },
-        { label: "Alt ÃœrÃ¼n Maliyeti", value: detail.cost_breakdown.alt_urun_maliyeti },
+        { label: "İşçilik Maliyeti", value: detail.cost_breakdown.iscilik_maliyeti },
+        { label: "Üretim Gideri", value: detail.cost_breakdown.uretim_gideri },
+        { label: "Yönetim Gideri", value: detail.cost_breakdown.yonetim_gideri },
+        { label: "Alt Ürün Maliyeti", value: detail.cost_breakdown.alt_urun_maliyeti },
         { label: "Genel Toplam Maliyet", value: detail.cost_breakdown.toplam_maliyet, total: true },
       ]
     : [];
@@ -716,8 +716,10 @@ function ProductDetailModal({
       <section className="product-detail-modal" role="dialog" aria-modal="true" aria-labelledby="product-detail-title">
         <header className="product-detail-header">
           <div>
-            <span>ÃœrÃ¼n Detay KartÄ±</span>
-            <h2 id="product-detail-title">{formatValue(product.urun_kodu)} Â· {formatValue(product.urun_adi)}</h2>
+            <span>Ürün Detay Kartı</span>
+            <h2 id="product-detail-title">
+              {formatValue(product.urun_kodu)} · {formatValue(product.urun_adi)}
+            </h2>
             <p>
               {formatValue(product.urun_kategorisi)} / {formatValue(product.urun_tipi)} / {formatValue(product.urun_modeli)}
             </p>
@@ -733,13 +735,13 @@ function ProductDetailModal({
 
         <div className="product-detail-body">
           {isLoading ? (
-            <div className="detail-loading">ÃœrÃ¼n detaylarÄ± yÃ¼kleniyor...</div>
+            <div className="detail-loading">Ürün detayları yükleniyor...</div>
           ) : detail ? (
             <>
               <section className="detail-card product-info-card">
                 <div className="detail-card-heading">
-                  <strong>ÃœrÃ¼n Bilgileri</strong>
-                  <span>MasaÃ¼stÃ¼ detay kartÄ±ndaki alanlar</span>
+                  <strong>Ürün Bilgileri</strong>
+                  <span>Masaüstü detay kartındaki alanlar</span>
                 </div>
                 <div className="detail-field-grid">
                   {detail.display_fields.map((field) => (
@@ -753,7 +755,7 @@ function ProductDetailModal({
 
               <section className="detail-card cost-card">
                 <div className="detail-card-heading">
-                  <strong>Maliyet KÄ±rÄ±lÄ±mlarÄ±</strong>
+                  <strong>Maliyet Kırılımları</strong>
                   <span>Son hesaplama: {formatValue(product.maliyet_hesaplama_tarihi)}</span>
                 </div>
                 <div className="cost-breakdown-list">
@@ -768,14 +770,14 @@ function ProductDetailModal({
 
               <section className="detail-card labor-card">
                 <div className="detail-card-heading">
-                  <strong>Ä°ÅŸÃ§ilik Bilgileri</strong>
-                  <span>MasaÃ¼stÃ¼ndeki iÅŸÃ§ilik tÃ¼rleriyle aynÄ± sÄ±rada</span>
+                  <strong>İşçilik Bilgileri</strong>
+                  <span>Masaüstündeki işçilik türleriyle aynı sırada</span>
                 </div>
                 <div className="labor-table">
                   <div className="labor-row header">
-                    <span>Ä°ÅŸÃ§ilik Tipi</span>
+                    <span>İşçilik Tipi</span>
                     <span>Usta Saat</span>
-                    <span>YardÄ±mcÄ± Saat</span>
+                    <span>Yardımcı Saat</span>
                   </div>
                   {detail.labor_rows.map((row) => (
                     <div className="labor-row" key={row.iscilik_tipi ?? "empty"}>
@@ -788,13 +790,13 @@ function ProductDetailModal({
               </section>
             </>
           ) : (
-            <div className="detail-loading">Detay verisi bulunamadÄ±.</div>
+            <div className="detail-loading">Detay verisi bulunamadı.</div>
           )}
         </div>
 
         <footer className="product-detail-footer">
           <button className="product-action" type="button" onClick={onClose}>
-            Geri DÃ¶n
+            Geri Dön
           </button>
         </footer>
       </section>
@@ -855,7 +857,7 @@ function FilterGroup({
               <span>{column.label}</span>
               {column.filterType === "select" ? (
                 <select value={filters[key] ?? ""} onChange={(event) => onFilterChange(key, event.target.value)}>
-                  <option value="">TÃ¼mÃ¼</option>
+                  <option value="">Tümü</option>
                   {(filterOptions[key] ?? []).map((value) => (
                     <option value={value} key={value}>
                       {value}
@@ -887,7 +889,7 @@ function MaterialsScreen({
       <div className="panel-heading">
         <div>
           <h2>Malzemeler</h2>
-          <p>MasaÃ¼stÃ¼yle aynÄ± malzeme fiyat kaynaÄŸÄ± kullanÄ±lÄ±r.</p>
+          <p>Masaüstüyle aynı malzeme fiyat kaynağı kullanılır.</p>
         </div>
         <label className="search-box">
           <Search size={18} />
@@ -900,7 +902,7 @@ function MaterialsScreen({
           <span>Tip</span>
           <span>Ad</span>
           <span>Fiyat EUR</span>
-          <span>GÃ¼ncelleme</span>
+          <span>Güncelleme</span>
         </div>
         {materials.map((material) => (
           <div className="data-row" role="row" key={material.id}>
@@ -933,32 +935,32 @@ function DashboardScreen({
     <section className="workbench-grid">
       <section className="status-grid wide-panel" id="dashboard">
         <button className="status-panel status-button" type="button" onClick={() => setView("products")}>
-          <span>ÃœrÃ¼nler</span>
-          <strong>{products.length} kayÄ±t</strong>
-          <p>ÃœrÃ¼n modÃ¼lÃ¼ ekranÄ±nÄ± aÃ§ar.</p>
+          <span>Ürünler</span>
+          <strong>{products.length} kayıt</strong>
+          <p>Ürün modülü ekranını açar.</p>
         </button>
         <button className="status-panel status-button" type="button" onClick={() => setView("materials")}>
           <span>Malzemeler</span>
-          <strong>{materials.length} kayÄ±t</strong>
-          <p>Malzeme modÃ¼lÃ¼ ekranÄ±nÄ± aÃ§ar.</p>
+          <strong>{materials.length} kayıt</strong>
+          <p>Malzeme modülü ekranını açar.</p>
         </button>
         <div className="status-panel">
-          <span>ModÃ¼l Yetkisi</span>
-          <strong>{modules.length} modÃ¼l</strong>
-          <p>Liste kullanÄ±cÄ±nÄ±n web yetkilerine gÃ¶re sÃ¼zÃ¼lÃ¼r.</p>
+          <span>Modül Yetkisi</span>
+          <strong>{modules.length} modül</strong>
+          <p>Liste kullanıcının web yetkilerine göre süzülür.</p>
         </div>
       </section>
 
       <section className="module-section wide-panel" id="modules">
         <div className="section-heading">
           <div>
-            <h2>TaÅŸÄ±nacak ModÃ¼ller</h2>
-            <p>Ä°lk fazdaki ana akÄ±ÅŸlar Ã¼rÃ¼n, malzeme, fiyat listesi ve maliyet hesaplama Ã¼zerine kuruluyor.</p>
+            <h2>Taşınacak Modüller</h2>
+            <p>İlk fazdaki ana akışlar ürün, malzeme, fiyat listesi ve maliyet hesaplama üzerine kuruluyor.</p>
           </div>
         </div>
-        <div className="module-table" role="table" aria-label="Web app modÃ¼l taÅŸÄ±ma listesi">
+        <div className="module-table" role="table" aria-label="Web app modül taşıma listesi">
           <div className="module-row header" role="row">
-            <span>ModÃ¼l</span>
+            <span>Modül</span>
             <span>Faz</span>
             <span>Durum</span>
           </div>
@@ -971,7 +973,7 @@ function DashboardScreen({
                   {module.title}
                 </span>
                 <span>{phaseLabels[module.phase] ?? `${module.phase}. faz`}</span>
-                <span className={module.phase === 1 ? "tag active-tag" : "tag"}>{module.phase === 1 ? "Ã–ncelikli" : "PlanlandÄ±"}</span>
+                <span className={module.phase === 1 ? "tag active-tag" : "tag"}>{module.phase === 1 ? "Öncelikli" : "Planlandı"}</span>
               </div>
             );
           })}
@@ -980,8 +982,8 @@ function DashboardScreen({
 
       <section className="migration-panel wide-panel" id="migration">
         <div>
-          <h2>Ä°lk Faz OdaÄŸÄ±</h2>
-          <p>ÃœrÃ¼n modÃ¼lÃ¼ masaÃ¼stÃ¼ davranÄ±ÅŸÄ±na yaklaÅŸtÄ±rÄ±ldÄ±; sÄ±rada buton aksiyonlarÄ±nÄ±n gerÃ§ek web API karÅŸÄ±lÄ±klarÄ± var.</p>
+          <h2>İlk Faz Odağı</h2>
+          <p>Ürün modülü masaüstü davranışına yaklaştırıldı; sırada buton aksiyonlarının gerçek web API karşılıkları var.</p>
         </div>
         <ul>
           {firstPhaseModules.map((module) => (
@@ -998,11 +1000,11 @@ function TreeList({ title, items }: { title: string; items: ProductTree["yari_ma
     <div className="tree-list">
       <strong>{title}</strong>
       {items.length === 0 ? (
-        <span className="muted">KayÄ±t yok</span>
+        <span className="muted">Kayıt yok</span>
       ) : (
         items.slice(0, 6).map((item) => (
           <span key={item.id}>
-            {item.kod || "-"} Â· {item.ad || "-"} Â· {formatMoney(item.miktar)}
+            {item.kod || "-"} · {item.ad || "-"} · {formatMoney(item.miktar)}
           </span>
         ))
       )}
