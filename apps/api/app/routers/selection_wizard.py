@@ -102,9 +102,88 @@ ALVERPRO_CODE_RULES = {
     },
 }
 
+ECOG_OPTION_ORDER = {
+    "fan_type": ["Plug Fan", "Salyangoz Fan"],
+    "fan_power": ["2.2 kW", "3.0 kW", "4.0 kW", "5.5 kW", "7.5 kW", "11.0 kW", "15.0 kW", "18.5 kW", "22.0 kW", "30.0 kW"],
+    "filter_media": [
+        "nanoBLEND FR",
+        "polyMIGHT 55",
+        "polyMIGHT PTFE 65",
+        "polyMIGHT ALU",
+        "polyMIGHT ALU PTFE 65",
+        "polyMIGHT HO",
+    ],
+    "filter_length": ["660 mm", "1.000 mm"],
+    "filter_variant": ["ECOG.3", "ECOG.4", "ECOG.6", "ECOG.8"],
+    "cleaning": ["ECON", "B-CONTROL"],
+    "panel": ["Motor Koruma Salteri", "Frekans Invertoru", "Yildiz Ucgen"],
+}
+
+ECOG_SECTION_AREAS = {
+    "660 mm": {"ECOG.3": 0.67, "ECOG.4": 0.67, "ECOG.6": 0.99, "ECOG.8": 1.31},
+    "1.000 mm": {"ECOG.3": 0.998, "ECOG.4": 0.998, "ECOG.6": 1.484, "ECOG.8": 1.969},
+}
+
+ECOG_FAN_POWER_SUFFIX = {
+    "2.2 kW": "22.3000",
+    "3.0 kW": "30.3000",
+    "4.0 kW": "40.3000",
+    "5.5 kW": "55.3000",
+    "7.5 kW": "75.3000",
+    "11.0 kW": "110.3000",
+    "15.0 kW": "150.1500",
+    "18.5 kW": "185.1500",
+    "22.0 kW": "220.1500",
+    "30.0 kW": "300.3000",
+}
+
+MOTOR_KW_OPTIONS = [2.2, 3.0, 4.0, 5.5, 7.5, 11.0, 15.0, 18.5, 22.0, 30.0]
+
 
 def _normalize(value: Any) -> str:
     return str(value or "").strip()
+
+
+def _parse_decimal(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = _normalize(value)
+    if not text:
+        return None
+    text = text.replace(" ", "")
+    if "," in text and "." in text:
+        text = text.replace(".", "").replace(",", ".") if text.rfind(",") > text.rfind(".") else text.replace(",", "")
+    elif "," in text:
+        right = text.split(",", 1)[1]
+        text = text.replace(",", ".") if len(right) in (1, 2) else text.replace(",", "")
+    elif "." in text:
+        right = text.split(".", 1)[1]
+        if len(right) == 3 and right.isdigit():
+            text = text.replace(".", "")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _parse_kw(value: Any) -> float:
+    return _parse_decimal(_normalize(value).lower().replace("kw", "")) or 0.0
+
+
+def _option_items(values: list[str]) -> list[dict[str, str]]:
+    return [{"label": value, "value": value} for value in values]
+
+
+def _display_label(value: Any) -> str:
+    return {
+        "Motor Koruma Salteri": "Motor Koruma Şalteri",
+        "Frekans Invertoru": "Frekans İnvertörü",
+        "Yildiz Ucgen": "Yıldız Üçgen",
+    }.get(_normalize(value), _normalize(value))
+
+
+def _display_option_items(values: list[str]) -> list[dict[str, str]]:
+    return [{"label": _display_label(value), "value": value} for value in values]
 
 
 def _require_access(current_user: dict = Depends(require_current_user)) -> dict:
@@ -148,7 +227,7 @@ def _summary_product_codes(summary: dict[str, Any] | None) -> list[str]:
         return []
     result = []
     seen = set()
-    for key in ("kasaKodu", "panoKodu", "filtreSetKodu"):
+    for key in ("kasaKodu", "filtreSetKodu", "temizlikKodu", "fanKodu", "panoKodu"):
         code = _normalize(summary.get(key)).upper()
         if code and code not in seen:
             seen.add(code)
@@ -189,6 +268,225 @@ def _cost_summary(connection: MySQLConnection, summary: dict[str, Any] | None) -
     }
 
 
+def _lookup_article(connection: MySQLConnection, series_key: str, combination_key: str | None) -> str | None:
+    if not combination_key:
+        return None
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT article_no
+        FROM configuration_articles
+        WHERE series_key = %s AND combination_key = %s AND is_active = 1
+        LIMIT 1
+        """,
+        (series_key.upper(), combination_key),
+    )
+    row = cursor.fetchone()
+    return _normalize(row[0]) if row else None
+
+
+def _select_motor_kw(value: float | None) -> float | None:
+    if value is None:
+        return None
+    for motor_kw in MOTOR_KW_OPTIONS:
+        if value <= motor_kw:
+            return motor_kw
+    return MOTOR_KW_OPTIONS[-1]
+
+
+def _recommended_fan_power(recommended_motor_kw: float | None) -> str | None:
+    if recommended_motor_kw is None:
+        return None
+    for motor_kw in MOTOR_KW_OPTIONS:
+        if recommended_motor_kw <= motor_kw:
+            return f"{motor_kw:.1f} kW"
+    return "30.0 kW"
+
+
+def _ecog_allowed_fan_types(pressure_value: float | None) -> list[str]:
+    if pressure_value is not None and pressure_value >= 2000:
+        return ["Salyangoz Fan"]
+    return ["Plug Fan", "Salyangoz Fan"]
+
+
+def _ecog_motor_result(state: dict[str, Any]) -> dict[str, Any]:
+    airflow = _parse_decimal(state.get("airflow_text"))
+    pressure = _parse_decimal(state.get("pressure_text"))
+    fan_efficiency = _parse_decimal(state.get("fan_efficiency_text")) or 65.0
+    service_margin = _parse_decimal(state.get("service_margin_text")) or 15.0
+    temperature = _parse_decimal(state.get("temperature_text")) or 20.0
+    altitude = _parse_decimal(state.get("altitude_text")) or 1000.0
+    if airflow is None or pressure is None or airflow <= 0 or pressure <= 0 or fan_efficiency <= 0:
+        return {
+            "airflow_value": airflow,
+            "pressure_value": pressure,
+            "fan_efficiency_value": fan_efficiency,
+            "service_margin_value": service_margin,
+            "temperature_value": temperature,
+            "altitude_value": altitude,
+            "shaft_power": None,
+            "recommended_motor_kw": None,
+            "recommended_fan_power": None,
+        }
+    flow_rate_m3s = airflow / 3600.0
+    shaft_power = ((flow_rate_m3s * pressure) / 1000.0) / (fan_efficiency / 100.0)
+    sizing_basis = shaft_power * (1 + service_margin / 100.0)
+    recommended_motor = _select_motor_kw(sizing_basis)
+    return {
+        "airflow_value": airflow,
+        "pressure_value": pressure,
+        "fan_efficiency_value": fan_efficiency,
+        "service_margin_value": service_margin,
+        "temperature_value": temperature,
+        "altitude_value": altitude,
+        "shaft_power": shaft_power,
+        "recommended_motor_kw": recommended_motor,
+        "recommended_fan_power": _recommended_fan_power(recommended_motor),
+    }
+
+
+def _ecog_filter_area(filter_media: str, filter_length: str, filter_variant: str) -> float | None:
+    try:
+        cartridge_count = int(_normalize(filter_variant).split(".", 1)[1])
+    except Exception:
+        return None
+    if filter_length == "660 mm":
+        per_cartridge_area = 20.0 if filter_media == "nanoBLEND FR" else 10.0
+    elif filter_length == "1.000 mm":
+        per_cartridge_area = 30.0 if filter_media == "nanoBLEND FR" else 15.0
+    else:
+        return None
+    return per_cartridge_area * cartridge_count
+
+
+def _ecog_section_area(filter_length: str, filter_variant: str) -> float | None:
+    return (ECOG_SECTION_AREAS.get(_normalize(filter_length)) or {}).get(_normalize(filter_variant))
+
+
+def _ecog_filter_code(filter_media: str, filter_length: str, filter_variant: str) -> str | None:
+    try:
+        cartridge_count = int(_normalize(filter_variant).split(".", 1)[1])
+    except Exception:
+        return None
+    length_map = {"660 mm": "660", "1.000 mm": "1000"}
+    media_map = {
+        "nanoBLEND FR": "B135FR",
+        "polyMIGHT 55": "255P",
+        "polyMIGHT PTFE 65": "265PTFE",
+        "polyMIGHT ALU": "260ALU",
+        "polyMIGHT ALU PTFE 65": "265ALUPTFE",
+        "polyMIGHT HO": "255HO",
+    }
+    short_length = length_map.get(_normalize(filter_length))
+    media_code = media_map.get(_normalize(filter_media))
+    if not short_length or not media_code:
+        return None
+    piece_label = "20" if filter_length == "660 mm" and filter_media == "nanoBLEND FR" else "30" if filter_length == "1.000 mm" and filter_media == "nanoBLEND FR" else "10" if filter_length == "660 mm" else "15"
+    return f"HTM/327G/{short_length}/{media_code}/{piece_label} x {cartridge_count}"
+
+
+def _ecog_case_code(filter_variant: str, filter_length: str) -> str | None:
+    suffix = {"660 mm": "66", "1.000 mm": "100"}.get(_normalize(filter_length))
+    return f"{_normalize(filter_variant)}.{suffix}" if _normalize(filter_variant) and suffix else None
+
+
+def _ecog_cleaning_code(filter_variant: str, cleaning: str) -> str | None:
+    if cleaning == "B-CONTROL":
+        return "SCHDL.CLEAN"
+    if cleaning != "ECON":
+        return None
+    if filter_variant in ("ECOG.3", "ECOG.4"):
+        return "ECOG.ECON.4"
+    if filter_variant in ("ECOG.6", "ECOG.8"):
+        return "ECOG.ECON.8"
+    return None
+
+
+def _ecog_fan_code(fan_type: str, fan_power: str) -> str | None:
+    prefix = {"Plug Fan": "BRPF.DA.", "Salyangoz Fan": "BRF.DA."}.get(_normalize(fan_type))
+    suffix = ECOG_FAN_POWER_SUFFIX.get(_normalize(fan_power))
+    return f"{prefix}{suffix}" if prefix and suffix else None
+
+
+def _ecog_panel_code(panel: str, fan_power: str) -> str | None:
+    panel = _normalize(panel)
+    fan_power = _normalize(fan_power)
+    if panel == "Motor Koruma Salteri":
+        return {"2.2 kW": "ECOG.MPS.380.50.22", "3.0 kW": "ECOG.MPS.380.50.30", "4.0 kW": "ECOG.MPS.380.50.40"}.get(fan_power)
+    if panel == "Yildiz Ucgen":
+        return {
+            "5.5 kW": "ECOG.DS.380.50.55",
+            "7.5 kW": "ECOG.DS.380.50.75",
+            "11.0 kW": "ECOG.DS.380.50.110",
+            "15.0 kW": "ECOG.DS.380.50.150",
+            "18.5 kW": "ECOG.DS.380.50.185",
+            "22.0 kW": "ECOG.DS.380.50.220",
+            "30.0 kW": "ECOG.DS.380.50.300",
+        }.get(fan_power)
+    if panel == "Frekans Invertoru":
+        return {
+            "2.2 kW": "KMPKT.VFD.380.50.22",
+            "3.0 kW": "KMPKT.VFD.380.50.30",
+            "4.0 kW": "KMPKT.VFD.380.50.40",
+            "5.5 kW": "KMPKT.VFD.380.50.55",
+            "7.5 kW": "KMPKT.VFD.380.50.75",
+            "11.0 kW": "KMPKT.VFD.380.50.110",
+            "15.0 kW": "KMPKT.VFD.380.50.150",
+            "18.5 kW": "KMPKT.VFD.380.50.185",
+            "22.0 kW": "KMPKT.VFD.380.50.220",
+            "30.0 kW": "KMPKT.VFD.380.50.300",
+        }.get(fan_power)
+    return None
+
+
+def _ecog_panel_options(fan_power: str) -> list[str]:
+    if fan_power in ("2.2 kW", "3.0 kW", "4.0 kW"):
+        return ["Motor Koruma Salteri", "Frekans Invertoru"]
+    if fan_power in ("5.5 kW", "7.5 kW", "11.0 kW", "15.0 kW", "18.5 kW", "22.0 kW", "30.0 kW"):
+        return ["Yildiz Ucgen", "Frekans Invertoru"]
+    return []
+
+
+def _ecog_summary(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any] | None:
+    required = ("filter_variant", "filter_media", "filter_length", "cleaning", "fan_type", "fan_power", "panel")
+    if any(not _normalize(state.get(key)) for key in required):
+        return None
+    combination_key = "|".join(_normalize(state.get(key)) for key in required)
+    metrics = _ecog_metrics(state)
+    summary = {
+        "combinationKey": combination_key,
+        "articleNo": _lookup_article(connection, "ECOG", combination_key),
+        "kasa": _normalize(state.get("filter_variant")),
+        "filtreMedyasi": _normalize(state.get("filter_media")),
+        "filtreBoyu": _normalize(state.get("filter_length")),
+        "temizlik": _normalize(state.get("cleaning")),
+        "fanTipi": _normalize(state.get("fan_type")),
+        "fanGucu": _normalize(state.get("fan_power")),
+        "pano": _display_label(state.get("panel")),
+        "kasaKodu": _ecog_case_code(state.get("filter_variant"), state.get("filter_length")),
+        "filtreSetKodu": _ecog_filter_code(state.get("filter_media"), state.get("filter_length"), state.get("filter_variant")),
+        "temizlikKodu": _ecog_cleaning_code(state.get("filter_variant"), state.get("cleaning")),
+        "fanKodu": _ecog_fan_code(state.get("fan_type"), state.get("fan_power")),
+        "panoKodu": _ecog_panel_code(state.get("panel"), state.get("fan_power")),
+    }
+    summary.update(metrics)
+    return summary
+
+
+def _ecog_metrics(state: dict[str, Any]) -> dict[str, Any]:
+    airflow = _parse_decimal(state.get("airflow_text"))
+    section_area = _ecog_section_area(state.get("filter_length"), state.get("filter_variant")) if state.get("filter_variant") else None
+    filter_area = _ecog_filter_area(state.get("filter_media"), state.get("filter_length"), state.get("filter_variant")) if state.get("filter_variant") else None
+    return {
+        "kesitAlani": section_area,
+        "toplamFiltreAlani": filter_area,
+        "yukselmeHizi": airflow / section_area / 3600.0 if airflow and section_area else None,
+        "filtrasyonHizi": airflow / filter_area / 60.0 if airflow and filter_area else None,
+        "milGucu": state.get("shaft_power"),
+        "onerilenMotor": state.get("recommended_motor_kw"),
+    }
+
+
 def _alverpro_schema() -> dict[str, Any]:
     return {
         "key": "alverpro",
@@ -209,12 +507,122 @@ def _alverpro_schema() -> dict[str, Any]:
     }
 
 
+def _ecog_initial_state() -> dict[str, str]:
+    return {
+        "airflow_text": "",
+        "pressure_text": "",
+        "fan_efficiency_text": "65",
+        "service_margin_text": "15",
+        "temperature_text": "20",
+        "altitude_text": "1000",
+        "fan_type": "",
+        "fan_power": "",
+        "filter_media": "",
+        "filter_length": "",
+        "filter_variant": "",
+        "cleaning": "",
+        "panel": "",
+    }
+
+
+def _ecog_schema() -> dict[str, Any]:
+    return {
+        "key": "ecog",
+        "title": "ECOG",
+        "description": "Debi, basınç ve ürün seçeneklerine göre ECOG konfigürasyonu.",
+        "initial_state": _ecog_initial_state(),
+        "steps": [
+            {"key": "criteria", "title": "Kriterler"},
+            {"key": "fan", "title": "Fan Seçimi"},
+            {"key": "filter", "title": "Filtre Seçimi"},
+            {"key": "case", "title": "Kasa"},
+            {"key": "cleaning", "title": "Temizlik"},
+            {"key": "panel", "title": "Pano"},
+            {"key": "summary", "title": "Özet"},
+        ],
+        "sections": {
+            "criteria": [
+                {
+                    "title": "Çalışma Kriterleri",
+                    "field": "criteria",
+                    "inputs": [
+                        {"field": "airflow_text", "label": "Debi (m3/h)", "placeholder": "7500"},
+                        {"field": "pressure_text", "label": "Basınç (Pa)", "placeholder": "2200"},
+                        {"field": "fan_efficiency_text", "label": "Fan Verimi (%)", "placeholder": "65"},
+                        {"field": "service_margin_text", "label": "Servis Payı (%)", "placeholder": "15"},
+                        {"field": "temperature_text", "label": "Çalışma Sıcaklığı (C)", "placeholder": "20"},
+                        {"field": "altitude_text", "label": "Rakım (m)", "placeholder": "1000"},
+                    ],
+                }
+            ],
+            "fan": [
+                {"title": "Fan Tipi", "field": "fan_type", "options": []},
+                {"title": "Fan Gücü", "field": "fan_power", "options": []},
+            ],
+            "filter": [
+                {"title": "Filtre Medyası", "field": "filter_media", "options": _option_items(ECOG_OPTION_ORDER["filter_media"])},
+                {"title": "Filtre Boyu", "field": "filter_length", "options": _option_items(ECOG_OPTION_ORDER["filter_length"])},
+            ],
+            "case": [{"title": "Kasa Seçimi", "field": "filter_variant", "options": []}],
+            "cleaning": [{"title": "Temizlik Sistemi", "field": "cleaning", "options": []}],
+            "panel": [{"title": "Pano", "field": "panel", "options": []}],
+        },
+    }
+
+
+def _ecog_preview(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any]:
+    motor = _ecog_motor_result(state)
+    state.update(motor)
+    allowed_fan_types = _ecog_allowed_fan_types(state.get("pressure_value"))
+    if state.get("fan_type") not in allowed_fan_types:
+        state["fan_type"] = ""
+        state["fan_power"] = ""
+    fan_power_options = [
+        power for power in ECOG_OPTION_ORDER["fan_power"]
+        if not state.get("shaft_power") or _parse_kw(power) >= float(state.get("shaft_power") or 0)
+    ] if state.get("fan_type") else []
+    if state.get("fan_power") not in fan_power_options:
+        state["fan_power"] = state.get("recommended_fan_power") if state.get("recommended_fan_power") in fan_power_options else ""
+    if state.get("filter_media") not in ECOG_OPTION_ORDER["filter_media"]:
+        state["filter_media"] = ""
+        state["filter_length"] = ""
+        state["filter_variant"] = ""
+    if state.get("filter_length") not in ECOG_OPTION_ORDER["filter_length"]:
+        state["filter_length"] = ""
+        state["filter_variant"] = ""
+    if state.get("filter_variant") not in ECOG_OPTION_ORDER["filter_variant"]:
+        state["filter_variant"] = ""
+    cleaning_options = ECOG_OPTION_ORDER["cleaning"] if state.get("filter_variant") else []
+    if state.get("cleaning") not in cleaning_options:
+        state["cleaning"] = ""
+    panel_options = _ecog_panel_options(state.get("fan_power"))
+    if state.get("panel") not in panel_options:
+        state["panel"] = ""
+
+    schema = _ecog_schema()
+    schema["sections"]["fan"][0]["options"] = _option_items(allowed_fan_types)
+    schema["sections"]["fan"][1]["options"] = _option_items(fan_power_options)
+    schema["sections"]["case"][0]["options"] = [
+        {
+            "label": variant,
+            "value": variant,
+            "description": f"Kesit alanı: {_ecog_section_area(state.get('filter_length'), variant) or '-'} m2",
+        }
+        for variant in ECOG_OPTION_ORDER["filter_variant"]
+        if state.get("filter_media") and state.get("filter_length")
+    ]
+    schema["sections"]["cleaning"][0]["options"] = _option_items(cleaning_options)
+    schema["sections"]["panel"][0]["options"] = _display_option_items(panel_options)
+    summary = _ecog_summary(state, connection)
+    return {"state": state, "sections": schema["sections"], "summary": summary, "cost": _cost_summary(connection, summary)}
+
+
 @router.get("/products")
 def list_wizard_products(_current_user: dict = Depends(_require_access)):
     return {
         "products": [
             {"key": "alverpro", "title": "ALVERpro", "description": "Kapasite ve filtre medyası seçimi.", "status": "active"},
-            {"key": "ecog", "title": "ECOG", "description": "Fan, filtre, kasa, temizlik ve pano seçimi.", "status": "planned"},
+            {"key": "ecog", "title": "ECOG", "description": "Fan, filtre, kasa, temizlik ve pano seçimi.", "status": "active"},
             {"key": "line", "title": "LINE", "description": "Kartuş filtre seçim akışı.", "status": "planned"},
             {"key": "pkfc", "title": "PKFC", "description": "Kartuş filtre seçim akışı.", "status": "planned"},
             {"key": "hexafil", "title": "HEXAFIL", "description": "Filtre, fan kabini ve opsiyon seçimleri.", "status": "planned"},
@@ -225,9 +633,11 @@ def list_wizard_products(_current_user: dict = Depends(_require_access)):
 
 @router.get("/{wizard_key}/schema")
 def get_wizard_schema(wizard_key: str, _current_user: dict = Depends(_require_access)):
-    if wizard_key.lower() != "alverpro":
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bu sihirbaz henüz web'e taşınmadı.")
-    return _alverpro_schema()
+    if wizard_key.lower() == "alverpro":
+        return _alverpro_schema()
+    if wizard_key.lower() == "ecog":
+        return _ecog_schema()
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bu sihirbaz henüz web'e taşınmadı.")
 
 
 @router.post("/{wizard_key}/preview")
@@ -237,6 +647,8 @@ def preview_wizard(
     connection: MySQLConnection = Depends(get_connection),
     _current_user: dict = Depends(_require_access),
 ):
+    if wizard_key.lower() == "ecog":
+        return _ecog_preview(dict(payload.get("state") or {}), connection)
     if wizard_key.lower() != "alverpro":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bu sihirbaz henüz web'e taşınmadı.")
     state = dict(payload.get("state") or {})

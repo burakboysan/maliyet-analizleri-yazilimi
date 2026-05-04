@@ -14,12 +14,14 @@ export type WizardProduct = {
 export type WizardOption = {
   label: string;
   value: string;
+  description?: string;
 };
 
 export type WizardSection = {
   title: string;
   field: string;
-  options: WizardOption[];
+  options?: WizardOption[];
+  inputs?: Array<{ field: string; label: string; placeholder?: string }>;
 };
 
 export type WizardStep = {

@@ -3937,11 +3937,30 @@ function SelectionWizardScreen({ token }: { token: string }) {
   const setOption = (field: string, value: string) => {
     setWizardState((current) => {
       const next = { ...current, [field]: value };
-      if (field === "capacity_code") {
+      if (field === "capacity_code" || field.endsWith("_text")) {
         return next;
       }
       if (field === "pollution_code") {
         next.media_code = "";
+      }
+      if (field === "fan_type") {
+        next.fan_power = "";
+        next.panel = "";
+      }
+      if (field === "fan_power") {
+        next.panel = "";
+      }
+      if (field === "filter_media") {
+        next.filter_length = "";
+        next.filter_variant = "";
+        next.cleaning = "";
+      }
+      if (field === "filter_length") {
+        next.filter_variant = "";
+        next.cleaning = "";
+      }
+      if (field === "filter_variant") {
+        next.cleaning = "";
       }
       return next;
     });
@@ -4026,11 +4045,25 @@ function SelectionWizardScreen({ token }: { token: string }) {
                 activeSections.map((section) => (
                   <div className="wizard-option-section" key={section.field}>
                     <h3>{section.title}</h3>
+                    {section.inputs?.length ? (
+                      <div className="wizard-input-grid">
+                        {section.inputs.map((input) => (
+                          <label key={input.field}>
+                            {input.label}
+                            <input
+                              value={wizardState[input.field] ?? ""}
+                              placeholder={input.placeholder}
+                              onChange={(event) => setOption(input.field, event.target.value)}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
                     <div className="wizard-options">
-                      {section.options.length === 0 ? (
+                      {(section.options ?? []).length === 0 ? (
                         <span className="muted">Önce önceki adımı tamamlayın.</span>
                       ) : (
-                        section.options.map((option) => (
+                        (section.options ?? []).map((option) => (
                           <button
                             className={wizardState[section.field] === option.value ? "wizard-option active" : "wizard-option"}
                             key={option.value}
@@ -4038,11 +4071,12 @@ function SelectionWizardScreen({ token }: { token: string }) {
                             onClick={() => setOption(section.field, option.value)}
                           >
                             <strong>{option.label}</strong>
-                            <span>{option.value}</span>
+                            <span>{option.description || option.value}</span>
                           </button>
                         ))
                       )}
                     </div>
+                    )}
                   </div>
                 ))
               )}
@@ -4070,13 +4104,26 @@ function WizardSummary({ compact = false, cost, summary }: { compact?: boolean; 
         ["Kapasite", summary.kapasite],
         ["Kirlilik Tipi", summary.kirlilikTipi],
         ["Filtre Medyası", summary.filtreMedyasi],
+        ["Filtre Boyu", summary.filtreBoyu],
+        ["Kasa", summary.kasa],
+        ["Temizlik", summary.temizlik],
+        ["Fan Tipi", summary.fanTipi],
+        ["Fan Gücü", summary.fanGucu],
+        ["Pano", summary.pano],
         ["Filtre Adedi", summary.filtreAdedi],
         ["Toplam Filtre Alanı", summary.toplamFiltreAlani ? `${summary.toplamFiltreAlani} m²` : null],
+        ["Kesit Alanı", summary.kesitAlani ? `${summary.kesitAlani} m²` : null],
+        ["Yükselme Hızı", summary.yukselmeHizi ? `${Number(summary.yukselmeHizi).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} m/sn` : null],
+        ["Filtrasyon Hızı", summary.filtrasyonHizi ? `${Number(summary.filtrasyonHizi).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} m/dk` : null],
+        ["Mil Gücü", summary.milGucu ? `${Number(summary.milGucu).toLocaleString("tr-TR", { maximumFractionDigits: 2 })} kW` : null],
+        ["Önerilen Motor", summary.onerilenMotor ? `${summary.onerilenMotor} kW` : null],
         ["Motor Bilgisi", summary.motorBilgisi],
         ["Kasa Kodu", summary.kasaKodu],
-        ["Pano Kodu", summary.panoKodu],
         ["Filtre Set Kodu", summary.filtreSetKodu],
-      ]
+        ["Temizlik Kodu", summary.temizlikKodu],
+        ["Fan Kodu", summary.fanKodu],
+        ["Pano Kodu", summary.panoKodu],
+      ].filter(([, value]) => value !== undefined && value !== null && value !== "")
     : [];
 
   if (!summary) {

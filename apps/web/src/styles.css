@@ -366,6 +366,34 @@ a {
   gap: 10px;
 }
 
+.wizard-input-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.wizard-input-grid label {
+  display: grid;
+  gap: 7px;
+  color: #34465e;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.wizard-input-grid input {
+  width: 100%;
+  border: 1px solid #d5deeb;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #172235;
+  padding: 11px 12px;
+}
+
+.wizard-input-grid input:focus {
+  border-color: #d32f2f;
+  outline: 3px solid rgb(211 47 47 / 12%);
+}
+
 .wizard-option {
   display: grid;
   gap: 5px;
