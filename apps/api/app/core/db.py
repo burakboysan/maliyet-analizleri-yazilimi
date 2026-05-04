@@ -25,6 +25,7 @@ def get_pool() -> pooling.MySQLConnectionPool:
             charset="utf8mb4",
             collation="utf8mb4_unicode_ci",
             autocommit=False,
+            connection_timeout=10,
         )
     return _pool
 
@@ -32,6 +33,7 @@ def get_pool() -> pooling.MySQLConnectionPool:
 def get_connection() -> Iterator[mysql.connector.MySQLConnection]:
     connection = get_pool().get_connection()
     try:
+        connection.ping(reconnect=True, attempts=1, delay=0)
         yield connection
     finally:
         if connection.is_connected():

@@ -169,10 +169,11 @@ export type ProductTree = {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8100";
 const REQUEST_TIMEOUT_MS = 15000;
+const LOGIN_TIMEOUT_MS = 60000;
 
-async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     return await fetch(input, {
@@ -214,7 +215,7 @@ export async function login(kullaniciAdi: string, sifre: string): Promise<LoginR
       kullanici_adi: kullaniciAdi,
       sifre,
     }),
-  });
+  }, LOGIN_TIMEOUT_MS);
   if (!response.ok) {
     throw new Error(await parseError(response));
   }
