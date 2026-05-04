@@ -487,24 +487,60 @@ button.data-row.selected {
   position: sticky;
   top: 20px;
   display: grid;
-  gap: 14px;
+  gap: 12px;
   max-height: calc(100vh - 60px);
   overflow: auto;
-  padding: 16px;
+  padding: 14px;
 }
 
+.filter-panel-header,
 .filter-title {
   display: flex;
   align-items: center;
+}
+
+.filter-panel-header {
   justify-content: space-between;
   gap: 12px;
+  border-bottom: 1px solid #e5ebf2;
+  padding-bottom: 12px;
+}
+
+.filter-title {
+  gap: 8px;
+  color: #19334d;
 }
 
 .filter-title strong {
   font-size: 18px;
 }
 
-.filter-title span {
+.filter-panel-header > span {
+  border-radius: 999px;
+  background: #eef7f3;
+  color: #247058;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 9px;
+}
+
+.filter-summary-card {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 12px;
+}
+
+.filter-summary-card strong {
+  color: #19334d;
+  font-size: 24px;
+}
+
+.filter-summary-card span {
   color: #63758a;
   font-size: 13px;
   font-weight: 700;
@@ -523,15 +559,100 @@ button.data-row.selected {
   font-weight: 800;
 }
 
+.filter-clear-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .filter-clear-button:hover {
   background: #d32f2f;
   color: #ffffff;
 }
 
+.active-filter-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.active-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border: 1px solid #b9d8c7;
+  border-radius: 999px;
+  background: #f0fbf5;
+  color: #1f6d55;
+  padding: 6px 9px;
+}
+
+.active-filter-chip span,
+.active-filter-chip strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.active-filter-chip span {
+  color: #578271;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.active-filter-chip strong {
+  font-size: 12px;
+}
+
+.filter-groups {
+  display: grid;
+  gap: 10px;
+}
+
+.filter-group {
+  border: 1px solid #e2e9f1;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.filter-group summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px;
+}
+
+.filter-group summary::-webkit-details-marker {
+  display: none;
+}
+
+.filter-group summary span {
+  display: grid;
+  gap: 3px;
+}
+
+.filter-group summary strong {
+  color: #19334d;
+  font-size: 14px;
+}
+
+.filter-group summary small {
+  color: #63758a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.filter-group[open] summary {
+  border-bottom: 1px solid #edf1f6;
+  background: #f8fafc;
+}
+
 .filter-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
+  padding: 12px;
 }
 
 .filter-control {
@@ -564,14 +685,44 @@ button.data-row.selected {
   background: transparent;
 }
 
-.product-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+.product-commandbar {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto;
+  gap: 10px 14px;
+  align-items: center;
   border: 1px solid #dce4ee;
   border-radius: 8px;
   background: #ffffff;
   padding: 12px;
+}
+
+.commandbar-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.commandbar-copy strong {
+  color: #19334d;
+  font-size: 18px;
+}
+
+.commandbar-copy span {
+  color: #63758a;
+  font-size: 13px;
+}
+
+.product-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.secondary-toolbar {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+  border-top: 1px solid #edf1f6;
+  padding-top: 10px;
 }
 
 .product-action {
@@ -598,6 +749,12 @@ button.data-row.selected {
   color: #b92727;
 }
 
+.product-action.emphasis {
+  border-color: #2f9e7e;
+  background: #2f9e7e;
+  color: #ffffff;
+}
+
 .product-table-shell {
   overflow: hidden;
 }
@@ -609,13 +766,37 @@ button.data-row.selected {
   gap: 14px;
   min-height: 52px;
   border-bottom: 1px solid #e5ebf2;
-  padding: 0 16px;
+  padding: 10px 16px;
+}
+
+.product-table-header div:first-child {
+  display: grid;
+  gap: 3px;
 }
 
 .product-table-header span {
   color: #63758a;
   font-size: 13px;
   font-weight: 700;
+}
+
+.selected-product-pill {
+  width: fit-content;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 999px;
+  background: #e5f6ef;
+  color: #1f7a5f;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 7px 11px;
+}
+
+.muted-pill {
+  background: #eef2f6;
+  color: #63758a;
 }
 
 .desktop-product-table {
@@ -625,6 +806,72 @@ button.data-row.selected {
 .desktop-product-table .data-row {
   grid-template-columns: 140px 220px 150px 140px 150px 170px 150px 180px 150px 180px 120px 140px 140px 140px 150px 150px 130px;
   min-width: 2530px;
+}
+
+.desktop-product-table .data-row:not(.header):nth-child(odd) {
+  background: #fbfdff;
+}
+
+.desktop-product-table .data-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table-empty-state {
+  min-width: 720px;
+  color: #63758a;
+  padding: 28px 18px;
+}
+
+.selected-product-summary {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
+  gap: 16px;
+  border: 1px solid #dce4ee;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 16px;
+}
+
+.selected-product-summary span,
+.selected-product-summary dt {
+  color: #63758a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.selected-product-summary strong {
+  display: block;
+  color: #19334d;
+  font-size: 20px;
+  margin-top: 5px;
+}
+
+.selected-product-summary p {
+  color: #31445a;
+  margin-top: 5px;
+}
+
+.selected-product-summary dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+
+.selected-product-summary dl div {
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.selected-product-summary dd {
+  margin: 5px 0 0;
+  color: #19334d;
+  font-weight: 800;
 }
 
 .product-tree-detail {
@@ -749,6 +996,17 @@ button.data-row.selected {
   .product-filter-panel {
     position: static;
     max-height: none;
+  }
+
+  .product-commandbar,
+  .selected-product-summary,
+  .selected-product-summary dl {
+    grid-template-columns: 1fr;
+  }
+
+  .primary-toolbar,
+  .secondary-toolbar {
+    justify-content: flex-start;
   }
 
   .status-grid {

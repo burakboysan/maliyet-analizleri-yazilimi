@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -77,6 +78,28 @@ const productColumns: Array<{ key: ProductFilterKey | "maliyet"; label: string; 
   { key: "fan_kumanda_tipi", label: "Fan Pano Tipi", filterType: "select" },
   { key: "patlama_kapagi", label: "Patlama Kapağı", filterType: "text" },
   { key: "filtre_elemani_sayisi", label: "Filtre Sayısı", filterType: "text" },
+];
+
+const productFilterGroups: Array<{
+  title: string;
+  description: string;
+  keys: ProductFilterKey[];
+}> = [
+  {
+    title: "Ana filtreler",
+    description: "Ürünü kod, ad, kategori ve model üzerinden daraltın.",
+    keys: ["urun_kodu", "urun_adi", "urun_kategorisi", "urun_tipi", "urun_modeli"],
+  },
+  {
+    title: "Filtre ve pano",
+    description: "Filtre medyası, patlaç kontrol ve fan pano bilgilerine göre süzün.",
+    keys: ["filtre_medyasi", "filtre_medyasi_kodu", "patlac_kumanda_tipi", "fan_kumanda_tipi"],
+  },
+  {
+    title: "Teknik değerler",
+    description: "Debi, basınç, motor ve filtre sayısı gibi teknik alanları kullanın.",
+    keys: ["toplam_filtre_alani", "debi", "fan_basinc", "fan_basinc_birimi", "motor", "patlama_kapagi", "filtre_elemani_sayisi"],
+  },
 ];
 
 const moduleIcons = [Boxes, Database, Gauge, FileText, ShieldCheck];
@@ -174,6 +197,17 @@ export function App() {
   }, [materialSearch, modules, productSearch, selectedProduct, token, user]);
 
   const firstPhaseModules = useMemo(() => modules.filter((module) => module.phase === 1), [modules]);
+  const activeFilterEntries = useMemo(() => {
+    const entries = productColumns
+      .filter((column) => column.filterType)
+      .map((column) => {
+        const key = column.key as ProductFilterKey;
+        const value = String(productFilters[key] ?? "").trim();
+        return value ? { key, label: column.label, value } : null;
+      })
+      .filter((entry): entry is { key: ProductFilterKey; label: string; value: string } => entry !== null);
+    return productSearch.trim() ? [{ key: "urun_adi" as ProductFilterKey, label: "Genel arama", value: productSearch.trim() }, ...entries] : entries;
+  }, [productFilters, productSearch]);
   const activeFilterCount = useMemo(
     () => Object.values(productFilters).filter((value) => String(value ?? "").trim()).length + (productSearch.trim() ? 1 : 0),
     [productFilters, productSearch],
@@ -391,6 +425,7 @@ export function App() {
         {view === "products" ? (
           <ProductModuleScreen
             activeFilterCount={activeFilterCount}
+            activeFilterEntries={activeFilterEntries}
             filterOptions={productFilterOptions}
             filters={productFilters}
             isLoading={isLoadingData}
@@ -404,6 +439,7 @@ export function App() {
             productTree={productTree}
             products={filteredProducts}
             selectedProduct={selectedProduct}
+            totalProductCount={products.length}
           />
         ) : view === "materials" ? (
           <MaterialsScreen materials={materials} materialSearch={materialSearch} onMaterialSearchChange={setMaterialSearch} />
@@ -417,6 +453,7 @@ export function App() {
 
 function ProductModuleScreen({
   activeFilterCount,
+  activeFilterEntries,
   filterOptions,
   filters,
   isLoading,
@@ -430,8 +467,10 @@ function ProductModuleScreen({
   productTree,
   products,
   selectedProduct,
+  totalProductCount,
 }: {
   activeFilterCount: number;
+  activeFilterEntries: Array<{ key: ProductFilterKey; label: string; value: string }>;
   filterOptions: Partial<Record<ProductFilterKey, string[]>>;
   filters: Partial<Record<ProductFilterKey, string>>;
   isLoading: boolean;
@@ -445,67 +484,97 @@ function ProductModuleScreen({
   productTree: ProductTree | null;
   products: ProductInfo[];
   selectedProduct: ProductInfo | null;
+  totalProductCount: number;
 }) {
   return (
     <section className="product-module-shell">
       <aside className="product-filter-panel">
-        <div className="filter-title">
-          <strong>Filtreler</strong>
-          <span>{activeFilterCount ? `${activeFilterCount} aktif filtre` : "Filtre yok"}</span>
+        <div className="filter-panel-header">
+          <div className="filter-title">
+            <SlidersHorizontal size={20} />
+            <strong>Filtreleme</strong>
+          </div>
+          <span>{activeFilterCount ? `${activeFilterCount} aktif` : "Temiz"}</span>
         </div>
+
         <label className="search-box full-search">
           <Search size={18} />
-          <input value={productSearch} onChange={(event) => onSearchChange(event.target.value)} placeholder="Anında arama" />
+          <input value={productSearch} onChange={(event) => onSearchChange(event.target.value)} placeholder="Kod, ad, kategori veya model ara" />
         </label>
-        <button className="filter-clear-button" type="button" onClick={onClearFilters}>
-          Tüm Filtreleri Temizle
+
+        <div className="filter-summary-card">
+          <strong>{products.length}</strong>
+          <span>{totalProductCount === products.length ? "ürün gösteriliyor" : `${totalProductCount} ürün içinden gösteriliyor`}</span>
+        </div>
+
+        {activeFilterEntries.length ? (
+          <div className="active-filter-list" aria-label="Aktif filtreler">
+            {activeFilterEntries.map((entry, index) => (
+              <button
+                className="active-filter-chip"
+                key={`${entry.key}-${index}`}
+                type="button"
+                onClick={() => (entry.label === "Genel arama" ? onSearchChange("") : onFilterChange(entry.key, ""))}
+              >
+                <span>{entry.label}</span>
+                <strong>{entry.value}</strong>
+                <X size={14} />
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <button className="filter-clear-button" type="button" onClick={onClearFilters} disabled={!activeFilterCount}>
+          Filtreleri Temizle
         </button>
-        <div className="filter-grid">
-          {productColumns
-            .filter((column) => column.filterType)
-            .map((column) => {
-              const key = column.key as ProductFilterKey;
-              return (
-                <label className="filter-control" key={key}>
-                  <span>{column.label}</span>
-                  {column.filterType === "select" ? (
-                    <select value={filters[key] ?? ""} onChange={(event) => onFilterChange(key, event.target.value)}>
-                      <option value="">Tümü</option>
-                      {(filterOptions[key] ?? []).map((value) => (
-                        <option value={value} key={value}>
-                          {value}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input value={filters[key] ?? ""} onChange={(event) => onFilterChange(key, event.target.value)} placeholder={`${column.label} ara`} />
-                  )}
-                </label>
-              );
-            })}
+
+        <div className="filter-groups">
+          {productFilterGroups.map((group, index) => (
+            <FilterGroup
+              defaultOpen={index === 0}
+              filterOptions={filterOptions}
+              filters={filters}
+              group={group}
+              key={group.title}
+              onFilterChange={onFilterChange}
+            />
+          ))}
         </div>
       </aside>
 
       <section className="product-workspace">
-        <div className="product-toolbar">
-          <ProductActionButton icon={<PackagePlus size={18} />} label="Ürün Ekle" onClick={() => onAction("add")} />
-          {isMaster ? (
-            <>
-              <ProductActionButton danger icon={<Trash2 size={18} />} label="Ürün Sil" onClick={() => onAction("delete")} />
-              <ProductActionButton icon={<Edit size={18} />} label="Düzenle" onClick={() => onAction("edit")} />
-            </>
-          ) : null}
-          <ProductActionButton icon={<GitBranch size={18} />} label="Ürün Ağacı" onClick={() => onAction("tree")} />
-          <ProductActionButton danger icon={<RefreshCw size={18} />} label="Fiyatları Revize Et" onClick={() => onAction("revise")} />
-          <ProductActionButton icon={<Copy size={18} />} label="Kopyala" onClick={() => onAction("copy")} />
-          <ProductActionButton icon={<Download size={18} />} label="Dışa Aktar" onClick={() => onAction("export")} />
-          <ProductActionButton icon={<X size={18} />} label="Kapat" onClick={() => onAction("close")} />
+        <div className="product-commandbar">
+          <div className="commandbar-copy">
+            <strong>Ürün Tablosu</strong>
+            <span>Masaüstündeki kolon yapısı korunur, filtreler soldan yönetilir.</span>
+          </div>
+          <div className="product-toolbar primary-toolbar">
+            <ProductActionButton emphasis icon={<PackagePlus size={18} />} label="Ürün Ekle" onClick={() => onAction("add")} />
+            <ProductActionButton icon={<GitBranch size={18} />} label="Ürün Ağacı" onClick={() => onAction("tree")} />
+            <ProductActionButton icon={<Download size={18} />} label="Dışa Aktar" onClick={() => onAction("export")} />
+          </div>
+          <div className="product-toolbar secondary-toolbar">
+            {isMaster ? (
+              <>
+                <ProductActionButton danger icon={<Trash2 size={18} />} label="Ürün Sil" onClick={() => onAction("delete")} />
+                <ProductActionButton icon={<Edit size={18} />} label="Düzenle" onClick={() => onAction("edit")} />
+              </>
+            ) : null}
+            <ProductActionButton danger icon={<RefreshCw size={18} />} label="Fiyatları Revize Et" onClick={() => onAction("revise")} />
+            <ProductActionButton icon={<Copy size={18} />} label="Kopyala" onClick={() => onAction("copy")} />
+            <ProductActionButton icon={<X size={18} />} label="Kapat" onClick={() => onAction("close")} />
+          </div>
         </div>
 
         <div className="product-table-shell">
           <div className="product-table-header">
-            <strong>{products.length} ürün</strong>
-            <span>{isLoading ? "Veriler yükleniyor..." : selectedProduct ? `${selectedProduct.urun_kodu} seçili` : "Tablodan ürün seçin"}</span>
+            <div>
+              <strong>{products.length} ürün</strong>
+              <span>{totalProductCount !== products.length ? `${totalProductCount} toplam kayıttan filtrelendi` : "Veritabanından gelen güncel liste"}</span>
+            </div>
+            <div className={selectedProduct ? "selected-product-pill" : "selected-product-pill muted-pill"}>
+              {isLoading ? "Veriler yükleniyor..." : selectedProduct ? `${selectedProduct.urun_kodu} seçili` : "Tablodan ürün seçin"}
+            </div>
           </div>
           <div className="data-table desktop-product-table" role="table" aria-label="Ürünler">
             <div className="data-row header" role="row">
@@ -525,8 +594,33 @@ function ProductModuleScreen({
                 ))}
               </button>
             ))}
+            {!products.length ? <div className="table-empty-state">Bu filtrelerle eşleşen ürün bulunamadı.</div> : null}
           </div>
         </div>
+
+        {selectedProduct ? (
+          <section className="selected-product-summary">
+            <div>
+              <span>Seçili Ürün</span>
+              <strong>{selectedProduct.urun_kodu}</strong>
+              <p>{selectedProduct.urun_adi || "Ürün adı yok"}</p>
+            </div>
+            <dl>
+              <div>
+                <dt>Kategori</dt>
+                <dd>{selectedProduct.urun_kategorisi || "-"}</dd>
+              </div>
+              <div>
+                <dt>Model</dt>
+                <dd>{selectedProduct.urun_modeli || "-"}</dd>
+              </div>
+              <div>
+                <dt>Maliyet</dt>
+                <dd>{formatMoney(selectedProduct.maliyet)}</dd>
+              </div>
+            </dl>
+          </section>
+        ) : null}
 
         {productTree ? (
           <section className="product-tree-detail">
@@ -550,20 +644,72 @@ function ProductModuleScreen({
 
 function ProductActionButton({
   danger = false,
+  emphasis = false,
   icon,
   label,
   onClick,
 }: {
   danger?: boolean;
+  emphasis?: boolean;
   icon: ReactNode;
   label: string;
   onClick: () => void;
 }) {
   return (
-    <button className={danger ? "product-action danger" : "product-action"} type="button" onClick={onClick}>
+    <button className={danger ? "product-action danger" : emphasis ? "product-action emphasis" : "product-action"} type="button" onClick={onClick}>
       {icon}
       <span>{label}</span>
     </button>
+  );
+}
+
+function FilterGroup({
+  defaultOpen,
+  filterOptions,
+  filters,
+  group,
+  onFilterChange,
+}: {
+  defaultOpen: boolean;
+  filterOptions: Partial<Record<ProductFilterKey, string[]>>;
+  filters: Partial<Record<ProductFilterKey, string>>;
+  group: (typeof productFilterGroups)[number];
+  onFilterChange: (key: ProductFilterKey, value: string) => void;
+}) {
+  return (
+    <details className="filter-group" open={defaultOpen}>
+      <summary>
+        <span>
+          <strong>{group.title}</strong>
+          <small>{group.description}</small>
+        </span>
+      </summary>
+      <div className="filter-grid">
+        {group.keys.map((key) => {
+          const column = productColumns.find((item) => item.key === key);
+          if (!column) {
+            return null;
+          }
+          return (
+            <label className="filter-control" key={key}>
+              <span>{column.label}</span>
+              {column.filterType === "select" ? (
+                <select value={filters[key] ?? ""} onChange={(event) => onFilterChange(key, event.target.value)}>
+                  <option value="">Tümü</option>
+                  {(filterOptions[key] ?? []).map((value) => (
+                    <option value={value} key={value}>
+                      {value}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input value={filters[key] ?? ""} onChange={(event) => onFilterChange(key, event.target.value)} placeholder={`${column.label} ara`} />
+              )}
+            </label>
+          );
+        })}
+      </div>
+    </details>
   );
 }
 
