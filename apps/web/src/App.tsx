@@ -1,6 +1,8 @@
 import {
   AlertCircle,
   Boxes,
+  CircleDollarSign,
+  ClipboardList,
   Copy,
   Database,
   Download,
@@ -15,6 +17,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Trash2,
+  Wrench,
   X,
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -744,7 +747,10 @@ function ProductDetailModal({
             <>
               <section className="detail-card product-info-card">
                 <div className="detail-card-heading">
-                  <strong>Ürün Bilgileri</strong>
+                  <strong>
+                    <ClipboardList size={18} />
+                    Ürün Bilgileri
+                  </strong>
                   <span>Masaüstü detay kartındaki alanlar</span>
                 </div>
                 <div className="detail-field-grid">
@@ -759,7 +765,10 @@ function ProductDetailModal({
 
               <section className="detail-card cost-card">
                 <div className="detail-card-heading">
-                  <strong>Maliyet Kırılımları</strong>
+                  <strong>
+                    <CircleDollarSign size={18} />
+                    Maliyet Kırılımları
+                  </strong>
                   <span>Son hesaplama: {formatValue(product.maliyet_hesaplama_tarihi)}</span>
                 </div>
                 <div className="cost-breakdown-list">
@@ -774,7 +783,10 @@ function ProductDetailModal({
 
               <section className="detail-card labor-card">
                 <div className="detail-card-heading">
-                  <strong>İşçilik Bilgileri</strong>
+                  <strong>
+                    <Wrench size={18} />
+                    İşçilik Bilgileri
+                  </strong>
                   <span>Masaüstündeki işçilik türleriyle aynı sırada</span>
                 </div>
                 <div className="labor-table">

@@ -1000,8 +1000,23 @@ button.data-row.selected {
 }
 
 .detail-card-heading strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   color: #19334d;
   font-size: 17px;
+}
+
+.product-info-card .detail-card-heading strong svg {
+  color: #2d6fa3;
+}
+
+.cost-card .detail-card-heading strong svg {
+  color: #b97814;
+}
+
+.labor-card .detail-card-heading strong svg {
+  color: #2f8a5e;
 }
 
 .detail-field-grid {
