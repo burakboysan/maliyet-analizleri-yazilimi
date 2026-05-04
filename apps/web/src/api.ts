@@ -58,8 +58,8 @@ export type ProductTreeItem = {
 
 export type ProductLabor = {
   iscilik_tipi?: string | null;
-  usta_saat?: number | null;
-  yardimci_saat?: number | null;
+  usta_saat?: number | string | null;
+  yardimci_saat?: number | string | null;
 };
 
 export type ProductDetailField = {
@@ -84,6 +84,21 @@ export type ProductDetail = {
   labor_rows: ProductLabor[];
   channel_fields: ProductDetailField[];
   flange_fields: ProductDetailField[];
+};
+
+export type ProductUpdatePayload = {
+  fields: Record<string, string | number | null>;
+  labor_rows: ProductLabor[];
+  recalculate_cost: boolean;
+};
+
+export type ProductUpdateResponse = {
+  product_id: number;
+  updated_fields: string[];
+  labor_updated: boolean;
+  cost_recalculated: boolean;
+  recalculation_error?: string | null;
+  detail: ProductDetail;
 };
 
 export type ProductTree = {
@@ -196,4 +211,19 @@ export async function fetchProductDetail(token: string, productId: number): Prom
     throw new Error(await parseError(response));
   }
   return (await response.json()) as ProductDetail;
+}
+
+export async function updateProduct(token: string, productId: number, payload: ProductUpdatePayload): Promise<ProductUpdateResponse> {
+  const response = await fetch(`${API_BASE_URL}/products/${productId}`, {
+    method: "PUT",
+    headers: {
+      ...authHeaders(token),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response));
+  }
+  return (await response.json()) as ProductUpdateResponse;
 }

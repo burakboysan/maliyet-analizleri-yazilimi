@@ -66,6 +66,12 @@ class ProductLaborResponse(BaseModel):
     yardimci_saat: float | None = None
 
 
+class ProductLaborUpdateRequest(BaseModel):
+    iscilik_tipi: str
+    usta_saat: float | int | str | None = 0
+    yardimci_saat: float | int | str | None = 0
+
+
 class ProductDetailFieldResponse(BaseModel):
     key: str
     label: str
@@ -88,6 +94,21 @@ class ProductDetailResponse(BaseModel):
     labor_rows: list[ProductLaborResponse]
     channel_fields: list[ProductDetailFieldResponse] = []
     flange_fields: list[ProductDetailFieldResponse] = []
+
+
+class ProductUpdateRequest(BaseModel):
+    fields: dict[str, str | float | int | None] = {}
+    labor_rows: list[ProductLaborUpdateRequest] = []
+    recalculate_cost: bool = False
+
+
+class ProductUpdateResponse(BaseModel):
+    product_id: int
+    updated_fields: list[str]
+    labor_updated: bool = False
+    cost_recalculated: bool = False
+    recalculation_error: str | None = None
+    detail: ProductDetailResponse
 
 
 class ProductTreeResponse(BaseModel):

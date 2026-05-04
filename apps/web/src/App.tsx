@@ -31,9 +31,11 @@ import {
   fetchProducts,
   fetchProductTree,
   login,
+  updateProduct,
   type MaterialInfo,
   type ModuleInfo,
   type ProductDetail,
+  type ProductLabor,
   type ProductInfo,
   type ProductTree,
   type UserInfo,
@@ -108,6 +110,20 @@ const productFilterGroups: Array<{
 ];
 
 const moduleIcons = [Boxes, Database, Gauge, FileText, ShieldCheck];
+const readonlyDetailFields = new Set([
+  "id",
+  "urun_kodu",
+  "maliyet",
+  "malzeme_maliyeti",
+  "iscilik_maliyeti",
+  "uretim_gideri",
+  "yonetim_gideri",
+  "alt_urun_maliyeti",
+  "kanal_agirligi",
+  "flans_agirligi",
+  "flans_durumu",
+  "maliyet_hesaplama_tarihi",
+]);
 
 function formatValue(value?: string | number | null) {
   if (value === null || value === undefined || value === "") {
@@ -153,7 +169,9 @@ export function App() {
   const [productDetail, setProductDetail] = useState<ProductDetail | null>(null);
   const [productTree, setProductTree] = useState<ProductTree | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
+  const [detailMode, setDetailMode] = useState<"view" | "edit">("view");
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
+  const [isSavingDetail, setIsSavingDetail] = useState(false);
   const [view, setView] = useState<AppView>("dashboard");
   const [dataError, setDataError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -286,14 +304,15 @@ export function App() {
     }
   }
 
-  async function handleOpenProductDetail(product?: ProductInfo) {
+  async function handleOpenProductDetail(product?: ProductInfo, mode: "view" | "edit" = "view") {
     const targetProduct = product ?? selectedProduct;
     if (!targetProduct) {
-      setNotice("Ürün detayını açmak için önce tablodan bir ürün seçin.");
+      setNotice(mode === "edit" ? "Ürünü düzenlemek için önce tablodan bir ürün seçin." : "Ürün detayını açmak için önce tablodan bir ürün seçin.");
       return;
     }
 
     setSelectedProduct(targetProduct);
+    setDetailMode(mode);
     setIsDetailOpen(true);
     setIsLoadingDetail(true);
     setProductDetail(null);
@@ -308,9 +327,46 @@ export function App() {
     }
   }
 
+  async function handleSaveProductDetail(fields: Record<string, string | number | null>, laborRows: ProductLabor[]) {
+    if (!productDetail || !token) {
+      return;
+    }
+    const recalculateCost = window.confirm("Ürün bilgileri kaydedildikten sonra maliyeti yeniden hesaplamak ister misiniz?");
+    setIsSavingDetail(true);
+    setDataError(null);
+    try {
+      const response = await updateProduct(token, Number(productDetail.product.id), {
+        fields,
+        labor_rows: laborRows,
+        recalculate_cost: recalculateCost,
+      });
+      setProductDetail(response.detail);
+      const productRows = await fetchProducts(token, productSearch);
+      setProducts(productRows);
+      setSelectedProduct(productRows.find((product) => product.id === response.product_id) ?? null);
+      setProductTree(null);
+      setIsDetailOpen(false);
+      setNotice(
+        response.recalculation_error
+          ? `Ürün kaydedildi, ancak maliyet yeniden hesaplanamadı: ${response.recalculation_error}`
+          : response.cost_recalculated
+            ? "Ürün kaydedildi ve maliyet yeniden hesaplandı."
+            : "Ürün kaydedildi.",
+      );
+    } catch (err) {
+      setDataError(err instanceof Error ? err.message : "Ürün kaydedilemedi.");
+    } finally {
+      setIsSavingDetail(false);
+    }
+  }
+
   function handleProductAction(action: string) {
     if (action === "detail") {
       handleOpenProductDetail();
+      return;
+    }
+    if (action === "edit") {
+      handleOpenProductDetail(undefined, "edit");
       return;
     }
     if (action === "tree") {
@@ -491,11 +547,14 @@ export function App() {
       {isDetailOpen ? (
         <ProductDetailModal
           detail={productDetail}
+          mode={detailMode}
           isLoading={isLoadingDetail}
+          isSaving={isSavingDetail}
           onClose={() => {
             setIsDetailOpen(false);
             setProductDetail(null);
           }}
+          onSave={handleSaveProductDetail}
         />
       ) : null}
     </main>
@@ -699,14 +758,23 @@ function ProductModuleScreen({
 
 function ProductDetailModal({
   detail,
+  mode,
   isLoading,
+  isSaving,
   onClose,
+  onSave,
 }: {
   detail: ProductDetail | null;
+  mode: "view" | "edit";
   isLoading: boolean;
+  isSaving: boolean;
   onClose: () => void;
+  onSave: (fields: Record<string, string | number | null>, laborRows: ProductLabor[]) => void;
 }) {
+  const isEditMode = mode === "edit";
   const product = detail?.product ?? {};
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [laborValues, setLaborValues] = useState<ProductLabor[]>([]);
   const costRows = detail
     ? [
         { label: "Malzeme Maliyeti", value: detail.cost_breakdown.malzeme_maliyeti },
@@ -718,12 +786,48 @@ function ProductDetailModal({
       ]
     : [];
 
+  useEffect(() => {
+    if (!detail) {
+      setFieldValues({});
+      setLaborValues([]);
+      return;
+    }
+    setFieldValues(
+      Object.fromEntries(
+        detail.display_fields.map((field) => [field.key, field.value === null || field.value === undefined || field.value === "-" ? "" : String(field.value)]),
+      ),
+    );
+    setLaborValues(detail.labor_rows.map((row) => ({ ...row, usta_saat: row.usta_saat ?? 0, yardimci_saat: row.yardimci_saat ?? 0 })));
+  }, [detail]);
+
+  function updateFieldValue(key: string, value: string) {
+    setFieldValues((current) => ({ ...current, [key]: value }));
+  }
+
+  function updateLaborValue(index: number, key: "usta_saat" | "yardimci_saat", value: string) {
+    setLaborValues((current) =>
+      current.map((row, rowIndex) => (rowIndex === index ? { ...row, [key]: value === "" ? 0 : value } : row)),
+    );
+  }
+
+  function handleSubmit() {
+    if (!detail) {
+      return;
+    }
+    const editableFields = Object.fromEntries(
+      detail.display_fields
+        .filter((field) => !readonlyDetailFields.has(field.key))
+        .map((field) => [field.key, fieldValues[field.key] === undefined || fieldValues[field.key] === "" ? null : fieldValues[field.key]]),
+    );
+    onSave(editableFields, laborValues);
+  }
+
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="product-detail-modal" role="dialog" aria-modal="true" aria-labelledby="product-detail-title">
         <header className="product-detail-header">
           <div>
-            <span>Ürün Detay Kartı</span>
+            <span>{isEditMode ? "Ürün Düzenleme Kartı" : "Ürün Detay Kartı"}</span>
             <h2 id="product-detail-title">
               {formatValue(product.urun_kodu)} · {formatValue(product.urun_adi)}
             </h2>
@@ -751,13 +855,29 @@ function ProductDetailModal({
                     <ClipboardList size={18} />
                     Ürün Bilgileri
                   </strong>
-                  <span>Masaüstü detay kartındaki alanlar</span>
+                  <span>{isEditMode ? "Masaüstünde düzenlenebilir olan alanlar aktif" : "Masaüstü detay kartındaki alanlar"}</span>
                 </div>
                 <div className="detail-field-grid">
                   {detail.display_fields.map((field) => (
                     <div className="detail-field" key={field.key}>
                       <span>{field.label}</span>
-                      <strong>{formatValue(field.value)}</strong>
+                      {isEditMode && !readonlyDetailFields.has(field.key) ? (
+                        field.key === "aciklama" ? (
+                          <textarea
+                            className="detail-textarea"
+                            value={fieldValues[field.key] ?? ""}
+                            onChange={(event) => updateFieldValue(field.key, event.target.value)}
+                          />
+                        ) : (
+                          <input
+                            className="detail-input"
+                            value={fieldValues[field.key] ?? ""}
+                            onChange={(event) => updateFieldValue(field.key, event.target.value)}
+                          />
+                        )
+                      ) : (
+                        <strong>{formatValue(field.value)}</strong>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -787,7 +907,7 @@ function ProductDetailModal({
                     <Wrench size={18} />
                     İşçilik Bilgileri
                   </strong>
-                  <span>Masaüstündeki işçilik türleriyle aynı sırada</span>
+                  <span>{isEditMode ? "Usta ve yardımcı saatleri düzenlenebilir" : "Masaüstündeki işçilik türleriyle aynı sırada"}</span>
                 </div>
                 <div className="labor-table">
                   <div className="labor-row header">
@@ -795,11 +915,34 @@ function ProductDetailModal({
                     <span>Usta Saat</span>
                     <span>Yardımcı Saat</span>
                   </div>
-                  {detail.labor_rows.map((row) => (
+                  {(isEditMode ? laborValues : detail.labor_rows).map((row, index) => (
                     <div className="labor-row" key={row.iscilik_tipi ?? "empty"}>
                       <span>{row.iscilik_tipi || "-"}</span>
-                      <span>{formatValue(row.usta_saat)}</span>
-                      <span>{formatValue(row.yardimci_saat)}</span>
+                      {isEditMode ? (
+                        <>
+                          <input
+                            className="labor-input"
+                            min="0"
+                            step="0.01"
+                            type="number"
+                            value={row.usta_saat ?? 0}
+                            onChange={(event) => updateLaborValue(index, "usta_saat", event.target.value)}
+                          />
+                          <input
+                            className="labor-input"
+                            min="0"
+                            step="0.01"
+                            type="number"
+                            value={row.yardimci_saat ?? 0}
+                            onChange={(event) => updateLaborValue(index, "yardimci_saat", event.target.value)}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <span>{formatValue(row.usta_saat)}</span>
+                          <span>{formatValue(row.yardimci_saat)}</span>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -811,6 +954,11 @@ function ProductDetailModal({
         </div>
 
         <footer className="product-detail-footer">
+          {isEditMode ? (
+            <button className="product-action emphasis" type="button" onClick={handleSubmit} disabled={isSaving || isLoading || !detail}>
+              {isSaving ? "Kaydediliyor..." : "Değişiklikleri Kaydet"}
+            </button>
+          ) : null}
           <button className="product-action" type="button" onClick={onClose}>
             Geri Dön
           </button>
