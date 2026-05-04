@@ -14,3 +14,6 @@ dist_installer/
 Bomaksan_Maliyet_Analizleri_Setup/
 .deploy_tmp_mobile_api/
 .deploy_tmp_mobile_api_v2/
+node_modules/
+apps/web/dist/
+apps/web/.vite/
