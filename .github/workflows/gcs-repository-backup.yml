@@ -1,0 +1,55 @@
+name: GCS Repository Backup
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  backup:
+    name: Create git bundle backup
+    runs-on: ubuntu-latest
+    env:
+      GCP_PROJECT_ID: ai-lead-automation-backups
+      GCS_BUCKET: ai-lead-automation-prod-repo-backups
+      REPOSITORY_BACKUP_NAME: maliyet-analizleri-yazilimi
+      WORKLOAD_IDENTITY_PROVIDER: projects/469813258840/locations/global/workloadIdentityPools/github-actions/providers/github
+      BACKUP_SERVICE_ACCOUNT: github-repo-backup-writer@ai-lead-automation-backups.iam.gserviceaccount.com
+
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.BACKUP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Create and verify bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          export TZ=Europe/Istanbul
+          timestamp="$(date +%Y%m%d_%H%M%S)"
+          year="$(date +%Y)"
+          month="$(date +%m)"
+          bundle_file="${REPOSITORY_BACKUP_NAME}_${timestamp}.bundle"
+          gcs_uri="gs://${GCS_BUCKET}/github/${REPOSITORY_BACKUP_NAME}/year=${year}/month=${month}/${bundle_file}"
+
+          git bundle create "${bundle_file}" --all --tags
+          git bundle verify "${bundle_file}"
+          gcloud storage cp "${bundle_file}" "${gcs_uri}" --project="${GCP_PROJECT_ID}"
+          echo "Backup uploaded: ${gcs_uri}"
