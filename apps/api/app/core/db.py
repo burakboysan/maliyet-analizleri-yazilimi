@@ -145,7 +145,7 @@ class PostgresCursor:
             return False
         return bool(
             re.match(
-                r"insert\s+into\s+(malzemeler|izin_talepleri|urunler|musteriler|urun_konfigurasyonlari|urun_konfigurasyon_kalemleri|documents|servis_formlari)\b",
+                r"insert\s+into\s+(malzemeler|izin_talepleri|urunler|musteriler|kullanicilar|sabit_maliyet_kalemleri|iscilik|urun_konfigurasyonlari|urun_konfigurasyon_kalemleri|documents|servis_formlari)\b",
                 normalized,
             )
         )

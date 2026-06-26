@@ -379,7 +379,17 @@ def _fetch_costs(connection: MySQLConnection, product_codes: list[str]) -> dict[
 
 def _cost_summary(connection: MySQLConnection, summary: dict[str, Any] | None) -> dict[str, Any]:
     product_codes = _summary_product_codes(summary)
-    costs = _fetch_costs(connection, product_codes)
+    try:
+        costs = _fetch_costs(connection, product_codes)
+    except Exception as exc:
+        return {
+            "total_cost": None,
+            "found_codes": [],
+            "missing_codes": product_codes,
+            "zero_cost_codes": [],
+            "costs": {},
+            "error": f"Maliyet verisi okunamadı: {exc}",
+        }
     found_codes = [code for code in product_codes if costs.get(code) is not None]
     missing_codes = [code for code in product_codes if costs.get(code) is None]
     zero_cost_codes = [code for code in found_codes if float(costs.get(code) or 0) == 0]

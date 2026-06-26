@@ -13,6 +13,7 @@ from mysql.connector import MySQLConnection
 from pydantic import BaseModel
 
 from app.core.account_security import (
+    ensure_account_security_schema,
     reset_password_with_code,
     send_password_reset_code,
     send_verification_email,
@@ -174,6 +175,16 @@ def _column_exists(connection: MySQLConnection, table_name: str, column_name: st
         (table_name, column_name),
     )
     return cursor.fetchone() is not None
+
+
+def _ensure_leave_admin_schema(connection: MySQLConnection) -> None:
+    ensure_account_security_schema(connection)
+    cursor = connection.cursor()
+    if not _column_exists(connection, "kullanicilar", "manager_user_id"):
+        cursor.execute("ALTER TABLE kullanicilar ADD COLUMN manager_user_id INT NULL")
+    if not _column_exists(connection, "kullanicilar", "leave_notification_email"):
+        cursor.execute("ALTER TABLE kullanicilar ADD COLUMN leave_notification_email BOOLEAN NOT NULL DEFAULT TRUE")
+    connection.commit()
 
 
 def _product_row(row: dict[str, Any]) -> dict[str, Any]:
@@ -341,17 +352,23 @@ def admin_leave_users(connection: MySQLConnection = Depends(get_connection), cur
     require_module_access(current_user, "leave_management")
     if not _is_owner(current_user):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli.")
+    _ensure_leave_admin_schema(connection)
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
-        SELECT k.id, k.kullanici_adi, k.email, k.manager_user_id, k.leave_notification_email,
+        SELECT k.id, k.kullanici_adi, k.email, k.rol_id, r.rol_adi,
+               k.email_verified, k.is_active, k.module_permissions,
+               k.manager_user_id, k.leave_notification_email,
                COALESCE(b.annual_allowance_days, 14) AS annual_allowance_days,
                COALESCE(b.carried_over_days, 0) AS carried_over_days,
                COALESCE(b.reserved_days, 0) AS reserved_days,
                COALESCE(b.used_days, 0) AS used_days,
-               COALESCE(b.pending_approval_days, 0) AS pending_approval_days
+               COALESCE(b.pending_approval_days, 0) AS pending_approval_days,
+               m.kullanici_adi AS manager_kullanici_adi
         FROM kullanicilar k
+        LEFT JOIN roller r ON r.id = k.rol_id
         LEFT JOIN izin_bakiyeleri b ON b.user_id = k.id
+        LEFT JOIN kullanicilar m ON m.id = k.manager_user_id
         ORDER BY k.kullanici_adi
         """
     )
@@ -365,6 +382,10 @@ def admin_leave_users(connection: MySQLConnection = Depends(get_connection), cur
             - _float_value(row.get("pending_approval_days"))
         )
         row["available_days"] = available
+        row["email_verified"] = bool(row.get("email_verified"))
+        row["is_active"] = bool(row.get("is_active"))
+        row["leave_notification_email"] = bool(row.get("leave_notification_email"))
+        row["module_permissions"] = parse_module_permissions(row.get("module_permissions"))
         users.append(row)
     return users
 
@@ -379,6 +400,7 @@ def update_admin_leave_user(
     require_module_access(current_user, "leave_management")
     if not _is_owner(current_user):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli.")
+    _ensure_leave_admin_schema(connection)
     cursor = connection.cursor(dictionary=True)
     cursor.execute("UPDATE kullanicilar SET manager_user_id = %s, leave_notification_email = %s WHERE id = %s", (payload.manager_user_id, payload.leave_notification_email, user_id))
     cursor.execute("SELECT id FROM izin_bakiyeleri WHERE user_id = %s LIMIT 1", (user_id,))
@@ -724,6 +746,24 @@ def upload_document(
     connection.commit()
     cursor.execute("SELECT id, product_id, series_key, title, document_type, language, file_url, description, sort_order, is_active FROM documents WHERE id = %s", (document_id,))
     return cursor.fetchone()
+
+
+@router.delete("/documents/{document_id}")
+def delete_document(
+    document_id: int,
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "documents")
+    if not _is_owner(current_user):
+        raise HTTPException(status_code=403, detail="Doküman silme için admin yetkisi gerekli.")
+    cursor = connection.cursor()
+    cursor.execute("UPDATE documents SET is_active = FALSE WHERE id = %s", (document_id,))
+    deleted_count = int(cursor.rowcount or 0)
+    connection.commit()
+    if deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Doküman bulunamadı.")
+    return {"status": "deleted", "deleted_count": deleted_count, "message": "Doküman silindi."}
 
 
 @router.get("/menu-images")
