@@ -148,6 +148,11 @@ class PostgresCursor:
                 "insert into malzemeler ",
                 "insert into izin_talepleri ",
                 "insert into urunler ",
+                "insert into musteriler ",
+                "insert into urun_konfigurasyonlari ",
+                "insert into urun_konfigurasyon_kalemleri ",
+                "insert into documents ",
+                "insert into servis_formlari ",
             )
         )
 

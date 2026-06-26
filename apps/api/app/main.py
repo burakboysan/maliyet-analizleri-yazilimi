@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.settings import get_allowed_origins
-from app.routers import auth, health, leave, materials, modules, products, selection_wizard
+from app.routers import auth, health, leave, materials, mobile_compat, modules, products, selection_wizard
 
 
 app = FastAPI(
@@ -20,8 +20,10 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(auth.router)
+app.include_router(mobile_compat.router)
 app.include_router(modules.router)
 app.include_router(leave.router)
 app.include_router(materials.router)
 app.include_router(products.router)
+app.include_router(mobile_compat.tail_router)
 app.include_router(selection_wizard.router)
