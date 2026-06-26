@@ -8,6 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Bomaksan Maliyet API"
     api_env: str = "dev"
+    database_url: str = ""
+    allowed_origins: str = ""
     db_host: str = ""
     db_port: int = 3306
     db_user: str = ""
@@ -36,7 +38,12 @@ def _load_desktop_db_config() -> dict[str, object]:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     settings = Settings()
+    if settings.database_url:
+        return settings
     if settings.db_host and settings.db_user and settings.db_password and settings.db_name:
+        return settings
+
+    if settings.api_env != "dev":
         return settings
 
     db_config = _load_desktop_db_config()
@@ -46,3 +53,19 @@ def get_settings() -> Settings:
     settings.db_password = str(db_config["password"])
     settings.db_name = str(db_config["database"])
     return settings
+
+
+def get_allowed_origins() -> list[str]:
+    settings = get_settings()
+    defaults = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5180",
+        "http://127.0.0.1:5180",
+    ]
+    configured = [
+        origin.strip()
+        for origin in settings.allowed_origins.split(",")
+        if origin.strip()
+    ]
+    return configured or defaults

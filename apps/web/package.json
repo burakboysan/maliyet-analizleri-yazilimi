@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
-    "build": "tsc && vite build",
+    "build": "node scripts/require-production-api-url.mjs && tsc && vite build",
+    "build:local": "tsc && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173"
   },
   "dependencies": {
