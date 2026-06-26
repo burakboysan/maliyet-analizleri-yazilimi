@@ -32,6 +32,10 @@ def verify_password(password: str, stored_hash: str) -> tuple[bool, bool]:
     return legacy_hash == normalized_hash, True
 
 
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(str(password or "").encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
 def _b64encode(payload: bytes) -> str:
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 

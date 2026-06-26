@@ -8,6 +8,36 @@ class LoginRequest(BaseModel):
     sifre: str
 
 
+class MessageResponse(BaseModel):
+    status: str
+    message: str
+
+
+class SignupRequest(BaseModel):
+    kullanici_adi: str
+    email: str
+    sifre: str
+
+
+class EmailVerificationSendRequest(BaseModel):
+    email: str
+
+
+class EmailVerificationConfirmRequest(BaseModel):
+    email: str
+    code: str
+
+
+class PasswordResetSendRequest(BaseModel):
+    identifier: str
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    identifier: str
+    code: str
+    new_password: str
+
+
 class UserResponse(BaseModel):
     id: int
     kullanici_adi: str

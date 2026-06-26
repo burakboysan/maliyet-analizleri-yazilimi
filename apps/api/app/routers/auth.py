@@ -1,9 +1,26 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from mysql.connector import MySQLConnection
 
+from app.core.account_security import (
+    create_account,
+    reset_password_with_code,
+    send_password_reset_code,
+    send_verification_email,
+    verify_email_code,
+)
 from app.core.db import get_connection
 from app.core.security import create_access_token, parse_module_permissions, require_current_user, verify_password
-from app.models import LoginRequest, LoginResponse, UserResponse
+from app.models import (
+    EmailVerificationConfirmRequest,
+    EmailVerificationSendRequest,
+    LoginRequest,
+    LoginResponse,
+    MessageResponse,
+    PasswordResetConfirmRequest,
+    PasswordResetSendRequest,
+    SignupRequest,
+    UserResponse,
+)
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -53,6 +70,46 @@ def login(payload: LoginRequest, connection: MySQLConnection = Depends(get_conne
 
     user = _normalize_user(row)
     return LoginResponse(access_token=create_access_token(user), user=UserResponse(**user))
+
+
+@router.post("/signup", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+def signup(payload: SignupRequest, connection: MySQLConnection = Depends(get_connection)):
+    try:
+        return MessageResponse(**create_account(connection, payload.kullanici_adi, payload.email, payload.sifre))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/email/send-verification", response_model=MessageResponse)
+def send_email_verification(payload: EmailVerificationSendRequest, connection: MySQLConnection = Depends(get_connection)):
+    try:
+        return MessageResponse(**send_verification_email(connection, payload.email))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/email/verify", response_model=MessageResponse)
+def confirm_email_verification(payload: EmailVerificationConfirmRequest, connection: MySQLConnection = Depends(get_connection)):
+    try:
+        return MessageResponse(**verify_email_code(connection, payload.email, payload.code))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/password/send-reset-code", response_model=MessageResponse)
+def send_password_reset(payload: PasswordResetSendRequest, connection: MySQLConnection = Depends(get_connection)):
+    try:
+        return MessageResponse(**send_password_reset_code(connection, payload.identifier))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/password/reset", response_model=MessageResponse)
+def confirm_password_reset(payload: PasswordResetConfirmRequest, connection: MySQLConnection = Depends(get_connection)):
+    try:
+        return MessageResponse(**reset_password_with_code(connection, payload.identifier, payload.code, payload.new_password))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/me", response_model=UserResponse)
