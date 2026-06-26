@@ -1,4 +1,5 @@
 from collections.abc import Iterator
+import re
 from typing import Any
 from urllib.parse import urlparse
 
@@ -10,6 +11,10 @@ from app.core.settings import get_settings
 
 _mysql_pool: pooling.MySQLConnectionPool | None = None
 _postgres_pool: Any | None = None
+
+
+def _postgres_compatible_query(query: str) -> str:
+    return re.sub(r"\bIFNULL\s*\(", "COALESCE(", query, flags=re.IGNORECASE)
 
 
 def get_database_backend() -> str:
@@ -72,8 +77,8 @@ class PostgresConnection:
         if dictionary:
             from psycopg.rows import dict_row
 
-            return self._connection.cursor(row_factory=dict_row)
-        return self._connection.cursor()
+            return PostgresCursor(self._connection.cursor(row_factory=dict_row))
+        return PostgresCursor(self._connection.cursor())
 
     def ping(self, reconnect: bool = False, attempts: int = 1, delay: int = 0) -> None:
         del reconnect, attempts, delay
@@ -95,6 +100,56 @@ class PostgresConnection:
 
     def start_transaction(self) -> None:
         return None
+
+
+class PostgresCursor:
+    def __init__(self, cursor: Any):
+        self._cursor = cursor
+        self.lastrowid: int | None = None
+
+    def execute(self, query: str, params: Any = None) -> Any:
+        converted = _postgres_compatible_query(query)
+        if self._should_capture_insert_id(converted):
+            converted = converted.rstrip().rstrip(";") + " RETURNING id"
+            result = self._cursor.execute(converted, params)
+            row = self._cursor.fetchone()
+            if row is None:
+                self.lastrowid = None
+            elif isinstance(row, dict):
+                self.lastrowid = int(row["id"])
+            else:
+                self.lastrowid = int(row[0])
+            return result
+        return self._cursor.execute(converted, params)
+
+    def executemany(self, query: str, params_seq: Any) -> Any:
+        return self._cursor.executemany(_postgres_compatible_query(query), params_seq)
+
+    def __enter__(self) -> "PostgresCursor":
+        self._cursor.__enter__()
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> Any:
+        return self._cursor.__exit__(exc_type, exc, traceback)
+
+    def __iter__(self) -> Any:
+        return iter(self._cursor)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._cursor, name)
+
+    @staticmethod
+    def _should_capture_insert_id(query: str) -> bool:
+        normalized = query.lstrip().lower()
+        if " returning " in normalized:
+            return False
+        return normalized.startswith(
+            (
+                "insert into malzemeler ",
+                "insert into izin_talepleri ",
+                "insert into urunler ",
+            )
+        )
 
 
 def get_connection() -> Iterator[Any]:
