@@ -17,3 +17,4 @@ Bomaksan_Maliyet_Analizleri_Setup/
 node_modules/
 apps/web/dist/
 apps/web/.vite/
+supabase/.temp/

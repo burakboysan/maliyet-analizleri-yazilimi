@@ -39,7 +39,26 @@ python scripts\mysql_dump_to_postgres.py `
   outputs\supabase_migration\supabase_import_20260626T084159Z.sql
 ```
 
-Oluşan SQL, Supabase Postgres connection string ile import edilir:
+Supabase Management API dosya boyutu limitine takılmamak için SQL dosyası chunk dosyalarına bölünür:
+
+```powershell
+python scripts\split_sql_for_supabase_query.py `
+  outputs\supabase_migration\supabase_import_20260626T084159Z.sql `
+  outputs\supabase_migration\supabase_import_20260626T084159Z_chunks `
+  --max-bytes 200000
+```
+
+Linked Supabase projesine chunk dosyaları sırayla uygulanır:
+
+```powershell
+$chunks = Get-ChildItem -LiteralPath "outputs\supabase_migration\supabase_import_20260626T084159Z_chunks" -Filter "*.sql" | Sort-Object Name
+foreach ($chunk in $chunks) {
+  supabase db query --linked --file $chunk.FullName
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+```
+
+Alternatif olarak, küçük SQL dosyaları Supabase Postgres connection string ile tek seferde import edilebilir:
 
 ```powershell
 supabase db query --db-url "<SUPABASE_DATABASE_URL>" --file outputs\supabase_migration\supabase_import_20260626T084159Z.sql

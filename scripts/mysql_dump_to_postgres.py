@@ -16,6 +16,8 @@ AUTO_INCREMENT_RE = re.compile(r"\bAUTO_INCREMENT\b", re.IGNORECASE)
 COLLATE_RE = re.compile(r"\s+COLLATE\s+\w+", re.IGNORECASE)
 CHARSET_RE = re.compile(r"\s+CHARACTER SET\s+\w+", re.IGNORECASE)
 ENGINE_RE = re.compile(r"\)\s+ENGINE=.*;$", re.IGNORECASE)
+COMMENT_RE = re.compile(r"\s+COMMENT\s+'(?:\\.|[^'])*'", re.IGNORECASE)
+MAX_INSERT_BYTES = 120_000
 
 
 def open_text(path: Path):
@@ -36,9 +38,116 @@ def split_column_list(columns: str) -> list[str]:
     return [convert_identifiers(part.strip()) for part in columns.split(",")]
 
 
+def split_insert_rows(values: str) -> list[str]:
+    rows: list[str] = []
+    start = 0
+    depth = 0
+    in_string = False
+    escaped = False
+
+    for index, char in enumerate(values):
+        if in_string:
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if char == "'":
+                in_string = False
+            continue
+
+        if char == "'":
+            in_string = True
+            continue
+        if char == "(":
+            depth += 1
+            continue
+        if char == ")":
+            depth -= 1
+            continue
+        if char == "," and depth == 0:
+            rows.append(values[start:index])
+            start = index + 1
+
+    tail = values[start:].strip()
+    if tail:
+        rows.append(tail)
+    return rows
+
+
+def decode_mysql_escape(char: str) -> str:
+    escapes = {
+        "0": "\0",
+        "'": "'",
+        '"': '"',
+        "b": "\b",
+        "n": "\n",
+        "r": "\r",
+        "t": "\t",
+        "Z": "\x1a",
+        "\\": "\\",
+    }
+    return escapes.get(char, char)
+
+
+def convert_mysql_string_literals(sql: str) -> str:
+    output: list[str] = []
+    index = 0
+
+    while index < len(sql):
+        char = sql[index]
+        if char != "'":
+            output.append(char)
+            index += 1
+            continue
+
+        index += 1
+        literal: list[str] = []
+        while index < len(sql):
+            current = sql[index]
+            if current == "\\":
+                index += 1
+                if index < len(sql):
+                    literal.append(decode_mysql_escape(sql[index]))
+                    index += 1
+                continue
+            if current == "'":
+                index += 1
+                break
+            literal.append(current)
+            index += 1
+
+        output.append("'" + "".join(literal).replace("'", "''") + "'")
+
+    return "".join(output)
+
+
+def convert_insert(table: str, values: str, max_bytes: int = MAX_INSERT_BYTES) -> list[str]:
+    prefix = f"INSERT INTO {quote_ident(table)} VALUES "
+    statements: list[str] = []
+    current_rows: list[str] = []
+    current_size = len(prefix) + 1
+
+    for row in split_insert_rows(values):
+        row = convert_mysql_string_literals(row)
+        row_size = len(row.encode("utf-8")) + 1
+        if current_rows and current_size + row_size > max_bytes:
+            statements.append(prefix + ",".join(current_rows) + ";")
+            current_rows = []
+            current_size = len(prefix) + 1
+        current_rows.append(row)
+        current_size += row_size
+
+    if current_rows:
+        statements.append(prefix + ",".join(current_rows) + ";")
+    return statements
+
+
 def convert_type(definition: str) -> str:
     result = COLLATE_RE.sub("", definition)
     result = CHARSET_RE.sub("", result)
+    result = COMMENT_RE.sub("", result)
     result = re.sub(r"\bunsigned\b", "", result, flags=re.IGNORECASE)
     result = re.sub(r"\bbigint\(\d+\)", "bigint", result, flags=re.IGNORECASE)
     result = re.sub(r"\btinyint\(1\)", "smallint", result, flags=re.IGNORECASE)
@@ -127,7 +236,7 @@ def convert_dump(source: Path, target: Path) -> None:
     output: list[str] = [
         "-- Generated from MySQL dump for Supabase/Postgres staging import.",
         "SET client_encoding = 'UTF8';",
-        "SET standard_conforming_strings = off;",
+        "SET standard_conforming_strings = on;",
         "SET check_function_bodies = false;",
         "",
     ]
@@ -157,7 +266,7 @@ def convert_dump(source: Path, target: Path) -> None:
                 if insert_match:
                     table = insert_match.group("table")
                     values = insert_match.group("values")
-                    output.append(f"INSERT INTO {quote_ident(table)} VALUES {values};")
+                    output.extend(convert_insert(table, values))
                     continue
 
                 continue
