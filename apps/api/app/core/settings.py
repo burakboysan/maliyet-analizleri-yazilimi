@@ -69,3 +69,7 @@ def get_allowed_origins() -> list[str]:
         if origin.strip()
     ]
     return configured or defaults
+
+
+def get_allowed_origin_regex() -> str:
+    return r"https://.*\.(lovableproject\.com|lovable\.app)"

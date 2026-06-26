@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.settings import get_allowed_origins
+from app.core.settings import get_allowed_origin_regex, get_allowed_origins
 from app.routers import auth, health, leave, materials, mobile_compat, modules, products, selection_wizard
 
 
@@ -13,6 +13,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),
+    allow_origin_regex=get_allowed_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
