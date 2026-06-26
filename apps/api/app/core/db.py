@@ -143,16 +143,10 @@ class PostgresCursor:
         normalized = query.lstrip().lower()
         if " returning " in normalized:
             return False
-        return normalized.startswith(
-            (
-                "insert into malzemeler ",
-                "insert into izin_talepleri ",
-                "insert into urunler ",
-                "insert into musteriler ",
-                "insert into urun_konfigurasyonlari ",
-                "insert into urun_konfigurasyon_kalemleri ",
-                "insert into documents ",
-                "insert into servis_formlari ",
+        return bool(
+            re.match(
+                r"insert\s+into\s+(malzemeler|izin_talepleri|urunler|musteriler|urun_konfigurasyonlari|urun_konfigurasyon_kalemleri|documents|servis_formlari)\b",
+                normalized,
             )
         )
 
