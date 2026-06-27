@@ -409,9 +409,20 @@ def _lookup_article(connection: MySQLConnection, series_key: str, combination_ke
     cursor = connection.cursor()
     cursor.execute(
         """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_name = %s
+        LIMIT 1
+        """,
+        ("configuration_articles",),
+    )
+    if not cursor.fetchone():
+        return None
+    cursor.execute(
+        """
         SELECT article_no
         FROM configuration_articles
-        WHERE series_key = %s AND combination_key = %s AND is_active = 1
+        WHERE series_key = %s AND combination_key = %s
         LIMIT 1
         """,
         (series_key.upper(), combination_key),
