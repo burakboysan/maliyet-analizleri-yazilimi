@@ -61,6 +61,16 @@ def _send_email(to_email: str, subject: str, body: str, html_body: str | None = 
     return {"status": "sent", "message": f"E-posta {to_email} adresine gönderildi."}
 
 
+def _send_email_safely(to_email: str, subject: str, body: str, html_body: str | None = None) -> dict[str, str]:
+    try:
+        return _send_email(to_email, subject, body, html_body)
+    except Exception:
+        return {
+            "status": "email_send_failed",
+            "message": "Kod oluşturuldu ancak e-posta gönderilemedi. Lütfen daha sonra kodu tekrar gönderin.",
+        }
+
+
 def _column_exists(connection: MySQLConnection, table_name: str, column_name: str) -> bool:
     cursor = connection.cursor()
     cursor.execute(
@@ -410,7 +420,7 @@ def send_verification_email(connection: MySQLConnection, email: str) -> dict[str
     )
     connection.commit()
     subject, body, html_body = _verification_email_content(str(user["kullanici_adi"]), code)
-    return _send_email(str(user["email"]), subject, body, html_body)
+    return _send_email_safely(str(user["email"]), subject, body, html_body)
 
 
 def verify_email_code(connection: MySQLConnection, email: str, code: str) -> dict[str, str]:
@@ -481,7 +491,7 @@ def send_password_reset_code(connection: MySQLConnection, identifier: str) -> di
     )
     connection.commit()
     subject, body, html_body = _password_reset_email_content(str(user["kullanici_adi"]), code)
-    return _send_email(str(user["email"]), subject, body, html_body)
+    return _send_email_safely(str(user["email"]), subject, body, html_body)
 
 
 def reset_password_with_code(connection: MySQLConnection, identifier: str, code: str, new_password: str) -> dict[str, str]:

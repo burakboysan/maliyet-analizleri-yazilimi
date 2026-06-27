@@ -19,6 +19,36 @@ from app.core.settings import get_settings
 security = HTTPBearer(auto_error=False)
 
 
+def _column_exists(connection: MySQLConnection, table_name: str, column_name: str) -> bool:
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = %s AND column_name = %s
+        LIMIT 1
+        """,
+        (table_name, column_name),
+    )
+    return cursor.fetchone() is not None
+
+
+def ensure_user_status_columns(connection: MySQLConnection) -> None:
+    cursor = connection.cursor()
+    changed = False
+    if not _column_exists(connection, "kullanicilar", "email"):
+        cursor.execute("ALTER TABLE kullanicilar ADD COLUMN email VARCHAR(255) NULL")
+        changed = True
+    if not _column_exists(connection, "kullanicilar", "email_verified"):
+        cursor.execute("ALTER TABLE kullanicilar ADD COLUMN email_verified BOOLEAN NOT NULL DEFAULT FALSE")
+        changed = True
+    if not _column_exists(connection, "kullanicilar", "is_active"):
+        cursor.execute("ALTER TABLE kullanicilar ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE")
+        changed = True
+    if changed:
+        connection.commit()
+
+
 def verify_password(password: str, stored_hash: str) -> tuple[bool, bool]:
     normalized_hash = str(stored_hash or "").strip()
     if not normalized_hash:
@@ -94,12 +124,16 @@ def parse_module_permissions(raw_value: Any) -> dict[str, bool]:
 
 
 def get_user_by_id(connection: MySQLConnection, user_id: int) -> dict[str, Any] | None:
+    ensure_user_status_columns(connection)
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
         SELECT
             k.id,
             k.kullanici_adi,
+            k.email,
+            k.email_verified,
+            k.is_active,
             k.rol_id,
             k.module_permissions,
             r.rol_adi
@@ -122,7 +156,11 @@ def require_current_user(
     payload = decode_access_token(credentials.credentials)
     user = get_user_by_id(connection, int(payload["sub"]))
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Kullanici bulunamadi.")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Kullanıcı bulunamadı.")
+    if user.get("is_active") is not None and not bool(user.get("is_active")):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Hesabınız aktif değil.")
+    if str(user.get("email") or "").strip() and not bool(user.get("email_verified")):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="E-posta doğrulaması gerekli.")
     user["module_permissions"] = parse_module_permissions(user.get("module_permissions"))
     return user
 
