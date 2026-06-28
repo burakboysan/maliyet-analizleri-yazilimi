@@ -18,7 +18,7 @@ def _stringify_date(value: Any) -> str | None:
 @router.get("", response_model=list[MaterialResponse])
 def list_materials(
     search: str = Query(default="", max_length=120),
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int | None = Query(default=None, ge=1),
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
@@ -35,6 +35,8 @@ def list_materials(
         """
         params.extend([like_value, like_value, like_value])
 
+    limit_sql = "LIMIT %s" if limit is not None else ""
+    query_params = (*params, limit) if limit is not None else tuple(params)
     cursor.execute(
         f"""
         SELECT
@@ -54,9 +56,9 @@ def list_materials(
          AND s.birim = 'EUR/kg'
         {where_sql}
         ORDER BY m.ad
-        LIMIT %s
+        {limit_sql}
         """,
-        (*params, limit),
+        query_params,
     )
     rows = cursor.fetchall()
     for row in rows:

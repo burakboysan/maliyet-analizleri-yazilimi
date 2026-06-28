@@ -636,7 +636,7 @@ export async function finalizeLeaveRequest(token: string, requestId: number, act
 }
 
 export async function fetchMaterials(token: string, search = ""): Promise<MaterialInfo[]> {
-  const params = new URLSearchParams({ limit: "500" });
+  const params = new URLSearchParams();
   if (search.trim()) {
     params.set("search", search.trim());
   }
