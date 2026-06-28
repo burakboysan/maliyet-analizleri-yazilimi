@@ -153,6 +153,12 @@ def _datetime_text(value: Any) -> str | None:
     return str(value)
 
 
+def _latest_datetime_text(*values: Any) -> str | None:
+    texts = [_datetime_text(value) for value in values]
+    filtered = [text for text in texts if text]
+    return max(filtered) if filtered else None
+
+
 def _is_owner(user: dict[str, Any]) -> bool:
     return str(user.get("rol_adi") or "").strip().lower() in {"owner", "master admin", "admin"}
 
@@ -176,6 +182,24 @@ def _column_exists(connection: MySQLConnection, table_name: str, column_name: st
         (table_name, column_name),
     )
     return cursor.fetchone() is not None
+
+
+def _cost_version_source(cursor: Any, table_name: str, updated_at_expr: str, where_sql: str = "", params: tuple[Any, ...] = ()) -> dict[str, Any]:
+    cursor.execute(
+        f"""
+        SELECT
+            COUNT(*) AS item_count,
+            MAX({updated_at_expr}) AS updated_at
+        FROM {table_name}
+        {where_sql}
+        """,
+        params,
+    )
+    row = cursor.fetchone() or {}
+    return {
+        "count": int(row.get("item_count") or 0),
+        "updated_at": _datetime_text(row.get("updated_at")),
+    }
 
 
 def _ensure_leave_admin_schema(connection: MySQLConnection) -> None:
@@ -468,18 +492,26 @@ def products_cost_version(
     )
     has_cost_updated_at = bool(cursor.fetchone())
     changed_at_expr = "COALESCE(cost_updated_at, maliyet_hesaplama_tarihi)" if has_cost_updated_at else "maliyet_hesaplama_tarihi"
-    cursor.execute(
-        f"""
-        SELECT
-            COUNT(*) AS product_count,
-            MAX({changed_at_expr}) AS updated_at
-        FROM urunler
-        """,
+    product_source = _cost_version_source(cursor, "urunler", changed_at_expr)
+    material_source = _cost_version_source(cursor, "malzemeler", "guncelleme_tarihi")
+    fixed_cost_source = _cost_version_source(
+        cursor,
+        "sabit_maliyet_kalemleri",
+        "guncelleme_tarihi",
+        "WHERE birim = %s",
+        ("EUR/kg",),
     )
-    row = cursor.fetchone() or {}
-    updated_at = _datetime_text(row.get("updated_at"))
-    product_count = int(row.get("product_count") or 0)
-    version_source = f"{product_count}:{updated_at or ''}"
+    updated_at = _latest_datetime_text(
+        product_source["updated_at"],
+        material_source["updated_at"],
+        fixed_cost_source["updated_at"],
+    )
+    product_count = product_source["count"]
+    version_source = (
+        f"products:{product_source['count']}:{product_source['updated_at'] or ''}|"
+        f"materials:{material_source['count']}:{material_source['updated_at'] or ''}|"
+        f"fixed_costs:{fixed_cost_source['count']}:{fixed_cost_source['updated_at'] or ''}"
+    )
     return {
         "version": hashlib.md5(version_source.encode("utf-8")).hexdigest(),
         "updated_at": updated_at,
