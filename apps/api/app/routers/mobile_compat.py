@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -466,58 +467,23 @@ def products_cost_version(
         ("urunler", "cost_updated_at"),
     )
     has_cost_updated_at = bool(cursor.fetchone())
-    changed_at_expr = "COALESCE(cost_updated_at, maliyet_hesaplama_tarihi, TIMESTAMP 'epoch')" if has_cost_updated_at else "COALESCE(maliyet_hesaplama_tarihi, TIMESTAMP 'epoch')"
+    changed_at_expr = "COALESCE(cost_updated_at, maliyet_hesaplama_tarihi)" if has_cost_updated_at else "maliyet_hesaplama_tarihi"
     cursor.execute(
         f"""
-        WITH cost_source AS (
-            SELECT
-                UPPER(TRIM(COALESCE(urun_kodu, ''))) AS urun_kodu,
-                COALESCE(maliyet, 0)::TEXT AS maliyet,
-                COALESCE(malzeme_maliyeti, 0)::TEXT AS malzeme_maliyeti,
-                COALESCE(iscilik_maliyeti, 0)::TEXT AS iscilik_maliyeti,
-                COALESCE(uretim_gideri, 0)::TEXT AS uretim_gideri,
-                COALESCE(yonetim_gideri, 0)::TEXT AS yonetim_gideri,
-                COALESCE(alt_urun_maliyeti, 0)::TEXT AS alt_urun_maliyeti,
-                {changed_at_expr} AS cost_changed_at
-            FROM urunler
-        ),
-        cost_aggregate AS (
-            SELECT
-                COUNT(*) AS product_count,
-                MAX(cost_changed_at) AS updated_at,
-                MD5(
-                    COALESCE(
-                        STRING_AGG(
-                            CONCAT_WS(
-                                '|',
-                                urun_kodu,
-                                maliyet,
-                                malzeme_maliyeti,
-                                iscilik_maliyeti,
-                                uretim_gideri,
-                                yonetim_gideri,
-                                alt_urun_maliyeti,
-                                cost_changed_at::TEXT
-                            ),
-                            ',' ORDER BY urun_kodu
-                        ),
-                        ''
-                    )
-                ) AS aggregate_hash
-            FROM cost_source
-        )
         SELECT
-            MD5(product_count::TEXT || ':' || COALESCE(updated_at::TEXT, '') || ':' || aggregate_hash) AS version,
-            updated_at,
-            product_count
-        FROM cost_aggregate
+            COUNT(*) AS product_count,
+            MAX({changed_at_expr}) AS updated_at
+        FROM urunler
         """,
     )
     row = cursor.fetchone() or {}
+    updated_at = _datetime_text(row.get("updated_at"))
+    product_count = int(row.get("product_count") or 0)
+    version_source = f"{product_count}:{updated_at or ''}"
     return {
-        "version": row.get("version") or "",
-        "updated_at": _datetime_text(row.get("updated_at")),
-        "product_count": int(row.get("product_count") or 0),
+        "version": hashlib.md5(version_source.encode("utf-8")).hexdigest(),
+        "updated_at": updated_at,
+        "product_count": product_count,
     }
 
 

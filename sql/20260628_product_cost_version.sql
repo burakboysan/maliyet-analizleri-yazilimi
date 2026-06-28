@@ -1,6 +1,9 @@
 ALTER TABLE urunler
 ADD COLUMN IF NOT EXISTS cost_updated_at TIMESTAMPTZ;
 
+CREATE INDEX IF NOT EXISTS idx_urunler_cost_updated_at
+ON urunler(cost_updated_at);
+
 UPDATE urunler
 SET cost_updated_at = COALESCE(maliyet_hesaplama_tarihi::TIMESTAMPTZ, NOW())
 WHERE cost_updated_at IS NULL;
