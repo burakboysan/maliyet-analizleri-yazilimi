@@ -449,6 +449,78 @@ def list_mobile_products(
     return {"page": page, "page_size": page_size, "total": total, "items": [_product_row(dict(row)) for row in cursor.fetchall()]}
 
 
+@router.get("/products/cost-version")
+def products_cost_version(
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = %s AND column_name = %s
+        LIMIT 1
+        """,
+        ("urunler", "cost_updated_at"),
+    )
+    has_cost_updated_at = bool(cursor.fetchone())
+    changed_at_expr = "COALESCE(cost_updated_at, maliyet_hesaplama_tarihi, TIMESTAMP 'epoch')" if has_cost_updated_at else "COALESCE(maliyet_hesaplama_tarihi, TIMESTAMP 'epoch')"
+    cursor.execute(
+        f"""
+        WITH cost_source AS (
+            SELECT
+                UPPER(TRIM(COALESCE(urun_kodu, ''))) AS urun_kodu,
+                COALESCE(maliyet, 0)::TEXT AS maliyet,
+                COALESCE(malzeme_maliyeti, 0)::TEXT AS malzeme_maliyeti,
+                COALESCE(iscilik_maliyeti, 0)::TEXT AS iscilik_maliyeti,
+                COALESCE(uretim_gideri, 0)::TEXT AS uretim_gideri,
+                COALESCE(yonetim_gideri, 0)::TEXT AS yonetim_gideri,
+                COALESCE(alt_urun_maliyeti, 0)::TEXT AS alt_urun_maliyeti,
+                {changed_at_expr} AS cost_changed_at
+            FROM urunler
+        ),
+        cost_aggregate AS (
+            SELECT
+                COUNT(*) AS product_count,
+                MAX(cost_changed_at) AS updated_at,
+                MD5(
+                    COALESCE(
+                        STRING_AGG(
+                            CONCAT_WS(
+                                '|',
+                                urun_kodu,
+                                maliyet,
+                                malzeme_maliyeti,
+                                iscilik_maliyeti,
+                                uretim_gideri,
+                                yonetim_gideri,
+                                alt_urun_maliyeti,
+                                cost_changed_at::TEXT
+                            ),
+                            ',' ORDER BY urun_kodu
+                        ),
+                        ''
+                    )
+                ) AS aggregate_hash
+            FROM cost_source
+        )
+        SELECT
+            MD5(product_count::TEXT || ':' || COALESCE(updated_at::TEXT, '') || ':' || aggregate_hash) AS version,
+            updated_at,
+            product_count
+        FROM cost_aggregate
+        """,
+    )
+    row = cursor.fetchone() or {}
+    return {
+        "version": row.get("version") or "",
+        "updated_at": _datetime_text(row.get("updated_at")),
+        "product_count": int(row.get("product_count") or 0),
+    }
+
+
 @router.get("/products/by-codes")
 def products_by_codes(
     codes: list[str] = Query(default=[]),
