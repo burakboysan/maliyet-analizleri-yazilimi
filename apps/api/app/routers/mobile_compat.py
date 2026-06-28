@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -447,6 +448,43 @@ def list_mobile_products(
         (*params, page_size, offset),
     )
     return {"page": page, "page_size": page_size, "total": total, "items": [_product_row(dict(row)) for row in cursor.fetchall()]}
+
+
+@router.get("/products/cost-version")
+def products_cost_version(
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_name = %s AND column_name = %s
+        LIMIT 1
+        """,
+        ("urunler", "cost_updated_at"),
+    )
+    has_cost_updated_at = bool(cursor.fetchone())
+    changed_at_expr = "COALESCE(cost_updated_at, maliyet_hesaplama_tarihi)" if has_cost_updated_at else "maliyet_hesaplama_tarihi"
+    cursor.execute(
+        f"""
+        SELECT
+            COUNT(*) AS product_count,
+            MAX({changed_at_expr}) AS updated_at
+        FROM urunler
+        """,
+    )
+    row = cursor.fetchone() or {}
+    updated_at = _datetime_text(row.get("updated_at"))
+    product_count = int(row.get("product_count") or 0)
+    version_source = f"{product_count}:{updated_at or ''}"
+    return {
+        "version": hashlib.md5(version_source.encode("utf-8")).hexdigest(),
+        "updated_at": updated_at,
+        "product_count": product_count,
+    }
 
 
 @router.get("/products/by-codes")
