@@ -245,9 +245,14 @@ def patch_routes_app_auth() -> None:
 def ensure_db_column() -> None:
     db = SessionLocal()
     try:
-        exists = db.execute(text("SHOW COLUMNS FROM kullanicilar LIKE 'mobile_module_permissions'")).first()
+        exists = db.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'kullanicilar' AND column_name = 'mobile_module_permissions'"
+            )
+        ).first()
         if exists is None:
-            db.execute(text("ALTER TABLE kullanicilar ADD COLUMN mobile_module_permissions JSON NULL"))
+            db.execute(text("ALTER TABLE kullanicilar ADD COLUMN mobile_module_permissions JSONB NULL"))
             db.commit()
     finally:
         db.close()

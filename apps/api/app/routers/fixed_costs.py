@@ -1,12 +1,11 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from mysql.connector import MySQLConnection
 from pydantic import BaseModel
 
-from app.core.db import get_connection, get_database_backend
+from app.core.db import get_connection
 from app.core.security import require_current_user
 
 
@@ -53,7 +52,7 @@ def _require_manager(current_user: dict[str, Any]) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Sabit maliyet yönetimi için yetkiniz yok.")
 
 
-def _column_exists(connection: MySQLConnection, table_name: str, column_name: str) -> bool:
+def _column_exists(connection: Any, table_name: str, column_name: str) -> bool:
     cursor = connection.cursor()
     cursor.execute(
         """
@@ -84,51 +83,32 @@ def _datetime_text(value: Any) -> str | None:
     return str(value)
 
 
-def _ensure_schema(connection: MySQLConnection) -> None:
+def _ensure_schema(connection: Any) -> None:
     cursor = connection.cursor()
-    if get_database_backend() == "postgres":
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS sabit_maliyet_kalemleri (
-                id BIGSERIAL PRIMARY KEY,
-                kalem_adi VARCHAR(255) UNIQUE NOT NULL,
-                kategori VARCHAR(100) NULL,
-                birim VARCHAR(50) NULL,
-                birim_fiyat NUMERIC(14, 4) NOT NULL DEFAULT 0,
-                para_birimi VARCHAR(10) NOT NULL DEFAULT 'EUR',
-                aktif BOOLEAN NOT NULL DEFAULT TRUE,
-                aciklama TEXT NULL,
-                sistem_kalemi BOOLEAN NOT NULL DEFAULT FALSE,
-                olusturma_tarihi TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                guncelleme_tarihi TIMESTAMP NULL
-            )
-            """
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sabit_maliyet_kalemleri (
+            id BIGSERIAL PRIMARY KEY,
+            kalem_adi VARCHAR(255) UNIQUE NOT NULL,
+            kategori VARCHAR(100) NULL,
+            birim VARCHAR(50) NULL,
+            birim_fiyat NUMERIC(14, 4) NOT NULL DEFAULT 0,
+            para_birimi VARCHAR(10) NOT NULL DEFAULT 'EUR',
+            aktif BOOLEAN NOT NULL DEFAULT TRUE,
+            aciklama TEXT NULL,
+            sistem_kalemi BOOLEAN NOT NULL DEFAULT FALSE,
+            olusturma_tarihi TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            guncelleme_tarihi TIMESTAMP NULL
         )
-    else:
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS sabit_maliyet_kalemleri (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                kalem_adi VARCHAR(255) UNIQUE NOT NULL,
-                kategori VARCHAR(100) NULL,
-                birim VARCHAR(50) NULL,
-                birim_fiyat DECIMAL(14, 4) NOT NULL DEFAULT 0,
-                para_birimi VARCHAR(10) NOT NULL DEFAULT 'EUR',
-                aktif BOOLEAN NOT NULL DEFAULT TRUE,
-                aciklama TEXT NULL,
-                sistem_kalemi BOOLEAN NOT NULL DEFAULT FALSE,
-                olusturma_tarihi DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                guncelleme_tarihi DATETIME NULL
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-            """
-        )
+        """
+    )
     for column, definition in (
         ("kategori", "VARCHAR(100) NULL"),
         ("para_birimi", "VARCHAR(10) NOT NULL DEFAULT 'EUR'"),
         ("aktif", "BOOLEAN NOT NULL DEFAULT TRUE"),
         ("aciklama", "TEXT NULL"),
         ("sistem_kalemi", "BOOLEAN NOT NULL DEFAULT FALSE"),
-        ("olusturma_tarihi", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP" if get_database_backend() == "postgres" else "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"),
+        ("olusturma_tarihi", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
     ):
         if not _column_exists(connection, "sabit_maliyet_kalemleri", column):
             cursor.execute(f"ALTER TABLE sabit_maliyet_kalemleri ADD COLUMN {column} {definition}")
@@ -164,7 +144,7 @@ def _row_response(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _fetch_item(connection: MySQLConnection, item_id: int) -> dict[str, Any]:
+def _fetch_item(connection: Any, item_id: int) -> dict[str, Any]:
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
@@ -188,7 +168,7 @@ def list_fixed_costs(
     category: str = Query(default="", max_length=80),
     currency: str = Query(default="", max_length=20),
     active: str = Query(default="", max_length=20),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_manager(current_user)
@@ -228,7 +208,7 @@ def list_fixed_costs(
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_fixed_cost(
     payload: FixedCostRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_manager(current_user)
@@ -262,7 +242,7 @@ def create_fixed_cost(
 def update_fixed_cost(
     item_id: int,
     payload: FixedCostRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_manager(current_user)
@@ -304,7 +284,7 @@ def update_fixed_cost(
 @router.delete("/{item_id}")
 def delete_fixed_cost(
     item_id: int,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_manager(current_user)

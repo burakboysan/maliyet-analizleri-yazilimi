@@ -117,22 +117,22 @@ def ensure_configuration_articles_table():
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS configuration_articles (
-                id INT AUTO_INCREMENT PRIMARY KEY,
+                id BIGSERIAL PRIMARY KEY,
                 series_key VARCHAR(50) NOT NULL,
                 combination_key VARCHAR(600) NOT NULL,
                 article_no VARCHAR(100) NOT NULL,
                 title VARCHAR(255),
                 selection_summary TEXT,
                 source_file VARCHAR(255),
-                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                is_active BOOLEAN NOT NULL DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                UNIQUE KEY uq_configuration_articles_series_combination (series_key, combination_key),
-                UNIQUE KEY uq_configuration_articles_article_no (article_no),
-                KEY idx_configuration_articles_series (series_key)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT uq_configuration_articles_series_combination UNIQUE (series_key, combination_key),
+                CONSTRAINT uq_configuration_articles_article_no UNIQUE (article_no)
+            )
             """
         )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_configuration_articles_series ON configuration_articles (series_key)")
     finally:
         try:
             if cursor:
@@ -173,13 +173,14 @@ def sync_configuration_articles(series_keys=None):
                         selection_summary,
                         source_file,
                         is_active
-                    ) VALUES (%s, %s, %s, %s, %s, %s, 1)
-                    ON DUPLICATE KEY UPDATE
-                        article_no = VALUES(article_no),
-                        title = VALUES(title),
-                        selection_summary = VALUES(selection_summary),
-                        source_file = VALUES(source_file),
-                        is_active = VALUES(is_active)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+                    ON CONFLICT (series_key, combination_key) DO UPDATE SET
+                        article_no = EXCLUDED.article_no,
+                        title = EXCLUDED.title,
+                        selection_summary = EXCLUDED.selection_summary,
+                        source_file = EXCLUDED.source_file,
+                        is_active = EXCLUDED.is_active,
+                        updated_at = CURRENT_TIMESTAMP
                     """,
                     (
                         series_key,

@@ -61,6 +61,61 @@ class MaterialResponse(BaseModel):
     guncelleme_tarihi: str | None = None
 
 
+class MaterialFixedCostItemResponse(BaseModel):
+    kalem_adi: str
+    birim_fiyat: float | None = None
+
+
+class MaterialAddOptionsResponse(BaseModel):
+    next_yari_mamul_code: str
+    fixed_cost_items: list[MaterialFixedCostItemResponse]
+
+
+class MaterialCreateRequest(BaseModel):
+    malzeme_kodu: str
+    malzeme_tipi: str
+    ad: str | None = None
+    birim_fiyat: float | int | str
+
+
+class MaterialUpdateRequest(BaseModel):
+    malzeme_kodu: str
+    malzeme_tipi: str
+    ad: str | None = None
+    birim_fiyat: float | int | str
+
+
+class MaterialUsageProductResponse(BaseModel):
+    urun_kodu: str | None = None
+    urun_adi: str | None = None
+
+
+class MaterialDetailResponse(BaseModel):
+    material: MaterialResponse
+    used_products: list[MaterialUsageProductResponse]
+
+
+class MaterialDeleteResponse(BaseModel):
+    material_id: int
+    message: str
+
+
+class MaterialImportResultItem(BaseModel):
+    row_number: int
+    malzeme_kodu: str | None = None
+    ad: str | None = None
+    status: str
+    message: str
+
+
+class MaterialImportResponse(BaseModel):
+    total_count: int
+    inserted_count: int
+    existing_count: int
+    failed_count: int
+    items: list[MaterialImportResultItem]
+
+
 class ProductResponse(BaseModel):
     id: int
     urun_kodu: str | None = None

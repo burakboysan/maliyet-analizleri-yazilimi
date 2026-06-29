@@ -1,7 +1,8 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-import mysql.connector
-from mysql.connector import Error
+import psycopg
+
+Error = psycopg.Error
 from core.api_client import ApiClientError, delete_quote_item, get_quote_items
 from core.database import veritabani_baglanti
 from core.session import get_app_token

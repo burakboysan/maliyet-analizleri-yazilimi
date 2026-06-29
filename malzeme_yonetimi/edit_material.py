@@ -1,7 +1,7 @@
 import customtkinter as ctk
 from tkinter import messagebox, END, ttk
 from core.utils import apply_bomaksan_table_style, apply_zebra_striping
-from mysql.connector import IntegrityError
+from psycopg.errors import UniqueViolation as IntegrityError
 from core.database import veritabani_baglanti
 from core.roles import has_master_admin_capabilities
 

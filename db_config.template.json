@@ -1,13 +1,11 @@
 {
+  "database_url": "postgresql://DB_KULLANICI:DB_SIFRE@DB_HOST_BURAYA:5432/DB_ADI",
   "host": "DB_HOST_BURAYA",
-  "port": 3306,
+  "port": 5432,
   "user": "DB_KULLANICI",
   "password": "DB_SIFRE",
   "database": "DB_ADI",
   "connection_timeout": 30,
   "pool_timeout": 5,
-  "pool_size": 1,
-  "use_pure": true,
-  "charset": "utf8mb4",
-  "collation": "utf8mb4_unicode_ci"
+  "pool_size": 1
 }

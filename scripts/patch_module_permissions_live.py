@@ -289,9 +289,14 @@ def patch_auth_schema() -> None:
 def ensure_db_column() -> None:
     db = SessionLocal()
     try:
-        exists = db.execute(text("SHOW COLUMNS FROM kullanicilar LIKE 'module_permissions'")).first()
+        exists = db.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'kullanicilar' AND column_name = 'module_permissions'"
+            )
+        ).first()
         if exists is None:
-            db.execute(text("ALTER TABLE kullanicilar ADD COLUMN module_permissions JSON NULL"))
+            db.execute(text("ALTER TABLE kullanicilar ADD COLUMN module_permissions JSONB NULL"))
             db.commit()
     finally:
         db.close()

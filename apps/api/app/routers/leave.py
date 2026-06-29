@@ -1,8 +1,7 @@
-from datetime import date, datetime, timedelta
+﻿from datetime import date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from mysql.connector import MySQLConnection
 from pydantic import BaseModel
 
 from app.core.db import get_connection
@@ -77,7 +76,7 @@ def _clean_text(value: str | None) -> str | None:
     return text or None
 
 
-def _work_days(connection: MySQLConnection, start_date: date, end_date: date) -> float:
+def _work_days(connection: Any, start_date: date, end_date: date) -> float:
     if end_date < start_date:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Bitis tarihi baslangic tarihinden once olamaz.")
 
@@ -253,7 +252,7 @@ def _request_rows(cursor, where_sql: str, params: tuple[Any, ...]) -> list[dict[
 def get_workday_summary(
     start_date: str = Query(...),
     end_date: str = Query(...),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "leave_management")
@@ -268,7 +267,7 @@ def get_workday_summary(
 
 @router.get("/dashboard")
 def get_leave_dashboard(
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "leave_management")
@@ -331,7 +330,7 @@ def get_leave_dashboard(
 @router.post("/requests")
 def create_leave_request(
     payload: LeaveCreateRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "leave_management")
@@ -402,7 +401,7 @@ def create_leave_request(
 @router.post("/requests/{leave_request_id}/cancel")
 def cancel_leave_request(
     leave_request_id: int,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "leave_management")
@@ -452,7 +451,7 @@ def cancel_leave_request(
 def approve_leave_request(
     leave_request_id: int,
     payload: LeaveApproveRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "leave_management")
@@ -513,7 +512,7 @@ def approve_leave_request(
 def reject_leave_request(
     leave_request_id: int,
     payload: LeaveRejectRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "leave_management")
@@ -561,7 +560,7 @@ def reject_leave_request(
 @router.post("/requests/{leave_request_id}/mark-usage-confirmation")
 def mark_leave_usage_confirmation(
     leave_request_id: int,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "leave_management")
@@ -592,7 +591,7 @@ def mark_leave_usage_confirmation(
 def finalize_leave_request(
     leave_request_id: int,
     payload: LeaveFinalizeRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "leave_management")

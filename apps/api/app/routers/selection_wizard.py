@@ -1,7 +1,6 @@
-from typing import Any
+﻿from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from mysql.connector import MySQLConnection
 
 from app.core.db import get_connection
 from app.core.security import require_current_user, require_module_access
@@ -360,7 +359,7 @@ def _summary_product_codes(summary: dict[str, Any] | None) -> list[str]:
     return result
 
 
-def _fetch_costs(connection: MySQLConnection, product_codes: list[str]) -> dict[str, float | None]:
+def _fetch_costs(connection: Any, product_codes: list[str]) -> dict[str, float | None]:
     if not product_codes:
         return {}
     cursor = connection.cursor(dictionary=True)
@@ -377,7 +376,7 @@ def _fetch_costs(connection: MySQLConnection, product_codes: list[str]) -> dict[
     return {code: found.get(code) for code in product_codes}
 
 
-def _cost_summary(connection: MySQLConnection, summary: dict[str, Any] | None) -> dict[str, Any]:
+def _cost_summary(connection: Any, summary: dict[str, Any] | None) -> dict[str, Any]:
     product_codes = _summary_product_codes(summary)
     try:
         costs = _fetch_costs(connection, product_codes)
@@ -403,7 +402,7 @@ def _cost_summary(connection: MySQLConnection, summary: dict[str, Any] | None) -
     }
 
 
-def _lookup_article(connection: MySQLConnection, series_key: str, combination_key: str | None) -> str | None:
+def _lookup_article(connection: Any, series_key: str, combination_key: str | None) -> str | None:
     if not combination_key:
         return None
     cursor = connection.cursor()
@@ -593,7 +592,7 @@ def _ecog_panel_options(fan_power: str) -> list[str]:
     return []
 
 
-def _ecog_summary(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any] | None:
+def _ecog_summary(state: dict[str, Any], connection: Any) -> dict[str, Any] | None:
     required = ("filter_variant", "filter_media", "filter_length", "cleaning", "fan_type", "fan_power", "panel")
     if any(not _normalize(state.get(key)) for key in required):
         return None
@@ -841,7 +840,7 @@ def _hexafil_panel_code(panel: str, fan_power: str) -> str | None:
     return None
 
 
-def _hexafil_summary(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any] | None:
+def _hexafil_summary(state: dict[str, Any], connection: Any) -> dict[str, Any] | None:
     required = ("filter_media", "filter_length", "case", "type", "cleaning")
     if any(not _normalize(state.get(key)) for key in required):
         return None
@@ -963,7 +962,7 @@ def _verty_panel_code(panel: str, fan_power: str) -> str | None:
     return f"{prefix}{suffix}" if prefix and suffix else None
 
 
-def _verty_summary(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any] | None:
+def _verty_summary(state: dict[str, Any], connection: Any) -> dict[str, Any] | None:
     required = ("fan_type", "fan_power", "filter_media", "filter_length", "case", "cleaning", "fan_module", "sound", "panel", "dust", "silencer")
     if any(not _normalize(state.get(key)) for key in required):
         return None
@@ -1102,7 +1101,7 @@ def _ecog_schema() -> dict[str, Any]:
     }
 
 
-def _ecog_preview(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any]:
+def _ecog_preview(state: dict[str, Any], connection: Any) -> dict[str, Any]:
     motor = _ecog_motor_result(state)
     state.update(motor)
     allowed_fan_types = _ecog_allowed_fan_types(state.get("pressure_value"))
@@ -1189,7 +1188,7 @@ def _cartridge_schema(wizard_key: str) -> dict[str, Any]:
     }
 
 
-def _cartridge_preview(wizard_key: str, state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any]:
+def _cartridge_preview(wizard_key: str, state: dict[str, Any], connection: Any) -> dict[str, Any]:
     config = _cartridge_config(wizard_key)
     state.update(_ecog_motor_result(state))
     allowed_fan_types = _ecog_allowed_fan_types(state.get("pressure_value"))
@@ -1293,7 +1292,7 @@ def _hexafil_fan_power_options(state: dict[str, Any]) -> list[str]:
     return [power for power in base if not state.get("shaft_power") or _parse_kw(power) >= float(state.get("shaft_power") or 0)]
 
 
-def _hexafil_preview(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any]:
+def _hexafil_preview(state: dict[str, Any], connection: Any) -> dict[str, Any]:
     state.update(_ecog_motor_result(state))
     is_fan_excluded = str(state.get("is_fan_excluded") or "").lower() == "true"
     allowed_fan_types = [] if is_fan_excluded else _ecog_allowed_fan_types(state.get("pressure_value"))
@@ -1389,7 +1388,7 @@ def _verty_schema() -> dict[str, Any]:
     }
 
 
-def _verty_preview(state: dict[str, Any], connection: MySQLConnection) -> dict[str, Any]:
+def _verty_preview(state: dict[str, Any], connection: Any) -> dict[str, Any]:
     state.update(_ecog_motor_result(state))
     fan_types = _ecog_allowed_fan_types(state.get("pressure_value"))
     if state.get("fan_type") not in fan_types:
@@ -1472,7 +1471,7 @@ def get_wizard_schema(wizard_key: str, _current_user: dict = Depends(_require_ac
 def preview_wizard(
     wizard_key: str,
     payload: dict[str, Any],
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     _current_user: dict = Depends(_require_access),
 ):
     if wizard_key.lower() == "ecog":

@@ -8,7 +8,7 @@ DB_CONFIG_FILE_NAME = "db_config.json"
 SMTP_CONFIG_FILE_NAME = "smtp_config.json"
 DB_CONFIG_PROTECTED_FILE_NAME = "db_config.secure"
 SMTP_CONFIG_PROTECTED_FILE_NAME = "smtp_config.secure"
-DEFAULT_DB_PORT = 3306
+DEFAULT_DB_PORT = 5432
 DEFAULT_CONNECTION_TIMEOUT = 30
 DEFAULT_POOL_TIMEOUT = 5
 DEFAULT_POOL_SIZE = 1
@@ -58,6 +58,7 @@ def ensure_default_config_templates():
     _write_json_if_missing(
         os.path.join(config_dir, "db_config.template.json"),
         {
+            "database_url": "postgresql://DB_KULLANICI:DB_SIFRE@DB_HOST_BURAYA:5432/DB_ADI",
             "host": "DB_HOST_BURAYA",
             "port": DEFAULT_DB_PORT,
             "user": "DB_KULLANICI",
@@ -66,9 +67,6 @@ def ensure_default_config_templates():
             "connection_timeout": DEFAULT_CONNECTION_TIMEOUT,
             "pool_timeout": DEFAULT_POOL_TIMEOUT,
             "pool_size": DEFAULT_POOL_SIZE,
-            "use_pure": True,
-            "charset": "utf8mb4",
-            "collation": "utf8mb4_unicode_ci",
         },
     )
     _write_json_if_missing(
@@ -154,35 +152,51 @@ def _parse_int(value, field_name):
 
 
 def _normalize_db_config(raw_config):
-    required_fields = ("host", "user", "password", "database")
     normalized = {}
 
-    for field in required_fields:
-        value = raw_config.get(field)
-        if value is None or str(value).strip() == "":
-            raise ConfigError(f"'{field}' alani bos birakilamaz.")
-        normalized[field] = str(value).strip()
+    database_url = str(raw_config.get("database_url") or raw_config.get("url") or "").strip()
+    if database_url:
+        normalized["database_url"] = database_url
 
-    normalized["port"] = _parse_int(raw_config.get("port", DEFAULT_DB_PORT), "port")
+    if not database_url:
+        required_fields = ("host", "user", "password", "database")
+        for field in required_fields:
+            value = raw_config.get(field)
+            if value is None or str(value).strip() == "":
+                raise ConfigError(f"'{field}' alani bos birakilamaz.")
+            normalized[field] = str(value).strip()
+    else:
+        normalized["host"] = str(raw_config.get("host", "")).strip()
+        normalized["user"] = str(raw_config.get("user", "")).strip()
+        normalized["password"] = str(raw_config.get("password", "")).strip()
+        normalized["database"] = str(raw_config.get("database", "")).strip()
+
+    normalized["port"] = _parse_int(raw_config.get("port") or DEFAULT_DB_PORT, "port")
     normalized["connection_timeout"] = _parse_int(
-        raw_config.get("connection_timeout", DEFAULT_CONNECTION_TIMEOUT),
+        raw_config.get("connection_timeout") or DEFAULT_CONNECTION_TIMEOUT,
         "connection_timeout",
     )
     normalized["pool_timeout"] = _parse_int(
-        raw_config.get("pool_timeout", DEFAULT_POOL_TIMEOUT),
+        raw_config.get("pool_timeout") or DEFAULT_POOL_TIMEOUT,
         "pool_timeout",
     )
-    normalized["pool_size"] = _parse_int(raw_config.get("pool_size", DEFAULT_POOL_SIZE), "pool_size")
-    normalized["use_pure"] = bool(raw_config.get("use_pure", True))
-    normalized["charset"] = str(raw_config.get("charset", "utf8mb4")).strip() or "utf8mb4"
-    normalized["collation"] = (
-        str(raw_config.get("collation", "utf8mb4_unicode_ci")).strip() or "utf8mb4_unicode_ci"
-    )
+    normalized["pool_size"] = _parse_int(raw_config.get("pool_size") or DEFAULT_POOL_SIZE, "pool_size")
 
     return normalized
 
 
 def _load_db_config_from_env():
+    database_url = os.getenv("BOMAKSAN_DATABASE_URL")
+    if database_url:
+        return _normalize_db_config(
+            {
+                "database_url": database_url,
+                "connection_timeout": os.getenv("BOMAKSAN_DB_CONNECTION_TIMEOUT"),
+                "pool_timeout": os.getenv("BOMAKSAN_DB_POOL_TIMEOUT"),
+                "pool_size": os.getenv("BOMAKSAN_DB_POOL_SIZE"),
+            }
+        )
+
     env_map = {
         "host": os.getenv("BOMAKSAN_DB_HOST"),
         "port": os.getenv("BOMAKSAN_DB_PORT"),
@@ -192,8 +206,6 @@ def _load_db_config_from_env():
         "connection_timeout": os.getenv("BOMAKSAN_DB_CONNECTION_TIMEOUT"),
         "pool_timeout": os.getenv("BOMAKSAN_DB_POOL_TIMEOUT"),
         "pool_size": os.getenv("BOMAKSAN_DB_POOL_SIZE"),
-        "charset": os.getenv("BOMAKSAN_DB_CHARSET"),
-        "collation": os.getenv("BOMAKSAN_DB_COLLATION"),
     }
 
     populated_keys = [key for key, value in env_map.items() if value not in (None, "")]
@@ -204,7 +216,7 @@ def _load_db_config_from_env():
     missing = [field for field in required_fields if env_map.get(field) in (None, "")]
     if missing:
         raise ConfigError(
-            "BOMAKSAN_DB_* ortam degiskenleri eksik. Eksik alanlar: " + ", ".join(missing)
+            "BOMAKSAN_DATABASE_URL veya BOMAKSAN_DB_* ortam degiskenleri eksik. Eksik alanlar: " + ", ".join(missing)
         )
 
     return _normalize_db_config(env_map)
@@ -378,6 +390,6 @@ def get_db_config_help_text():
     config_dir = ensure_user_config_dir()
     return (
         "Veritabani baglanti ayarlari yuklenemedi. "
-        f"'{get_user_db_config_path()}' dosyasini olusturun veya BOMAKSAN_DB_* ortam degiskenlerini ayarlayin. "
+        f"'{get_user_db_config_path()}' dosyasini olusturun veya BOMAKSAN_DATABASE_URL ortam degiskenini ayarlayin. "
         f"Ornek sablonlar '{config_dir}' klasorune yazildi."
     )

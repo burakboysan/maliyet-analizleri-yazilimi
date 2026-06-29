@@ -1,7 +1,8 @@
 import customtkinter as ctk
 from tkinter import ttk, messagebox
-import mysql.connector
-from mysql.connector import Error
+import psycopg
+
+Error = psycopg.Error
 from malzeme_yonetimi.add_material import malzeme_ekle_ekrani
 from malzeme_yonetimi.edit_material import malzeme_duzenle_ekrani  # type: ignore
 from malzeme_yonetimi.import_materials import malzeme_import_ekrani

@@ -1,5 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from mysql.connector import MySQLConnection
+﻿from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.account_security import (
     create_account,
@@ -38,7 +37,7 @@ def _normalize_user(row: dict) -> dict:
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(payload: LoginRequest, connection: MySQLConnection = Depends(get_connection)):
+def login(payload: LoginRequest, connection: Any = Depends(get_connection)):
     username = str(payload.kullanici_adi or "").strip()
     password = str(payload.sifre or "")
     if not username or not password:
@@ -80,7 +79,7 @@ def login(payload: LoginRequest, connection: MySQLConnection = Depends(get_conne
 
 
 @router.post("/signup", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
-def signup(payload: SignupRequest, connection: MySQLConnection = Depends(get_connection)):
+def signup(payload: SignupRequest, connection: Any = Depends(get_connection)):
     try:
         return MessageResponse(**create_account(connection, payload.kullanici_adi, payload.email, payload.sifre))
     except ValueError as exc:
@@ -88,7 +87,7 @@ def signup(payload: SignupRequest, connection: MySQLConnection = Depends(get_con
 
 
 @router.post("/email/send-verification", response_model=MessageResponse)
-def send_email_verification(payload: EmailVerificationSendRequest, connection: MySQLConnection = Depends(get_connection)):
+def send_email_verification(payload: EmailVerificationSendRequest, connection: Any = Depends(get_connection)):
     try:
         send_verification_email(connection, payload.email)
     except ValueError:
@@ -97,7 +96,7 @@ def send_email_verification(payload: EmailVerificationSendRequest, connection: M
 
 
 @router.post("/email/verify", response_model=MessageResponse)
-def confirm_email_verification(payload: EmailVerificationConfirmRequest, connection: MySQLConnection = Depends(get_connection)):
+def confirm_email_verification(payload: EmailVerificationConfirmRequest, connection: Any = Depends(get_connection)):
     try:
         return MessageResponse(**verify_email_code(connection, payload.email, payload.code))
     except ValueError as exc:
@@ -105,7 +104,7 @@ def confirm_email_verification(payload: EmailVerificationConfirmRequest, connect
 
 
 @router.post("/password/send-reset-code", response_model=MessageResponse)
-def send_password_reset(payload: PasswordResetSendRequest, connection: MySQLConnection = Depends(get_connection)):
+def send_password_reset(payload: PasswordResetSendRequest, connection: Any = Depends(get_connection)):
     try:
         send_password_reset_code(connection, payload.identifier)
     except ValueError:
@@ -114,7 +113,7 @@ def send_password_reset(payload: PasswordResetSendRequest, connection: MySQLConn
 
 
 @router.post("/password/reset", response_model=MessageResponse)
-def confirm_password_reset(payload: PasswordResetConfirmRequest, connection: MySQLConnection = Depends(get_connection)):
+def confirm_password_reset(payload: PasswordResetConfirmRequest, connection: Any = Depends(get_connection)):
     try:
         return MessageResponse(**reset_password_with_code(connection, payload.identifier, payload.code, payload.new_password))
     except ValueError as exc:

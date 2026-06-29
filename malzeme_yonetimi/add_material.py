@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from tkinter import messagebox
-from mysql.connector import IntegrityError
+from psycopg.errors import UniqueViolation as IntegrityError
 from datetime import datetime
 from core.database import veritabani_baglanti
 

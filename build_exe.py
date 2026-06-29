@@ -248,7 +248,8 @@ def build_executable(signing_settings=None):
     hidden_imports = [
         "customtkinter",
         "PIL",
-        "mysql.connector",
+        "psycopg",
+        "psycopg_pool",
         "tkcalendar",
         "openpyxl",
         "bcrypt",

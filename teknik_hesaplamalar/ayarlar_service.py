@@ -8,7 +8,7 @@ TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS teknik_hesap_ayarlar (
     ayar_adi VARCHAR(100) PRIMARY KEY,
     ayar_degeri TEXT NOT NULL,
-    son_guncelleme TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    son_guncelleme TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )
 """
 
@@ -71,7 +71,7 @@ def _set_raw(key: str, value: str) -> None:
             """
             INSERT INTO teknik_hesap_ayarlar (ayar_adi, ayar_degeri)
             VALUES (%s, %s)
-            ON DUPLICATE KEY UPDATE ayar_degeri=VALUES(ayar_degeri)
+            ON CONFLICT (ayar_adi) DO UPDATE SET ayar_degeri = EXCLUDED.ayar_degeri
             """,
             (key, value),
         )
@@ -125,7 +125,7 @@ def _get_settings_bulk(keys: list[str]) -> Dict[str, str]:
             if to_insert:
                 cursor.executemany(
                     "INSERT INTO teknik_hesap_ayarlar (ayar_adi, ayar_degeri) VALUES (%s, %s)"
-                    " ON DUPLICATE KEY UPDATE ayar_degeri=VALUES(ayar_degeri)",
+                    " ON CONFLICT (ayar_adi) DO UPDATE SET ayar_degeri = EXCLUDED.ayar_degeri",
                     to_insert,
                 )
                 db.commit()

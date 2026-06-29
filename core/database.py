@@ -1,8 +1,13 @@
-﻿import mysql.connector
-from mysql.connector import Error, pooling
+﻿import builtins
+import re
 import threading
-import builtins
+
+import psycopg
+from psycopg_pool import ConnectionPool
+
 from core.runtime_config import ConfigError, load_db_config
+
+Error = psycopg.Error
 
 # Global bağlantı havuzu
 _connection_pool = None
@@ -25,6 +30,203 @@ def print(*args, **kwargs):
             safe_args.append(arg)
     builtins.print(*safe_args, **kwargs)
 
+
+def _build_conninfo(db_config):
+    if db_config.get("database_url"):
+        return db_config["database_url"]
+    return (
+        f"host={db_config['host']} "
+        f"port={db_config['port']} "
+        f"dbname={db_config['database']} "
+        f"user={db_config['user']} "
+        f"password={db_config['password']} "
+        f"connect_timeout={db_config['connection_timeout']}"
+    )
+
+
+def _convert_create_table(query):
+    converted = query
+    converted = re.sub(r"\bINT\s+AUTO_INCREMENT\s+PRIMARY\s+KEY\b", "SERIAL PRIMARY KEY", converted, flags=re.IGNORECASE)
+    converted = re.sub(
+        r"(\w+)\s+ENUM\(([^)]*)\)\s+DEFAULT\s+('[^']*')",
+        lambda match: f"{match.group(1)} TEXT DEFAULT {match.group(3)} CHECK ({match.group(1)} IN ({match.group(2)}))",
+        converted,
+        flags=re.IGNORECASE,
+    )
+    converted = re.sub(r"\s+ON\s+UPDATE\s+CURRENT_TIMESTAMP", "", converted, flags=re.IGNORECASE)
+    converted = re.sub(r",?\s*INDEX\s+\w+\s*\([^)]+\)", "", converted, flags=re.IGNORECASE)
+    converted = re.sub(r"\)\s*ENGINE\s*=\s*InnoDB\s+DEFAULT\s+CHARSET\s*=\s*\w+\s+COLLATE\s*=\s*\w+", ")", converted, flags=re.IGNORECASE)
+    converted = re.sub(r",\s*\)", "\n)", converted)
+    return converted
+
+
+def _postgres_compatible_query(query):
+    stripped = query.strip()
+    show_match = re.match(r"SHOW\s+TABLES\s+LIKE\s+'([^']+)'", stripped, flags=re.IGNORECASE)
+    if show_match:
+        return "SELECT to_regclass(%s)", (f"public.{show_match.group(1)}",)
+
+    describe_match = re.match(r"DESCRIBE\s+(\w+)", stripped, flags=re.IGNORECASE)
+    if describe_match:
+        return (
+            """
+            SELECT column_name, data_type
+            FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = %s
+            ORDER BY ordinal_position
+            """,
+            (describe_match.group(1),),
+        )
+
+    converted = query
+    converted = re.sub(r"\bCURDATE\s*\(\s*\)", "CURRENT_DATE", converted, flags=re.IGNORECASE)
+    converted = re.sub(r"\bNOW\s*\(\s*\)", "CURRENT_TIMESTAMP", converted, flags=re.IGNORECASE)
+    converted = re.sub(r"\bIFNULL\s*\(", "COALESCE(", converted, flags=re.IGNORECASE)
+    converted = re.sub(r"\bUNSIGNED\b", "", converted, flags=re.IGNORECASE)
+    converted = re.sub(r"\bVALUES\s*\((\w+)\)", r"EXCLUDED.\1", converted, flags=re.IGNORECASE)
+    converted = re.sub(
+        r"ON\s+DUPLICATE\s+KEY\s+UPDATE\s+musteri_adi\s*=\s*EXCLUDED\.musteri_adi",
+        "ON CONFLICT (musteri_adi) DO UPDATE SET musteri_adi = EXCLUDED.musteri_adi",
+        converted,
+        flags=re.IGNORECASE,
+    )
+    converted = re.sub(
+        r"ON\s+DUPLICATE\s+KEY\s+UPDATE\s+musteri_adi\s*=\s*VALUES\s*\(\s*musteri_adi\s*\)",
+        "ON CONFLICT (musteri_adi) DO UPDATE SET musteri_adi = EXCLUDED.musteri_adi",
+        converted,
+        flags=re.IGNORECASE,
+    )
+    converted = re.sub(
+        r"ON\s+DUPLICATE\s+KEY\s+UPDATE\s+musteri_adi\s*=\s*EXCLUDED\.musteri_adi",
+        "ON CONFLICT (siparis_no) DO UPDATE SET musteri_adi = EXCLUDED.musteri_adi",
+        converted,
+        flags=re.IGNORECASE,
+    )
+    if re.match(r"\s*INSERT\s+INTO\s+siparisler\b", converted, flags=re.IGNORECASE):
+        converted = converted.replace("ON CONFLICT (musteri_adi)", "ON CONFLICT (siparis_no)")
+    if re.match(r"\s*CREATE\s+TABLE", converted, flags=re.IGNORECASE):
+        converted = _convert_create_table(converted)
+    return converted, None
+
+
+class PostgresCursor:
+    def __init__(self, cursor):
+        self._cursor = cursor
+        self.lastrowid = None
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+    def execute(self, query, params=None):
+        stripped = query.strip()
+        show_tables_param = re.match(r"SHOW\s+TABLES\s+LIKE\s+%s", stripped, flags=re.IGNORECASE)
+        if show_tables_param and params:
+            self.lastrowid = None
+            return self._cursor.execute("SELECT to_regclass(%s)", (f"public.{params[0]}",))
+
+        show_columns = re.match(r"SHOW\s+COLUMNS\s+FROM\s+(\w+)\s+LIKE\s+'([^']+)'", stripped, flags=re.IGNORECASE)
+        if show_columns:
+            self.lastrowid = None
+            return self._cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = %s AND column_name = %s
+                LIMIT 1
+                """,
+                (show_columns.group(1), show_columns.group(2)),
+            )
+
+        show_columns_param = re.match(r"SHOW\s+COLUMNS\s+FROM\s+(\w+)\s+LIKE\s+%s", stripped, flags=re.IGNORECASE)
+        if show_columns_param and params:
+            self.lastrowid = None
+            return self._cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = %s AND column_name = %s
+                LIMIT 1
+                """,
+                (show_columns_param.group(1), params[0]),
+            )
+
+        show_all_columns = re.match(r"SHOW\s+COLUMNS\s+FROM\s+(\w+)$", stripped, flags=re.IGNORECASE)
+        if show_all_columns:
+            self.lastrowid = None
+            return self._cursor.execute(
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = %s
+                ORDER BY ordinal_position
+                """,
+                (show_all_columns.group(1),),
+            )
+
+        converted, forced_params = _postgres_compatible_query(query)
+        if forced_params is not None:
+            params = forced_params
+        if self._should_capture_insert_id(converted):
+            converted = converted.rstrip().rstrip(";") + " RETURNING id"
+            result = self._cursor.execute(converted, params)
+            row = self._cursor.fetchone()
+            self.lastrowid = row[0] if row else None
+            return result
+        self.lastrowid = None
+        return self._cursor.execute(converted, params)
+
+    def executemany(self, query, params_seq):
+        converted, forced_params = _postgres_compatible_query(query)
+        if forced_params is not None:
+            return self._cursor.execute(converted, forced_params)
+        self.lastrowid = None
+        return self._cursor.executemany(converted, params_seq)
+
+    def fetchone(self):
+        return self._cursor.fetchone()
+
+    def fetchall(self):
+        return self._cursor.fetchall()
+
+    def close(self):
+        return self._cursor.close()
+
+    def __getattr__(self, name):
+        return getattr(self._cursor, name)
+
+    @staticmethod
+    def _should_capture_insert_id(query):
+        normalized = query.lstrip().lower()
+        return " returning " not in normalized and bool(
+            re.match(r"insert\s+into\s+(musteriler|siparisler|projeler|teklifler|teklif_kanal_detaylari|teklif_kalemleri)\b", normalized)
+        )
+
+
+class PostgresConnection:
+    def __init__(self, connection):
+        self._connection = connection
+
+    def cursor(self, *args, **kwargs):
+        del args, kwargs
+        return PostgresCursor(self._connection.cursor())
+
+    def is_connected(self):
+        return not self._connection.closed
+
+    def close(self):
+        self._connection.close()
+
+    def commit(self):
+        self._connection.commit()
+
+    def rollback(self):
+        self._connection.rollback()
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+
 def get_connection_pool():
     """Thread-safe bağlantı havuzu oluşturur"""
     global _connection_pool
@@ -33,21 +235,11 @@ def get_connection_pool():
             if _connection_pool is None:
                 try:
                     db_config = load_db_config()
-                    _connection_pool = mysql.connector.pooling.MySQLConnectionPool(
-                        pool_name="maliyet_pool",
-                        pool_size=db_config["pool_size"],
-                        pool_reset_session=True,
-                        host=db_config["host"],
-                        user=db_config["user"],
-                        password=db_config["password"],
-                        database=db_config["database"],
-                        port=db_config["port"],
-                        autocommit=False,
-                        # Performans optimizasyonları
-                        connection_timeout=db_config["pool_timeout"],
-                        use_pure=db_config["use_pure"],
-                        charset=db_config["charset"],
-                        collation=db_config["collation"]
+                    _connection_pool = ConnectionPool(
+                        conninfo=_build_conninfo(db_config),
+                        min_size=1,
+                        max_size=db_config["pool_size"],
+                        kwargs={"autocommit": False},
                     )
                     print("✅ Veritabanı bağlantı havuzu oluşturuldu")
                 except ConfigError as e:
@@ -63,17 +255,11 @@ def veritabani_baglanti():
     try:
         db_config = load_db_config()
         print("🔄 Doğrudan bağlantı kuruluyor...")
-        connection = mysql.connector.connect(
-            host=db_config["host"],
-            user=db_config["user"],
-            password=db_config["password"],
-            database=db_config["database"],
-            port=db_config["port"],
-            # Hızlı bağlantı için timeout ayarları
-            connection_timeout=db_config["connection_timeout"],
-            use_pure=db_config["use_pure"],
-            charset=db_config["charset"],
-            autocommit=True  # Otomatik commit
+        connection = PostgresConnection(
+            psycopg.connect(
+                _build_conninfo(db_config),
+                autocommit=True,
+            )
         )
         if connection.is_connected():
             print("✅ Veritabanı bağlantısı başarılı")

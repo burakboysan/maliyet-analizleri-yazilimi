@@ -1,10 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from mysql.connector import MySQLConnection
 from pydantic import BaseModel
 
 from app.core.account_security import ensure_account_security_schema, send_verification_email
@@ -71,7 +70,7 @@ def _require_owner(current_user: dict[str, Any]) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin yetkisi gerekli.")
 
 
-def _column_exists(connection: MySQLConnection, table_name: str, column_name: str) -> bool:
+def _column_exists(connection: Any, table_name: str, column_name: str) -> bool:
     cursor = connection.cursor()
     cursor.execute(
         """
@@ -94,7 +93,7 @@ def _json_param(payload: dict[str, bool]) -> str:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
-def _ensure_admin_schema(connection: MySQLConnection) -> None:
+def _ensure_admin_schema(connection: Any) -> None:
     ensure_account_security_schema(connection)
     cursor = connection.cursor()
     backend = get_database_backend()
@@ -108,7 +107,7 @@ def _ensure_admin_schema(connection: MySQLConnection) -> None:
     connection.commit()
 
 
-def _role_id_by_name(connection: MySQLConnection, role_name: str) -> int:
+def _role_id_by_name(connection: Any, role_name: str) -> int:
     cursor = connection.cursor(dictionary=True)
     cursor.execute("SELECT id FROM roller WHERE LOWER(rol_adi) = LOWER(%s) LIMIT 1", (role_name.strip(),))
     row = cursor.fetchone()
@@ -117,7 +116,7 @@ def _role_id_by_name(connection: MySQLConnection, role_name: str) -> int:
     return int(row["id"])
 
 
-def _fetch_admin_user(connection: MySQLConnection, user_id: int) -> dict[str, Any]:
+def _fetch_admin_user(connection: Any, user_id: int) -> dict[str, Any]:
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
@@ -174,7 +173,7 @@ def _admin_user_response(row: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/roles")
-def list_roles(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def list_roles(connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     _require_owner(current_user)
     cursor = connection.cursor(dictionary=True)
     cursor.execute("SELECT id, rol_adi FROM roller ORDER BY rol_adi")
@@ -182,7 +181,7 @@ def list_roles(connection: MySQLConnection = Depends(get_connection), current_us
 
 
 @router.get("/users")
-def list_users(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def list_users(connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     _require_owner(current_user)
     _ensure_admin_schema(connection)
     cursor = connection.cursor(dictionary=True)
@@ -219,7 +218,7 @@ def list_users(connection: MySQLConnection = Depends(get_connection), current_us
 @router.post("/users", status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: AdminUserCreateRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_owner(current_user)
@@ -263,7 +262,7 @@ def create_user(
 
 
 @router.delete("/users/{user_id}")
-def delete_user(user_id: int, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def delete_user(user_id: int, connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     _require_owner(current_user)
     if int(user_id) == int(current_user["id"]):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Kendi kullanıcınızı silemezsiniz.")
@@ -280,7 +279,7 @@ def delete_user(user_id: int, connection: MySQLConnection = Depends(get_connecti
 def update_user_email(
     user_id: int,
     payload: AdminUserEmailUpdateRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_owner(current_user)
@@ -310,7 +309,7 @@ def update_user_email(
 def update_user_password(
     user_id: int,
     payload: AdminUserPasswordUpdateRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_owner(current_user)
@@ -327,7 +326,7 @@ def update_user_password(
 @router.get("/users/{user_id}/module-permissions")
 def get_user_module_permissions(
     user_id: int,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_owner(current_user)
@@ -340,7 +339,7 @@ def get_user_module_permissions(
 def update_user_module_permissions(
     user_id: int,
     payload: ModulePermissionsUpdateRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_owner(current_user)
@@ -360,7 +359,7 @@ def update_user_module_permissions(
 @router.get("/users/{user_id}/mobile-module-permissions")
 def get_user_mobile_module_permissions(
     user_id: int,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_owner(current_user)
@@ -373,7 +372,7 @@ def get_user_mobile_module_permissions(
 def update_user_mobile_module_permissions(
     user_id: int,
     payload: MobileModulePermissionsUpdateRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     _require_owner(current_user)

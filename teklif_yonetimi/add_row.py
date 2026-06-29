@@ -3,7 +3,9 @@ from tkinter import ttk, messagebox
 from tkinter import font as tkfont
 from decimal import Decimal
 import json
-from mysql.connector import Error
+import psycopg
+
+Error = psycopg.Error
 import threading
 import os
 import sys

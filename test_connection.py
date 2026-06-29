@@ -72,7 +72,7 @@ def test_imports():
     modules = [
         ("customtkinter", "GUI kütüphanesi"),
         ("PIL", "Resim işleme"),
-        ("mysql.connector", "MySQL bağlantısı"),
+        ("psycopg", "PostgreSQL bağlantısı"),
         ("tkcalendar", "Takvim widget'ı"),
         ("openpyxl", "Excel işleme"),
         ("bcrypt", "Şifreleme")

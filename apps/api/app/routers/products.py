@@ -1,8 +1,7 @@
-from decimal import Decimal, InvalidOperation
+﻿from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from mysql.connector import MySQLConnection
 
 from app.core.db import get_connection
 from app.core.security import require_current_user, require_module_access
@@ -238,7 +237,7 @@ def _normalize_product_value(key: str, value: Any) -> Any:
         raise HTTPException(status_code=422, detail=f"{FIELD_LABELS.get(key, key)} sayısal olmalı.")
 
 
-def _recalculate_product_cost(connection: MySQLConnection, product_id: int) -> tuple[bool, str | None]:
+def _recalculate_product_cost(connection: Any, product_id: int) -> tuple[bool, str | None]:
     try:
         from maliyet.cost_calculator import maliyet_hesapla
 
@@ -254,7 +253,7 @@ def _recalculate_product_cost(connection: MySQLConnection, product_id: int) -> t
         return False, str(exc)
 
 
-def _get_product_detail_response(connection: MySQLConnection, product_id: int) -> ProductDetailResponse:
+def _get_product_detail_response(connection: Any, product_id: int) -> ProductDetailResponse:
     cursor = connection.cursor(dictionary=True)
 
     cursor.execute(
@@ -365,7 +364,7 @@ def _get_product_detail_response(connection: MySQLConnection, product_id: int) -
 def list_products(
     search: str = Query(default="", max_length=120),
     limit: int = Query(default=2000, ge=1, le=10000),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -425,7 +424,7 @@ def list_products(
 @router.get("/{product_id}/detail", response_model=ProductDetailResponse)
 def get_product_detail(
     product_id: int,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -434,7 +433,7 @@ def get_product_detail(
 
 @router.get("/edit-options", response_model=ProductEditOptionsResponse)
 def get_product_edit_options(
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -481,7 +480,7 @@ def get_product_edit_options(
 @router.post("/revise-costs", response_model=ProductCostRevisionResponse)
 def revise_product_costs(
     payload: ProductCostRevisionRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -555,7 +554,7 @@ def revise_product_costs(
 def update_product(
     product_id: int,
     payload: ProductUpdateRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -629,7 +628,7 @@ def update_product(
 @router.delete("/{product_id}", response_model=ProductDeleteResponse)
 def delete_product(
     product_id: int,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -673,7 +672,7 @@ def delete_product(
 def copy_product(
     product_id: int,
     payload: ProductCopyRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -761,7 +760,7 @@ def copy_product(
 def update_product_tree_item_quantity_route(
     item_id: int,
     payload: ProductTreeQuantityUpdateRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -795,7 +794,7 @@ def update_product_tree_item_quantity_route(
 @router.post("/tree-items/delete", response_model=ProductTreeDeleteResponse)
 def delete_product_tree_items_route(
     payload: ProductTreeDeleteRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -823,7 +822,7 @@ def delete_product_tree_items_route(
 def search_product_tree_materials_route(
     material_type: str = Query(..., max_length=80),
     q: str = Query(default="", max_length=120),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -867,7 +866,7 @@ def search_product_tree_materials_route(
 @router.post("/tree-materials", response_model=ProductTreeMaterialAddResponse)
 def add_product_tree_materials_route(
     payload: ProductTreeMaterialAddRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -907,7 +906,7 @@ def add_product_tree_materials_route(
 @router.post("/tree-materials/resolve", response_model=ProductTreeMaterialCodeResolveResponse)
 def resolve_product_tree_material_codes_route(
     payload: ProductTreeMaterialCodeResolveRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -939,7 +938,7 @@ def resolve_product_tree_material_codes_route(
 def save_product_tree_labor(
     product_id: int,
     payload: ProductTreeLaborUpdateRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -989,7 +988,7 @@ def save_product_tree_labor(
 @router.post("/{product_id}/tree/recalculate", response_model=ProductTreeRecalculateResponse)
 def recalculate_product_tree_cost(
     product_id: int,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")
@@ -1013,7 +1012,7 @@ def recalculate_product_tree_cost(
 @router.get("/{product_id}/tree", response_model=ProductTreeResponse)
 def get_product_tree(
     product_id: int,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "products")

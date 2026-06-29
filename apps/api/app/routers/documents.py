@@ -1,7 +1,6 @@
-from typing import Any
+﻿from typing import Any
 
 from fastapi import APIRouter, Depends, Query
-from mysql.connector import Error as MySQLError, MySQLConnection
 
 from app.core.db import get_connection
 from app.core.security import require_current_user, require_module_access
@@ -36,14 +35,14 @@ def _normalize_document_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _rollback_if_possible(connection: MySQLConnection) -> None:
+def _rollback_if_possible(connection: Any) -> None:
     try:
         connection.rollback()
     except Exception:
         pass
 
 
-def _column_names(connection: MySQLConnection, table_name: str) -> set[str]:
+def _column_names(connection: Any, table_name: str) -> set[str]:
     cursor = connection.cursor(dictionary=True)
     try:
         cursor.execute(f"SELECT * FROM {table_name} LIMIT 0")
@@ -58,7 +57,7 @@ def list_documents(
     series_key: str | None = Query(default=None, max_length=80),
     document_type: str | None = Query(default=None, alias="type", max_length=50),
     language: str | None = Query(default=None, max_length=5),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_module_access(current_user, "documents")
@@ -116,7 +115,7 @@ def list_documents(
             """,
             tuple(params),
         )
-    except (MySQLError, Exception):
+    except Exception:
         _rollback_if_possible(connection)
         return []
     return [_normalize_document_row(row) for row in cursor.fetchall()]

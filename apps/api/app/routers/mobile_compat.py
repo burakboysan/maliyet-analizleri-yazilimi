@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
@@ -10,7 +10,6 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Path as FastApiPath, Query, UploadFile, status
 from fastapi.responses import JSONResponse, Response
-from mysql.connector import MySQLConnection
 from pydantic import BaseModel
 
 from app.core.account_security import (
@@ -220,7 +219,7 @@ def _require_int_id(value: str) -> int:
         raise HTTPException(status_code=404, detail="Not found.") from exc
 
 
-def _column_exists(connection: MySQLConnection, table_name: str, column_name: str) -> bool:
+def _column_exists(connection: Any, table_name: str, column_name: str) -> bool:
     cursor = connection.cursor()
     cursor.execute(
         """
@@ -252,7 +251,7 @@ def _cost_version_source(cursor: Any, table_name: str, updated_at_expr: str, whe
     }
 
 
-def _ensure_leave_admin_schema(connection: MySQLConnection) -> None:
+def _ensure_leave_admin_schema(connection: Any) -> None:
     ensure_account_security_schema(connection)
     cursor = connection.cursor()
     if not _column_exists(connection, "kullanicilar", "manager_user_id"):
@@ -281,7 +280,7 @@ def _product_row(row: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def _fetch_product_row(connection: MySQLConnection, product_id: int) -> dict[str, Any]:
+def _fetch_product_row(connection: Any, product_id: int) -> dict[str, Any]:
     cursor = connection.cursor(dictionary=True)
     cursor.execute("SELECT * FROM urunler WHERE id = %s LIMIT 1", (product_id,))
     row = cursor.fetchone()
@@ -376,7 +375,7 @@ def _configuration_response(cursor: Any, config_id: int) -> dict[str, Any]:
 
 
 @router.get("/health/db")
-def health_db(connection: MySQLConnection = Depends(get_connection)):
+def health_db(connection: Any = Depends(get_connection)):
     cursor = connection.cursor()
     cursor.execute("SELECT 1")
     cursor.fetchone()
@@ -385,7 +384,7 @@ def health_db(connection: MySQLConnection = Depends(get_connection)):
 
 @router.get("/auth/me/mobile-module-permissions")
 def mobile_module_permissions(
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     permissions = current_user.get("mobile_module_permissions") or {}
@@ -398,7 +397,7 @@ def mobile_module_permissions(
 
 
 @router.get("/admin/leave/users")
-def admin_leave_users(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def admin_leave_users(connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "leave_management")
     if not _is_owner(current_user):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli.")
@@ -444,7 +443,7 @@ def admin_leave_users(connection: MySQLConnection = Depends(get_connection), cur
 def update_admin_leave_user(
     user_id: int,
     payload: LeaveAdminUserUpdateRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "leave_management")
@@ -468,7 +467,7 @@ def list_mobile_products(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=200, ge=1, le=10000),
     search: str | None = Query(default=None),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "products")
@@ -501,7 +500,7 @@ def list_mobile_products(
 
 @router.get("/products/cost-version")
 def products_cost_version(
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "products")
@@ -547,7 +546,7 @@ def products_cost_version(
 @router.get("/products/by-codes")
 def products_by_codes(
     codes: list[str] = Query(default=[]),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "products")
@@ -568,7 +567,7 @@ def products_by_codes(
 
 
 @tail_router.get("/products/{product_id}")
-def get_mobile_product(product_id: str = FastApiPath(...), connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def get_mobile_product(product_id: str = FastApiPath(...), connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "products")
     numeric_product_id = _require_int_id(product_id)
     return _fetch_product_row(connection, numeric_product_id)
@@ -578,7 +577,7 @@ def get_mobile_product(product_id: str = FastApiPath(...), connection: MySQLConn
 def update_mobile_admin_product(
     product_id: int,
     payload: dict[str, Any],
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "products")
@@ -605,7 +604,7 @@ def update_mobile_admin_product(
 
 
 @tail_router.get("/products/{product_id}/configurations")
-def product_configurations(product_id: int, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def product_configurations(product_id: int, connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "products")
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
@@ -654,7 +653,7 @@ def product_configurations(product_id: int, connection: MySQLConnection = Depend
 
 
 @router.get("/desktop/customers")
-def customer_options(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def customer_options(connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "selection_wizard")
     cursor = connection.cursor(dictionary=True)
     cursor.execute("SELECT id, musteri_adi, musteri_kodu, telefon, email, adres, vergi_no, vergi_dairesi, kontak_kisi_adi FROM musteriler ORDER BY musteri_adi")
@@ -664,7 +663,7 @@ def customer_options(connection: MySQLConnection = Depends(get_connection), curr
 
 
 @router.get("/desktop/order-codes")
-def order_code_options(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def order_code_options(connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "selection_wizard")
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
@@ -684,7 +683,7 @@ def list_configurations(
     page_size: int = Query(50, ge=1, le=200),
     urun_kategorisi: str | None = None,
     musteri_adi: str | None = None,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "selection_wizard")
@@ -735,7 +734,7 @@ def list_configurations(
 @router.post("/configurations", status_code=status.HTTP_201_CREATED)
 def create_configuration(
     payload: CreateConfigurationRequest,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "selection_wizard")
@@ -817,13 +816,13 @@ def create_configuration(
 
 
 @router.get("/configurations/{config_id}")
-def get_configuration(config_id: int, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def get_configuration(config_id: int, connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "selection_wizard")
     return _configuration_response(connection.cursor(dictionary=True), config_id)
 
 
 @router.delete("/configurations/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_configuration(config_id: int, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def delete_configuration(config_id: int, connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "selection_wizard")
     cursor = connection.cursor()
     cursor.execute("DELETE FROM urun_konfigurasyon_kalemleri WHERE konfigurasyon_id = %s", (config_id,))
@@ -837,7 +836,7 @@ def list_documents(
     series_key: str | None = None,
     type: str | None = None,
     language: str | None = None,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "documents")
@@ -902,7 +901,7 @@ def upload_document(
     description: str = File(""),
     sort_order: int = File(0),
     file: UploadFile = File(...),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "documents")
@@ -924,7 +923,7 @@ def upload_document(
 @router.delete("/documents/{document_id}")
 def delete_document(
     document_id: int,
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "documents")
@@ -940,7 +939,7 @@ def delete_document(
 
 
 @router.get("/menu-images")
-def menu_images(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def menu_images(connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "selection_wizard")
     cursor = connection.cursor(dictionary=True)
     cursor.execute("SELECT menu_key, image_url FROM menu_images ORDER BY menu_key")
@@ -951,7 +950,7 @@ def menu_images(connection: MySQLConnection = Depends(get_connection), current_u
 def upload_menu_image(
     menu_key: str,
     file: UploadFile = File(...),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "selection_wizard")
@@ -967,7 +966,7 @@ def upload_menu_image(
 def upload_product_image(
     code: str,
     file: UploadFile = File(...),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
     require_mobile_module_access(current_user, "products")
@@ -979,7 +978,7 @@ def upload_product_image(
 
 
 @router.get("/service/forms")
-def list_service_forms(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def list_service_forms(connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "field_service")
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
@@ -1007,7 +1006,7 @@ def list_service_forms(connection: MySQLConnection = Depends(get_connection), cu
 
 
 @router.post("/service/forms")
-def create_service_form(payload: ServiceFormCreate, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def create_service_form(payload: ServiceFormCreate, connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "field_service")
     cursor = connection.cursor(dictionary=True)
     try:
@@ -1045,7 +1044,7 @@ def create_service_form(payload: ServiceFormCreate, connection: MySQLConnection 
 
 
 @router.post("/service/forms/{service_form_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
-def delete_service_form(service_form_id: int, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
+def delete_service_form(service_form_id: int, connection: Any = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_mobile_module_access(current_user, "field_service")
     cursor = connection.cursor()
     cursor.execute("DELETE FROM servis_formlari WHERE id = %s", (service_form_id,))

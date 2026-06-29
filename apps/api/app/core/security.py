@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import base64
 from datetime import datetime, timedelta, timezone
@@ -10,7 +10,6 @@ from typing import Any
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from mysql.connector import MySQLConnection
 
 from app.core.db import get_connection
 from app.core.settings import get_settings
@@ -138,7 +137,7 @@ def validate_account_state(user: dict[str, Any]) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="E-posta adresi doğrulanmamış.")
 
 
-def get_user_by_id(connection: MySQLConnection, user_id: int) -> dict[str, Any] | None:
+def get_user_by_id(connection: Any, user_id: int) -> dict[str, Any] | None:
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
@@ -165,7 +164,7 @@ def get_user_by_id(connection: MySQLConnection, user_id: int) -> dict[str, Any] 
 
 def require_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
-    connection: MySQLConnection = Depends(get_connection),
+    connection: Any = Depends(get_connection),
 ) -> dict[str, Any]:
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Oturum gerekli.")

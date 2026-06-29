@@ -193,7 +193,12 @@ def patch_documents_route() -> None:
 def ensure_db_column() -> None:
     db = SessionLocal()
     try:
-        exists = db.execute(text("SHOW COLUMNS FROM documents LIKE 'language'")).first()
+        exists = db.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = 'documents' AND column_name = 'language'"
+            )
+        ).first()
         if exists is None:
             db.execute(text("ALTER TABLE documents ADD COLUMN language VARCHAR(5) NOT NULL DEFAULT 'tr'"))
             db.execute(text("CREATE INDEX idx_documents_language ON documents (language)"))

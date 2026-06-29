@@ -1,8 +1,7 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 import pandas as pd
-import mysql.connector
-from mysql.connector import IntegrityError
+from psycopg.errors import UniqueViolation as IntegrityError
 from datetime import datetime
 from core.database import veritabani_baglanti
 import threading

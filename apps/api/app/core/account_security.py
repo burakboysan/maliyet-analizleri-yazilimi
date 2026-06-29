@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime, timedelta
 from email.message import EmailMessage
@@ -10,7 +10,6 @@ import secrets
 import smtplib
 from typing import Any
 
-from mysql.connector import MySQLConnection
 
 from app.core.db import get_database_backend
 from app.core.security import hash_password
@@ -61,7 +60,7 @@ def _send_email(to_email: str, subject: str, body: str, html_body: str | None = 
     return {"status": "sent", "message": f"E-posta {to_email} adresine gönderildi."}
 
 
-def _column_exists(connection: MySQLConnection, table_name: str, column_name: str) -> bool:
+def _column_exists(connection: Any, table_name: str, column_name: str) -> bool:
     cursor = connection.cursor()
     cursor.execute(
         """
@@ -88,7 +87,7 @@ def _table_exists(cursor: Any, table_name: str) -> bool:
     return cursor.fetchone() is not None
 
 
-def ensure_account_security_schema(connection: MySQLConnection) -> None:
+def ensure_account_security_schema(connection: Any) -> None:
     cursor = connection.cursor()
     backend = get_database_backend()
     if not _column_exists(connection, "kullanicilar", "email"):
@@ -110,10 +109,7 @@ def ensure_account_security_schema(connection: MySQLConnection) -> None:
         column_type = "JSONB" if backend == "postgres" else "JSON"
         cursor.execute(f"ALTER TABLE kullanicilar ADD COLUMN mobile_module_permissions {column_type} NULL")
 
-    if backend == "postgres":
-        _ensure_postgres_auth_tables(cursor)
-    else:
-        _ensure_mysql_auth_tables(cursor)
+    _ensure_postgres_auth_tables(cursor)
     connection.commit()
 
 
@@ -166,54 +162,6 @@ def _ensure_postgres_auth_tables(cursor: Any) -> None:
             """
         )
 
-
-def _ensure_mysql_auth_tables(cursor: Any) -> None:
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS email_verification_tokens (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            token_hash VARCHAR(64) NOT NULL,
-            expires_at DATETIME NOT NULL,
-            used_at DATETIME NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_evt_user_id (user_id),
-            INDEX idx_evt_token_hash (token_hash),
-            CONSTRAINT fk_evt_user FOREIGN KEY (user_id) REFERENCES kullanicilar(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS password_reset_tokens (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            reset_code_hash VARCHAR(64) NOT NULL,
-            expires_at DATETIME NOT NULL,
-            used_at DATETIME NULL,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            INDEX idx_prt_user_id (user_id),
-            INDEX idx_prt_reset_code_hash (reset_code_hash),
-            CONSTRAINT fk_prt_user FOREIGN KEY (user_id) REFERENCES kullanicilar(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """
-    )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS auth_rate_limits (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            action_type VARCHAR(64) NOT NULL,
-            target_key VARCHAR(255) NOT NULL,
-            window_started_at DATETIME NOT NULL,
-            attempt_count INT NOT NULL DEFAULT 0,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uq_auth_rate_limits_action_target (action_type, target_key)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-        """
-    )
-
-
 def validate_email(email: str) -> str:
     normalized = str(email or "").strip().lower()
     if not normalized:
@@ -236,7 +184,7 @@ def validate_password_policy(password: str) -> None:
 
 
 def consume_rate_limit(
-    connection: MySQLConnection,
+    connection: Any,
     action_type: str,
     target_key: str,
     limit_count: int,
@@ -293,7 +241,7 @@ def _create_numeric_code() -> str:
     return f"{secrets.randbelow(1000000):06d}"
 
 
-def _find_user_by_email(connection: MySQLConnection, email: str) -> dict[str, Any] | None:
+def _find_user_by_email(connection: Any, email: str) -> dict[str, Any] | None:
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
@@ -307,7 +255,7 @@ def _find_user_by_email(connection: MySQLConnection, email: str) -> dict[str, An
     return cursor.fetchone()
 
 
-def _find_user_by_identifier(connection: MySQLConnection, identifier: str) -> dict[str, Any] | None:
+def _find_user_by_identifier(connection: Any, identifier: str) -> dict[str, Any] | None:
     normalized = str(identifier or "").strip()
     if not normalized:
         return None
@@ -354,7 +302,7 @@ def _password_reset_email_content(username: str, code: str) -> tuple[str, str, s
     return subject, body, html_body
 
 
-def create_account(connection: MySQLConnection, username: str, email: str, password: str) -> dict[str, str]:
+def create_account(connection: Any, username: str, email: str, password: str) -> dict[str, str]:
     ensure_account_security_schema(connection)
     username = str(username or "").strip()
     if not username:
@@ -388,7 +336,7 @@ def create_account(connection: MySQLConnection, username: str, email: str, passw
     return {"status": "created", "message": "Hesabınız oluşturuldu. Giriş yapmadan önce e-posta adresinizi doğrulayın."}
 
 
-def send_verification_email(connection: MySQLConnection, email: str) -> dict[str, str]:
+def send_verification_email(connection: Any, email: str) -> dict[str, str]:
     ensure_account_security_schema(connection)
     user = _find_user_by_email(connection, email)
     if not user:
@@ -416,7 +364,7 @@ def send_verification_email(connection: MySQLConnection, email: str) -> dict[str
     return _send_email(str(user["email"]), subject, body, html_body)
 
 
-def verify_email_code(connection: MySQLConnection, email: str, code: str) -> dict[str, str]:
+def verify_email_code(connection: Any, email: str, code: str) -> dict[str, str]:
     ensure_account_security_schema(connection)
     email = validate_email(email)
     code = str(code or "").strip()
@@ -456,7 +404,7 @@ def verify_email_code(connection: MySQLConnection, email: str, code: str) -> dic
     return {"status": "verified", "message": "E-posta adresi doğrulandı. Hesap aktif hale getirildi."}
 
 
-def send_password_reset_code(connection: MySQLConnection, identifier: str) -> dict[str, str]:
+def send_password_reset_code(connection: Any, identifier: str) -> dict[str, str]:
     ensure_account_security_schema(connection)
     identifier = str(identifier or "").strip()
     if not identifier:
@@ -487,7 +435,7 @@ def send_password_reset_code(connection: MySQLConnection, identifier: str) -> di
     return _send_email(str(user["email"]), subject, body, html_body)
 
 
-def reset_password_with_code(connection: MySQLConnection, identifier: str, code: str, new_password: str) -> dict[str, str]:
+def reset_password_with_code(connection: Any, identifier: str, code: str, new_password: str) -> dict[str, str]:
     ensure_account_security_schema(connection)
     identifier = str(identifier or "").strip()
     code = str(code or "").strip()
