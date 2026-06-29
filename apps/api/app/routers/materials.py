@@ -1,3 +1,4 @@
+from time import monotonic
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -38,6 +39,9 @@ MATERIAL_SORT_COLUMNS = {
     "fiyat": "fiyat",
     "guncelleme_tarihi": "m.guncelleme_tarihi",
 }
+MATERIAL_FACETS_CACHE_TTL_SECONDS = 300
+MATERIAL_FACETS_CACHE_MAX_ITEMS = 128
+_MATERIAL_FACETS_CACHE: dict[tuple[Any, ...], tuple[float, dict[str, Any]]] = {}
 
 
 def _stringify_date(value: Any) -> str | None:
@@ -196,6 +200,32 @@ def _material_facet_options(cursor: Any, column: str, where_sql: str, params: li
     return [{"value": str(row["value"]), "count": int(row["count"] or 0)} for row in cursor.fetchall()]
 
 
+def _material_facets_cache_key(where_sql: str, params: list[Any]) -> tuple[Any, ...]:
+    return (where_sql, tuple(str(param) for param in params))
+
+
+def _clear_material_facets_cache() -> None:
+    _MATERIAL_FACETS_CACHE.clear()
+
+
+def _cached_material_facets(cache_key: tuple[Any, ...]) -> dict[str, Any] | None:
+    cached = _MATERIAL_FACETS_CACHE.get(cache_key)
+    if not cached:
+        return None
+    cached_at, payload = cached
+    if monotonic() - cached_at > MATERIAL_FACETS_CACHE_TTL_SECONDS:
+        _MATERIAL_FACETS_CACHE.pop(cache_key, None)
+        return None
+    return payload
+
+
+def _store_material_facets_cache(cache_key: tuple[Any, ...], payload: dict[str, Any]) -> None:
+    if len(_MATERIAL_FACETS_CACHE) >= MATERIAL_FACETS_CACHE_MAX_ITEMS:
+        oldest_key = min(_MATERIAL_FACETS_CACHE, key=lambda key: _MATERIAL_FACETS_CACHE[key][0])
+        _MATERIAL_FACETS_CACHE.pop(oldest_key, None)
+    _MATERIAL_FACETS_CACHE[cache_key] = (monotonic(), payload)
+
+
 @router.get("", response_model=list[MaterialResponse])
 def list_materials(
     search: str = Query(default="", max_length=120),
@@ -282,18 +312,6 @@ def search_materials(
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         f"""
-        SELECT COUNT(*) AS value
-        FROM malzemeler AS m
-        LEFT JOIN sabit_maliyet_kalemleri AS s
-          ON m.ad = s.kalem_adi
-         AND s.birim = 'EUR/kg'
-        WHERE {where_sql}
-        """,
-        tuple(params),
-    )
-    total = int((cursor.fetchone() or {}).get("value") or 0)
-    cursor.execute(
-        f"""
         SELECT
           m.id,
           m.malzeme_kodu,
@@ -309,19 +327,22 @@ def search_materials(
         ORDER BY {sort_column} {sort_direction}, m.id {sort_direction}
         LIMIT %s OFFSET %s
         """,
-        (*params, limit, offset),
+        (*params, limit + 1, offset),
     )
-    rows = cursor.fetchall()
+    fetched_rows = cursor.fetchall()
+    has_more = len(fetched_rows) > limit
+    rows = fetched_rows[:limit]
     for row in rows:
         row["guncelleme_tarihi"] = _stringify_date(row.get("guncelleme_tarihi"))
-    next_offset = offset + limit if offset + limit < total else None
+    next_offset = offset + limit if has_more else None
+    total = next_offset + 1 if has_more and next_offset is not None else offset + len(rows)
     return {
         "items": rows,
         "total": total,
         "limit": limit,
         "offset": offset,
         "next_offset": next_offset,
-        "has_more": next_offset is not None,
+        "has_more": has_more,
     }
 
 
@@ -351,6 +372,11 @@ def get_material_facets(
         guncelleme_tarihi_min=guncelleme_tarihi_min,
         guncelleme_tarihi_max=guncelleme_tarihi_max,
     )
+    cache_key = _material_facets_cache_key(where_sql, params)
+    cached_facets = _cached_material_facets(cache_key)
+    if cached_facets is not None:
+        return cached_facets
+
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         f"""
@@ -370,7 +396,7 @@ def get_material_facets(
     row = cursor.fetchone() or {}
     min_price = row.get("min_value")
     max_price = row.get("max_value")
-    return {
+    facets = {
         "malzeme_tipi": _material_facet_options(cursor, "m.malzeme_tipi", where_sql, params),
         "fiyat": RangeFacetResponse(
             min=float(min_price) if min_price is not None else None,
@@ -381,6 +407,8 @@ def get_material_facets(
             "max": _stringify_date(row.get("max_date")),
         },
     }
+    _store_material_facets_cache(cache_key, facets)
+    return facets
 
 
 @router.get("/add-options", response_model=MaterialAddOptionsResponse)
@@ -445,6 +473,7 @@ def create_material(
             (material_code, material_type, material_name, unit_price),
         )
         connection.commit()
+        _clear_material_facets_cache()
     except UniqueViolation as exc:
         connection.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Bu malzeme kodu zaten mevcut.") from exc
@@ -527,6 +556,7 @@ def import_mamul_materials(
                     "message": str(exc),
                 })
         connection.commit()
+        _clear_material_facets_cache()
     except Exception as exc:
         connection.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Mamül içe aktarma tamamlanamadı: {exc}") from exc
@@ -571,6 +601,7 @@ def update_material(
                 (material_code, material_type, material_name, unit_price, material_id),
             )
         connection.commit()
+        _clear_material_facets_cache()
     except UniqueViolation as exc:
         connection.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Bu malzeme kodu zaten mevcut.") from exc
@@ -597,6 +628,7 @@ def delete_material(
     try:
         cursor.execute("DELETE FROM malzemeler WHERE id = %s", (material_id,))
         connection.commit()
+        _clear_material_facets_cache()
     except Exception as exc:
         connection.rollback()
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Malzeme silinemedi: {exc}") from exc
