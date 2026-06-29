@@ -45,6 +45,28 @@ Bu repo su sorumluluklari tasir:
 
 Lovable degisiklikleri otomatik olarak bu repoya gider. Lovable dogrudan `maliyet-analizleri-yazilimi` reposuna push yapmaz.
 
+### Mobil uygulama source of truth
+
+Mobil uygulama reposu:
+
+```text
+https://github.com/burakboysan/urunkonfigapp
+```
+
+Bu repo su sorumluluklari tasir:
+
+- Android/Kotlin mobil uygulama kaynak kodu.
+- Mobil uygulamanin API client, model, repository ve ekran kodlari.
+- Mobil build ayarlari, Android kaynaklari ve mobil release sureci.
+
+Mobil uygulama backend'e dogrudan veritabani ile degil, canli FastAPI API uzerinden baglanmalidir. Ornek Android ayari su backend URL'sini gostermelidir:
+
+```text
+https://maliyet-api-416688102123.europe-west1.run.app/
+```
+
+Mobil repoda bulunan `app/`, `sql/` ve root seviyesindeki eski migration dosyalari legacy mobil API/DB kaynaklari olarak kabul edilir. Bu kaynaklar silinmeden once ana backend'de karsiliklari dogrulanmali ve `docs/mobile_backend_consolidation_runbook.md` akisi tamamlanmalidir.
+
 ### Local snapshot
 
 Ana repoda bulunan:
@@ -70,11 +92,12 @@ Baslangic web app iskeleti olarak durur. Lovable frontend ana repoya bilincli se
 1. UI veya ekran revizyonu gerekiyorsa Lovable'da yapilir.
 2. Lovable degisikligi `burakboysan/sweet-ui-makeover` reposuna otomatik pushlanir.
 3. Backend/API/DB degisikligi gerekiyorsa `maliyet-analizleri-yazilimi` reposunda yapilir.
-4. Backend degisikligi localde dogrulanir.
-5. Backend degisikligi `maliyet-analizleri-yazilimi` reposuna commit edilir ve pushlanir.
-6. Backend Cloud Run'a deploy edilir.
-7. Lovable frontend canli backend API URL'sine baglanir.
-8. Tarayicida gercek kullanici akislari test edilir.
+4. Mobil uygulama degisikligi gerekiyorsa `urunkonfigapp` reposunda yapilir.
+5. Backend degisikligi localde dogrulanir.
+6. Backend degisikligi `maliyet-analizleri-yazilimi` reposuna commit edilir ve pushlanir.
+7. Backend Cloud Run'a deploy edilir.
+8. Lovable frontend ve mobil uygulama canli backend API URL'sine baglanir.
+9. Tarayici ve mobil istemci uzerinden gercek kullanici akislari test edilir.
 
 ## Push Kurallari
 
@@ -106,6 +129,16 @@ https://github.com/burakboysan/sweet-ui-makeover
 ```
 
 Bu degisiklikler ana backend reposuna otomatik olarak gelmez. Ana repoya alinacaksa ayrica kontrollu import veya merge yapilir.
+
+### Mobil uygulama degisiklikleri
+
+Mobil uygulama degisiklikleri su repoya gider:
+
+```text
+https://github.com/burakboysan/urunkonfigapp
+```
+
+Mobil repo icinde yeni backend veya DB source of truth olusturulmamali. Mobilin ihtiyac duydugu yeni API, auth veya veritabani davranisi once ana backend reposunda uygulanir; mobil client sadece bu kontrata uyarlanir.
 
 ## Lovable Frontend Ana Repoya Ne Zaman Alinir?
 
@@ -173,6 +206,8 @@ Kritik modul testleri:
 - Documents
 - Fixed costs
 - User management
+- Mobile module permissions
+- Mobile configuration flows
 
 ### Frontend deploy
 
@@ -202,6 +237,8 @@ Lovable tarafinda endpoint eklenmisse ama backend'de yoksa:
 - Frontend mock basari uretmemeli.
 - UI `API bekliyor` veya disabled state gostermeli.
 - Backend endpoint ayri task olarak eklenmeli.
+
+Mobil tarafta endpoint kullanilmadan once de ayni kural gecerlidir. Android `ApiService.kt` icindeki endpointler canli `/openapi.json` ile karsilastirilmali; ana backend'de olmayan endpointler icin mobil client mock basari uretmemeli ve backend task'i acilmalidir.
 
 ## Guvenlik Kurallari
 
@@ -233,6 +270,7 @@ Backend authorization zorunludur. UI guard sadece kullanici deneyimi icindir.
 - Admin ekranlari backend tarafinda rol kontrolu olmadan acik olmamali.
 - Lovable UI ile backend role modeli ayni olmali. Ornegin UI sadece `Owner` kabul ederken backend `Owner`, `Master Admin`, `Admin` kabul ediyorsa bu policy farki bilincli karar olarak dokumante edilmeli.
 - Canli Cloud Run kaynagi local `main` ile farkli olabilir. Deploy oncesi kaynak farki kontrol edilmelidir.
+- Mobil repodaki legacy FastAPI kodu yanlislikla yeni backend kaynagi gibi kullanilmamali. Tek backend source of truth `maliyet-analizleri-yazilimi/apps/api` olmalidir.
 
 ## Turkce Karakter ve Encoding Kurali
 
