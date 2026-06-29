@@ -117,6 +117,34 @@ class AssistantChatRequest(BaseModel):
     context: dict[str, Any] = {}
 
 
+MOBILE_PRODUCT_EDITABLE_FIELDS = {
+    "urun_adi",
+    "aciklama",
+    "urun_kategorisi",
+    "urun_tipi",
+    "urun_modeli",
+    "filtre_medyasi",
+    "patlac_kumanda_tipi",
+    "toplam_filtre_alani",
+    "debi",
+    "fan_basinc",
+    "fan_basinc_birimi",
+    "motor",
+    "fan_kumanda_tipi",
+    "patlama_kapagi",
+    "filtre_elemani_sayisi",
+    "basincli_hava_tuketimi",
+    "image_url",
+}
+
+MOBILE_PRODUCT_NUMERIC_FIELDS = {
+    "toplam_filtre_alani",
+    "debi",
+    "fan_basinc",
+    "basincli_hava_tuketimi",
+}
+
+
 def _clean(value: Any) -> str:
     return str(value or "").strip()
 
@@ -143,6 +171,15 @@ def _float_value(value: Any) -> float:
         return float(str(value).replace(",", "."))
     except (TypeError, ValueError):
         return 0.0
+
+
+def _optional_decimal_value(value: Any) -> Decimal | None:
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value).replace(",", "."))
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail="Sayısal alan geçersiz.") from exc
 
 
 def _datetime_text(value: Any) -> str | None:
@@ -229,6 +266,15 @@ def _product_row(row: dict[str, Any]) -> dict[str, Any]:
             row[key] = float(row[key])
     row["maliyet_hesaplama_tarihi"] = _datetime_text(row.get("maliyet_hesaplama_tarihi"))
     return row
+
+
+def _fetch_product_row(connection: MySQLConnection, product_id: int) -> dict[str, Any]:
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM urunler WHERE id = %s LIMIT 1", (product_id,))
+    row = cursor.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Ürün bulunamadı.")
+    return _product_row(dict(row))
 
 
 def _next_reference(cursor: Any, table_name: str, prefix: str) -> str:
@@ -546,12 +592,37 @@ def products_by_codes(
 def get_mobile_product(product_id: str = FastApiPath(...), connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
     require_module_access(current_user, "products")
     numeric_product_id = _require_int_id(product_id)
-    cursor = connection.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM urunler WHERE id = %s LIMIT 1", (numeric_product_id,))
-    row = cursor.fetchone()
-    if not row:
-        raise HTTPException(status_code=404, detail="Urun bulunamadi.")
-    return _product_row(dict(row))
+    return _fetch_product_row(connection, numeric_product_id)
+
+
+@router.put("/admin/products/{product_id}")
+def update_mobile_admin_product(
+    product_id: int,
+    payload: dict[str, Any],
+    connection: MySQLConnection = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    if not _is_owner(current_user):
+        raise HTTPException(status_code=403, detail="Ürün düzenleme yetkisi gerekli.")
+
+    _fetch_product_row(connection, product_id)
+    update_values: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key not in MOBILE_PRODUCT_EDITABLE_FIELDS:
+            continue
+        update_values[key] = _optional_decimal_value(value) if key in MOBILE_PRODUCT_NUMERIC_FIELDS else value
+
+    if update_values:
+        assignments = ", ".join(f"{key} = %s" for key in update_values)
+        cursor = connection.cursor()
+        cursor.execute(
+            f"UPDATE urunler SET {assignments} WHERE id = %s",
+            (*update_values.values(), product_id),
+        )
+        connection.commit()
+
+    return _fetch_product_row(connection, product_id)
 
 
 @tail_router.get("/products/{product_id}/configurations")
@@ -560,14 +631,47 @@ def product_configurations(product_id: int, connection: MySQLConnection = Depend
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
-        SELECT cso.id, cso.step_id, cso.product_id, cso.display_order, cso.is_default, cso.is_active
+        SELECT cso.id AS option_id, cso.step_id, cso.product_id, cso.display_order,
+               cso.is_default, cso.is_active,
+               cs.question, cs.description, cs.step_order, cs.is_required,
+               p.urun_adi, p.maliyet
         FROM step_product_options cso
+        LEFT JOIN configuration_steps cs ON cs.id = cso.step_id
+        LEFT JOIN urunler p ON p.id = cso.product_id
         WHERE cso.product_id = %s
-        ORDER BY cso.display_order, cso.id
+        ORDER BY COALESCE(cs.step_order, cso.display_order), cso.display_order, cso.id
         """,
         (product_id,),
     )
-    return cursor.fetchall()
+    configurations_by_step: dict[int, dict[str, Any]] = {}
+    for row in cursor.fetchall():
+        row = dict(row)
+        option_id = int(row.get("option_id") or 0)
+        step_id = int(row.get("step_id") or option_id)
+        option_name = row.get("urun_adi") or f"Seçenek {option_id}"
+        configuration = configurations_by_step.setdefault(
+            step_id,
+            {
+                "id": step_id,
+                "product_id": int(row.get("product_id") or product_id),
+                "name": row.get("question") or option_name,
+                "description": row.get("description"),
+                "is_required": bool(row.get("is_required")) if row.get("is_required") is not None else True,
+                "order": int(row.get("step_order") or row.get("display_order") or 0),
+                "options": [],
+            },
+        )
+        configuration["options"].append(
+            {
+                "id": option_id,
+                "name": option_name,
+                "description": row.get("description"),
+                "price_adjustment": float(row.get("maliyet") or 0),
+                "is_default": bool(row.get("is_default")),
+                "is_available": bool(row.get("is_active")) if row.get("is_active") is not None else True,
+            }
+        )
+    return sorted(configurations_by_step.values(), key=lambda item: (int(item.get("order") or 0), int(item.get("id") or 0)))
 
 
 @router.get("/desktop/customers")
@@ -576,7 +680,8 @@ def customer_options(connection: MySQLConnection = Depends(get_connection), curr
     cursor = connection.cursor(dictionary=True)
     cursor.execute("SELECT id, musteri_adi, musteri_kodu, telefon, email, adres, vergi_no, vergi_dairesi, kontak_kisi_adi FROM musteriler ORDER BY musteri_adi")
     rows = cursor.fetchall()
-    return {"musteriler": rows, "customers": rows}
+    customer_names = [str(row.get("musteri_adi") or "") for row in rows if row.get("musteri_adi")]
+    return {"musteriler": customer_names, "customers": rows, "customer_names": customer_names}
 
 
 @router.get("/desktop/order-codes")
@@ -857,7 +962,7 @@ def upload_menu_image(
     cursor.execute("DELETE FROM menu_images WHERE menu_key = %s", (menu_key,))
     cursor.execute("INSERT INTO menu_images (menu_key, image_url) VALUES (%s, %s)", (menu_key, file_url))
     connection.commit()
-    return {"menu_key": menu_key, "image_url": file_url}
+    return {"menu_key": menu_key, "image_url": file_url, "url": file_url}
 
 
 @tail_router.post("/products/{code}/image")
@@ -872,7 +977,7 @@ def upload_product_image(
     cursor = connection.cursor()
     cursor.execute("UPDATE urunler SET image_url = %s WHERE UPPER(TRIM(urun_kodu)) = UPPER(TRIM(%s))", (file_url, code))
     connection.commit()
-    return {"urun_kodu": code, "image_url": file_url}
+    return {"urun_kodu": code, "image_url": file_url, "url": file_url}
 
 
 @router.get("/service/forms")
