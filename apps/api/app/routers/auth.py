@@ -1,4 +1,6 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, status
+﻿from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.account_security import (
     create_account,
