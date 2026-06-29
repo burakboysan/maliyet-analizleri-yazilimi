@@ -11,13 +11,33 @@ from app.models import (
     MaterialCreateRequest,
     MaterialDeleteResponse,
     MaterialDetailResponse,
+    MaterialFacetsResponse,
     MaterialImportResponse,
+    MaterialListResponse,
     MaterialResponse,
     MaterialUpdateRequest,
+    RangeFacetResponse,
 )
 
 
 router = APIRouter(prefix="/materials", tags=["materials"])
+
+MATERIAL_PRICE_SQL = """
+CASE
+  WHEN m.malzeme_tipi = 'Yarı Mamül'
+  THEN s.birim_fiyat
+  ELSE m.birim_fiyat
+END
+"""
+
+MATERIAL_SORT_COLUMNS = {
+    "id": "m.id",
+    "malzeme_kodu": "m.malzeme_kodu",
+    "malzeme_tipi": "m.malzeme_tipi",
+    "ad": "m.ad",
+    "fiyat": "fiyat",
+    "guncelleme_tarihi": "m.guncelleme_tarihi",
+}
 
 
 def _stringify_date(value: Any) -> str | None:
@@ -89,6 +109,93 @@ def _validate_material_payload(payload: MaterialCreateRequest | MaterialUpdateRe
     return material_code, material_type, material_name, unit_price
 
 
+def _split_filter_values(values: list[str] | None) -> list[str]:
+    cleaned: list[str] = []
+    for value in values or []:
+        for part in str(value).split(","):
+            item = part.strip()
+            if item:
+                cleaned.append(item)
+    return cleaned
+
+
+def _material_search_filters(
+    *,
+    q: str | None = None,
+    search: str | None = None,
+    malzeme_kodu: list[str] | None = None,
+    malzeme_tipi: list[str] | None = None,
+    ad: list[str] | None = None,
+    fiyat_min: float | None = None,
+    fiyat_max: float | None = None,
+    guncelleme_tarihi_min: str | None = None,
+    guncelleme_tarihi_max: str | None = None,
+) -> tuple[str, list[Any]]:
+    where_parts: list[str] = []
+    params: list[Any] = []
+
+    term = (q or search or "").strip()
+    if term:
+        like_value = f"%{term}%"
+        where_parts.append(
+            """
+            (
+                m.malzeme_kodu ILIKE %s
+                OR m.malzeme_tipi ILIKE %s
+                OR m.ad ILIKE %s
+            )
+            """
+        )
+        params.extend([like_value, like_value, like_value])
+
+    text_filters = {
+        "m.malzeme_kodu": malzeme_kodu,
+        "m.malzeme_tipi": malzeme_tipi,
+        "m.ad": ad,
+    }
+    for column, values in text_filters.items():
+        normalized_values = _split_filter_values(values)
+        if not normalized_values:
+            continue
+        placeholders = ", ".join(["%s"] * len(normalized_values))
+        where_parts.append(f"{column} IN ({placeholders})")
+        params.extend(normalized_values)
+
+    if fiyat_min is not None:
+        where_parts.append(f"{MATERIAL_PRICE_SQL} >= %s")
+        params.append(fiyat_min)
+    if fiyat_max is not None:
+        where_parts.append(f"{MATERIAL_PRICE_SQL} <= %s")
+        params.append(fiyat_max)
+    if guncelleme_tarihi_min:
+        where_parts.append("m.guncelleme_tarihi >= %s")
+        params.append(guncelleme_tarihi_min)
+    if guncelleme_tarihi_max:
+        where_parts.append("m.guncelleme_tarihi <= %s")
+        params.append(guncelleme_tarihi_max)
+
+    return " AND ".join(where_parts) if where_parts else "1 = 1", params
+
+
+def _material_facet_options(cursor: Any, column: str, where_sql: str, params: list[Any]) -> list[dict[str, Any]]:
+    cursor.execute(
+        f"""
+        SELECT {column} AS value, COUNT(*) AS count
+        FROM malzemeler AS m
+        LEFT JOIN sabit_maliyet_kalemleri AS s
+          ON m.ad = s.kalem_adi
+         AND s.birim = 'EUR/kg'
+        WHERE {where_sql}
+          AND {column} IS NOT NULL
+          AND TRIM({column}::text) <> ''
+        GROUP BY {column}
+        ORDER BY {column}
+        """,
+        tuple(params),
+    )
+    return [{"value": str(row["value"]), "count": int(row["count"] or 0)} for row in cursor.fetchall()]
+
+
 @router.get("", response_model=list[MaterialResponse])
 def list_materials(
     search: str = Query(default="", max_length=120),
@@ -138,6 +245,142 @@ def list_materials(
     for row in rows:
         row["guncelleme_tarihi"] = _stringify_date(row.get("guncelleme_tarihi"))
     return rows
+
+
+@router.get("/search", response_model=MaterialListResponse)
+def search_materials(
+    q: str = Query(default="", max_length=120),
+    search: str = Query(default="", max_length=120),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    malzeme_kodu: list[str] | None = Query(default=None),
+    malzeme_tipi: list[str] | None = Query(default=None),
+    ad: list[str] | None = Query(default=None),
+    fiyat_min: float | None = Query(default=None),
+    fiyat_max: float | None = Query(default=None),
+    guncelleme_tarihi_min: str | None = Query(default=None, max_length=30),
+    guncelleme_tarihi_max: str | None = Query(default=None, max_length=30),
+    sort: str = Query(default="ad", max_length=60),
+    order: str = Query(default="asc", max_length=4),
+    connection: Any = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "materials")
+    where_sql, params = _material_search_filters(
+        q=q,
+        search=search,
+        malzeme_kodu=malzeme_kodu,
+        malzeme_tipi=malzeme_tipi,
+        ad=ad,
+        fiyat_min=fiyat_min,
+        fiyat_max=fiyat_max,
+        guncelleme_tarihi_min=guncelleme_tarihi_min,
+        guncelleme_tarihi_max=guncelleme_tarihi_max,
+    )
+    sort_column = MATERIAL_SORT_COLUMNS.get(sort, "m.ad")
+    sort_direction = "DESC" if order.lower() == "desc" else "ASC"
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute(
+        f"""
+        SELECT COUNT(*) AS value
+        FROM malzemeler AS m
+        LEFT JOIN sabit_maliyet_kalemleri AS s
+          ON m.ad = s.kalem_adi
+         AND s.birim = 'EUR/kg'
+        WHERE {where_sql}
+        """,
+        tuple(params),
+    )
+    total = int((cursor.fetchone() or {}).get("value") or 0)
+    cursor.execute(
+        f"""
+        SELECT
+          m.id,
+          m.malzeme_kodu,
+          m.malzeme_tipi,
+          m.ad,
+          {MATERIAL_PRICE_SQL} AS fiyat,
+          m.guncelleme_tarihi
+        FROM malzemeler AS m
+        LEFT JOIN sabit_maliyet_kalemleri AS s
+          ON m.ad = s.kalem_adi
+         AND s.birim = 'EUR/kg'
+        WHERE {where_sql}
+        ORDER BY {sort_column} {sort_direction}, m.id {sort_direction}
+        LIMIT %s OFFSET %s
+        """,
+        (*params, limit, offset),
+    )
+    rows = cursor.fetchall()
+    for row in rows:
+        row["guncelleme_tarihi"] = _stringify_date(row.get("guncelleme_tarihi"))
+    next_offset = offset + limit if offset + limit < total else None
+    return {
+        "items": rows,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "next_offset": next_offset,
+        "has_more": next_offset is not None,
+    }
+
+
+@router.get("/facets", response_model=MaterialFacetsResponse)
+def get_material_facets(
+    q: str = Query(default="", max_length=120),
+    search: str = Query(default="", max_length=120),
+    malzeme_kodu: list[str] | None = Query(default=None),
+    malzeme_tipi: list[str] | None = Query(default=None),
+    ad: list[str] | None = Query(default=None),
+    fiyat_min: float | None = Query(default=None),
+    fiyat_max: float | None = Query(default=None),
+    guncelleme_tarihi_min: str | None = Query(default=None, max_length=30),
+    guncelleme_tarihi_max: str | None = Query(default=None, max_length=30),
+    connection: Any = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "materials")
+    where_sql, params = _material_search_filters(
+        q=q,
+        search=search,
+        malzeme_kodu=malzeme_kodu,
+        malzeme_tipi=malzeme_tipi,
+        ad=ad,
+        fiyat_min=fiyat_min,
+        fiyat_max=fiyat_max,
+        guncelleme_tarihi_min=guncelleme_tarihi_min,
+        guncelleme_tarihi_max=guncelleme_tarihi_max,
+    )
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute(
+        f"""
+        SELECT
+          MIN({MATERIAL_PRICE_SQL}) AS min_value,
+          MAX({MATERIAL_PRICE_SQL}) AS max_value,
+          MIN(m.guncelleme_tarihi) AS min_date,
+          MAX(m.guncelleme_tarihi) AS max_date
+        FROM malzemeler AS m
+        LEFT JOIN sabit_maliyet_kalemleri AS s
+          ON m.ad = s.kalem_adi
+         AND s.birim = 'EUR/kg'
+        WHERE {where_sql}
+        """,
+        tuple(params),
+    )
+    row = cursor.fetchone() or {}
+    min_price = row.get("min_value")
+    max_price = row.get("max_value")
+    return {
+        "malzeme_tipi": _material_facet_options(cursor, "m.malzeme_tipi", where_sql, params),
+        "fiyat": RangeFacetResponse(
+            min=float(min_price) if min_price is not None else None,
+            max=float(max_price) if max_price is not None else None,
+        ),
+        "guncelleme_tarihi": {
+            "min": _stringify_date(row.get("min_date")),
+            "max": _stringify_date(row.get("max_date")),
+        },
+    }
 
 
 @router.get("/add-options", response_model=MaterialAddOptionsResponse)

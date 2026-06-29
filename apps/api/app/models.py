@@ -61,6 +61,31 @@ class MaterialResponse(BaseModel):
     guncelleme_tarihi: str | None = None
 
 
+class FacetOptionResponse(BaseModel):
+    value: str
+    count: int
+
+
+class RangeFacetResponse(BaseModel):
+    min: float | None = None
+    max: float | None = None
+
+
+class MaterialListResponse(BaseModel):
+    items: list[MaterialResponse]
+    total: int
+    limit: int
+    offset: int
+    next_offset: int | None = None
+    has_more: bool
+
+
+class MaterialFacetsResponse(BaseModel):
+    malzeme_tipi: list[FacetOptionResponse]
+    fiyat: RangeFacetResponse
+    guncelleme_tarihi: dict[str, str | None]
+
+
 class MaterialFixedCostItemResponse(BaseModel):
     kalem_adi: str
     birim_fiyat: float | None = None
@@ -136,6 +161,33 @@ class ProductResponse(BaseModel):
     patlama_kapagi: str | None = None
     filtre_elemani_sayisi: float | str | None = None
     maliyet_hesaplama_tarihi: str | None = None
+
+
+class ProductListResponse(BaseModel):
+    items: list[ProductResponse]
+    total: int
+    limit: int
+    offset: int
+    next_offset: int | None = None
+    has_more: bool
+
+
+class ProductFacetsResponse(BaseModel):
+    urun_kategorisi: list[FacetOptionResponse]
+    urun_tipi: list[FacetOptionResponse]
+    urun_modeli: list[FacetOptionResponse]
+    filtre_medyasi: list[FacetOptionResponse]
+    filtre_medyasi_kodu: list[FacetOptionResponse]
+    patlac_kumanda_tipi: list[FacetOptionResponse]
+    fan_basinc_birimi: list[FacetOptionResponse]
+    fan_kumanda_tipi: list[FacetOptionResponse]
+    motor: list[FacetOptionResponse]
+    patlama_kapagi: list[FacetOptionResponse]
+    maliyet: RangeFacetResponse
+    debi: RangeFacetResponse
+    fan_basinc: RangeFacetResponse
+    toplam_filtre_alani: RangeFacetResponse
+    filtre_elemani_sayisi: RangeFacetResponse
 
 
 class ProductTreeItemResponse(BaseModel):

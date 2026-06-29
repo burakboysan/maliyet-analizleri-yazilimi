@@ -15,7 +15,9 @@ from app.models import (
     ProductDetailFieldResponse,
     ProductDetailResponse,
     ProductEditOptionsResponse,
+    ProductFacetsResponse,
     ProductLaborResponse,
+    ProductListResponse,
     ProductUpdateRequest,
     ProductUpdateResponse,
     ProductResponse,
@@ -32,6 +34,7 @@ from app.models import (
     ProductTreeQuantityUpdateRequest,
     ProductTreeRecalculateResponse,
     ProductTreeResponse,
+    RangeFacetResponse,
 )
 
 
@@ -171,6 +174,54 @@ NUMERIC_PRODUCT_FIELDS = {
     "flans_kalinlik",
 }
 
+PRODUCT_LIST_COLUMNS = [
+    "id",
+    "urun_kodu",
+    "urun_adi",
+    "urun_kategorisi",
+    "urun_tipi",
+    "urun_modeli",
+    "maliyet",
+    "filtre_medyasi",
+    "filtre_medyasi_kodu",
+    "patlac_kumanda_tipi",
+    "toplam_filtre_alani",
+    "debi",
+    "fan_basinc",
+    "fan_basinc_birimi",
+    "motor",
+    "fan_kumanda_tipi",
+    "patlama_kapagi",
+    "filtre_elemani_sayisi",
+    "maliyet_hesaplama_tarihi",
+]
+
+PRODUCT_TEXT_FILTERS = {
+    "urun_kategorisi",
+    "urun_tipi",
+    "urun_modeli",
+    "filtre_medyasi",
+    "filtre_medyasi_kodu",
+    "patlac_kumanda_tipi",
+    "fan_basinc_birimi",
+    "fan_kumanda_tipi",
+    "motor",
+    "patlama_kapagi",
+}
+
+PRODUCT_RANGE_FILTERS = {
+    "maliyet",
+    "debi",
+    "fan_basinc",
+    "toplam_filtre_alani",
+    "filtre_elemani_sayisi",
+}
+
+PRODUCT_SORT_COLUMNS = {column: column for column in PRODUCT_LIST_COLUMNS}
+PRODUCT_SORT_COLUMNS["kategori"] = "urun_kategorisi"
+PRODUCT_SORT_COLUMNS["tip"] = "urun_tipi"
+PRODUCT_SORT_COLUMNS["model"] = "urun_modeli"
+
 
 def _stringify_date(value: Any) -> str | None:
     return value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
@@ -235,6 +286,138 @@ def _normalize_product_value(key: str, value: Any) -> Any:
         return Decimal(cleaned.replace(".", "").replace(",", ".") if "," in cleaned else cleaned)
     except (InvalidOperation, ValueError):
         raise HTTPException(status_code=422, detail=f"{FIELD_LABELS.get(key, key)} sayısal olmalı.")
+
+
+def _split_filter_values(values: list[str] | None) -> list[str]:
+    cleaned: list[str] = []
+    for value in values or []:
+        for part in str(value).split(","):
+            item = part.strip()
+            if item:
+                cleaned.append(item)
+    return cleaned
+
+
+def _numeric_sql(column: str) -> str:
+    return f"NULLIF(REPLACE(regexp_replace(COALESCE({column}::text, ''), '[^0-9,.-]', '', 'g'), ',', '.'), '')::numeric"
+
+
+def _product_search_filters(
+    *,
+    q: str | None = None,
+    search: str | None = None,
+    urun_kategorisi: list[str] | None = None,
+    urun_tipi: list[str] | None = None,
+    urun_modeli: list[str] | None = None,
+    filtre_medyasi: list[str] | None = None,
+    filtre_medyasi_kodu: list[str] | None = None,
+    patlac_kumanda_tipi: list[str] | None = None,
+    fan_basinc_birimi: list[str] | None = None,
+    fan_kumanda_tipi: list[str] | None = None,
+    motor: list[str] | None = None,
+    patlama_kapagi: list[str] | None = None,
+    maliyet_min: float | None = None,
+    maliyet_max: float | None = None,
+    debi_min: float | None = None,
+    debi_max: float | None = None,
+    fan_basinc_min: float | None = None,
+    fan_basinc_max: float | None = None,
+    toplam_filtre_alani_min: float | None = None,
+    toplam_filtre_alani_max: float | None = None,
+    filtre_elemani_sayisi_min: float | None = None,
+    filtre_elemani_sayisi_max: float | None = None,
+) -> tuple[str, list[Any]]:
+    where_parts = ["urun_kategorisi NOT IN (%s, %s, %s, %s)"]
+    params: list[Any] = [*EXCLUDED_CATEGORIES]
+
+    term = (q or search or "").strip()
+    if term:
+        like_value = f"%{term}%"
+        where_parts.append(
+            """
+            (
+                urun_kodu ILIKE %s
+                OR urun_adi ILIKE %s
+                OR urun_kategorisi ILIKE %s
+                OR urun_tipi ILIKE %s
+                OR urun_modeli ILIKE %s
+            )
+            """
+        )
+        params.extend([like_value, like_value, like_value, like_value, like_value])
+
+    text_filters = {
+        "urun_kategorisi": urun_kategorisi,
+        "urun_tipi": urun_tipi,
+        "urun_modeli": urun_modeli,
+        "filtre_medyasi": filtre_medyasi,
+        "filtre_medyasi_kodu": filtre_medyasi_kodu,
+        "patlac_kumanda_tipi": patlac_kumanda_tipi,
+        "fan_basinc_birimi": fan_basinc_birimi,
+        "fan_kumanda_tipi": fan_kumanda_tipi,
+        "motor": motor,
+        "patlama_kapagi": patlama_kapagi,
+    }
+    for column, values in text_filters.items():
+        normalized_values = _split_filter_values(values)
+        if not normalized_values:
+            continue
+        placeholders = ", ".join(["%s"] * len(normalized_values))
+        where_parts.append(f"{column} IN ({placeholders})")
+        params.extend(normalized_values)
+
+    range_filters = {
+        "maliyet": (maliyet_min, maliyet_max),
+        "debi": (debi_min, debi_max),
+        "fan_basinc": (fan_basinc_min, fan_basinc_max),
+        "toplam_filtre_alani": (toplam_filtre_alani_min, toplam_filtre_alani_max),
+        "filtre_elemani_sayisi": (filtre_elemani_sayisi_min, filtre_elemani_sayisi_max),
+    }
+    for column, (min_value, max_value) in range_filters.items():
+        numeric_expr = _numeric_sql(column)
+        if min_value is not None:
+            where_parts.append(f"{numeric_expr} >= %s")
+            params.append(min_value)
+        if max_value is not None:
+            where_parts.append(f"{numeric_expr} <= %s")
+            params.append(max_value)
+
+    return " AND ".join(where_parts), params
+
+
+def _product_facet_options(cursor: Any, column: str, where_sql: str, params: list[Any]) -> list[dict[str, Any]]:
+    cursor.execute(
+        f"""
+        SELECT {column} AS value, COUNT(*) AS count
+        FROM urunler
+        WHERE {where_sql}
+          AND {column} IS NOT NULL
+          AND TRIM({column}::text) <> ''
+        GROUP BY {column}
+        ORDER BY {column}
+        """,
+        tuple(params),
+    )
+    return [{"value": str(row["value"]), "count": int(row["count"] or 0)} for row in cursor.fetchall()]
+
+
+def _product_range_facet(cursor: Any, column: str, where_sql: str, params: list[Any]) -> RangeFacetResponse:
+    numeric_expr = _numeric_sql(column)
+    cursor.execute(
+        f"""
+        SELECT MIN({numeric_expr}) AS min_value, MAX({numeric_expr}) AS max_value
+        FROM urunler
+        WHERE {where_sql}
+        """,
+        tuple(params),
+    )
+    row = cursor.fetchone() or {}
+    min_value = row.get("min_value")
+    max_value = row.get("max_value")
+    return RangeFacetResponse(
+        min=float(min_value) if min_value is not None else None,
+        max=float(max_value) if max_value is not None else None,
+    )
 
 
 def _recalculate_product_cost(connection: Any, product_id: int) -> tuple[bool, str | None]:
@@ -419,6 +602,163 @@ def list_products(
     for row in rows:
         row["maliyet_hesaplama_tarihi"] = _stringify_date(row.get("maliyet_hesaplama_tarihi"))
     return rows
+
+
+@router.get("/search", response_model=ProductListResponse)
+def search_products(
+    q: str = Query(default="", max_length=120),
+    search: str = Query(default="", max_length=120),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    urun_kategorisi: list[str] | None = Query(default=None),
+    urun_tipi: list[str] | None = Query(default=None),
+    urun_modeli: list[str] | None = Query(default=None),
+    filtre_medyasi: list[str] | None = Query(default=None),
+    filtre_medyasi_kodu: list[str] | None = Query(default=None),
+    patlac_kumanda_tipi: list[str] | None = Query(default=None),
+    fan_basinc_birimi: list[str] | None = Query(default=None),
+    fan_kumanda_tipi: list[str] | None = Query(default=None),
+    motor: list[str] | None = Query(default=None),
+    patlama_kapagi: list[str] | None = Query(default=None),
+    maliyet_min: float | None = Query(default=None),
+    maliyet_max: float | None = Query(default=None),
+    debi_min: float | None = Query(default=None),
+    debi_max: float | None = Query(default=None),
+    fan_basinc_min: float | None = Query(default=None),
+    fan_basinc_max: float | None = Query(default=None),
+    toplam_filtre_alani_min: float | None = Query(default=None),
+    toplam_filtre_alani_max: float | None = Query(default=None),
+    filtre_elemani_sayisi_min: float | None = Query(default=None),
+    filtre_elemani_sayisi_max: float | None = Query(default=None),
+    sort: str = Query(default="urun_kodu", max_length=60),
+    order: str = Query(default="asc", max_length=4),
+    connection: Any = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    where_sql, params = _product_search_filters(
+        q=q,
+        search=search,
+        urun_kategorisi=urun_kategorisi,
+        urun_tipi=urun_tipi,
+        urun_modeli=urun_modeli,
+        filtre_medyasi=filtre_medyasi,
+        filtre_medyasi_kodu=filtre_medyasi_kodu,
+        patlac_kumanda_tipi=patlac_kumanda_tipi,
+        fan_basinc_birimi=fan_basinc_birimi,
+        fan_kumanda_tipi=fan_kumanda_tipi,
+        motor=motor,
+        patlama_kapagi=patlama_kapagi,
+        maliyet_min=maliyet_min,
+        maliyet_max=maliyet_max,
+        debi_min=debi_min,
+        debi_max=debi_max,
+        fan_basinc_min=fan_basinc_min,
+        fan_basinc_max=fan_basinc_max,
+        toplam_filtre_alani_min=toplam_filtre_alani_min,
+        toplam_filtre_alani_max=toplam_filtre_alani_max,
+        filtre_elemani_sayisi_min=filtre_elemani_sayisi_min,
+        filtre_elemani_sayisi_max=filtre_elemani_sayisi_max,
+    )
+    sort_column = PRODUCT_SORT_COLUMNS.get(sort, "urun_kodu")
+    sort_direction = "DESC" if order.lower() == "desc" else "ASC"
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute(f"SELECT COUNT(*) AS value FROM urunler WHERE {where_sql}", tuple(params))
+    total = int((cursor.fetchone() or {}).get("value") or 0)
+    cursor.execute(
+        f"""
+        SELECT {", ".join(PRODUCT_LIST_COLUMNS)}
+        FROM urunler
+        WHERE {where_sql}
+        ORDER BY {sort_column} {sort_direction}, id {sort_direction}
+        LIMIT %s OFFSET %s
+        """,
+        (*params, limit, offset),
+    )
+    rows = cursor.fetchall()
+    for row in rows:
+        row["maliyet_hesaplama_tarihi"] = _stringify_date(row.get("maliyet_hesaplama_tarihi"))
+    next_offset = offset + limit if offset + limit < total else None
+    return {
+        "items": rows,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "next_offset": next_offset,
+        "has_more": next_offset is not None,
+    }
+
+
+@router.get("/facets", response_model=ProductFacetsResponse)
+def get_product_facets(
+    q: str = Query(default="", max_length=120),
+    search: str = Query(default="", max_length=120),
+    urun_kategorisi: list[str] | None = Query(default=None),
+    urun_tipi: list[str] | None = Query(default=None),
+    urun_modeli: list[str] | None = Query(default=None),
+    filtre_medyasi: list[str] | None = Query(default=None),
+    filtre_medyasi_kodu: list[str] | None = Query(default=None),
+    patlac_kumanda_tipi: list[str] | None = Query(default=None),
+    fan_basinc_birimi: list[str] | None = Query(default=None),
+    fan_kumanda_tipi: list[str] | None = Query(default=None),
+    motor: list[str] | None = Query(default=None),
+    patlama_kapagi: list[str] | None = Query(default=None),
+    maliyet_min: float | None = Query(default=None),
+    maliyet_max: float | None = Query(default=None),
+    debi_min: float | None = Query(default=None),
+    debi_max: float | None = Query(default=None),
+    fan_basinc_min: float | None = Query(default=None),
+    fan_basinc_max: float | None = Query(default=None),
+    toplam_filtre_alani_min: float | None = Query(default=None),
+    toplam_filtre_alani_max: float | None = Query(default=None),
+    filtre_elemani_sayisi_min: float | None = Query(default=None),
+    filtre_elemani_sayisi_max: float | None = Query(default=None),
+    connection: Any = Depends(get_connection),
+    current_user: dict = Depends(require_current_user),
+):
+    require_module_access(current_user, "products")
+    where_sql, params = _product_search_filters(
+        q=q,
+        search=search,
+        urun_kategorisi=urun_kategorisi,
+        urun_tipi=urun_tipi,
+        urun_modeli=urun_modeli,
+        filtre_medyasi=filtre_medyasi,
+        filtre_medyasi_kodu=filtre_medyasi_kodu,
+        patlac_kumanda_tipi=patlac_kumanda_tipi,
+        fan_basinc_birimi=fan_basinc_birimi,
+        fan_kumanda_tipi=fan_kumanda_tipi,
+        motor=motor,
+        patlama_kapagi=patlama_kapagi,
+        maliyet_min=maliyet_min,
+        maliyet_max=maliyet_max,
+        debi_min=debi_min,
+        debi_max=debi_max,
+        fan_basinc_min=fan_basinc_min,
+        fan_basinc_max=fan_basinc_max,
+        toplam_filtre_alani_min=toplam_filtre_alani_min,
+        toplam_filtre_alani_max=toplam_filtre_alani_max,
+        filtre_elemani_sayisi_min=filtre_elemani_sayisi_min,
+        filtre_elemani_sayisi_max=filtre_elemani_sayisi_max,
+    )
+    cursor = connection.cursor(dictionary=True)
+    return {
+        "urun_kategorisi": _product_facet_options(cursor, "urun_kategorisi", where_sql, params),
+        "urun_tipi": _product_facet_options(cursor, "urun_tipi", where_sql, params),
+        "urun_modeli": _product_facet_options(cursor, "urun_modeli", where_sql, params),
+        "filtre_medyasi": _product_facet_options(cursor, "filtre_medyasi", where_sql, params),
+        "filtre_medyasi_kodu": _product_facet_options(cursor, "filtre_medyasi_kodu", where_sql, params),
+        "patlac_kumanda_tipi": _product_facet_options(cursor, "patlac_kumanda_tipi", where_sql, params),
+        "fan_basinc_birimi": _product_facet_options(cursor, "fan_basinc_birimi", where_sql, params),
+        "fan_kumanda_tipi": _product_facet_options(cursor, "fan_kumanda_tipi", where_sql, params),
+        "motor": _product_facet_options(cursor, "motor", where_sql, params),
+        "patlama_kapagi": _product_facet_options(cursor, "patlama_kapagi", where_sql, params),
+        "maliyet": _product_range_facet(cursor, "maliyet", where_sql, params),
+        "debi": _product_range_facet(cursor, "debi", where_sql, params),
+        "fan_basinc": _product_range_facet(cursor, "fan_basinc", where_sql, params),
+        "toplam_filtre_alani": _product_range_facet(cursor, "toplam_filtre_alani", where_sql, params),
+        "filtre_elemani_sayisi": _product_range_facet(cursor, "filtre_elemani_sayisi", where_sql, params),
+    }
 
 
 @router.get("/{product_id}/detail", response_model=ProductDetailResponse)
