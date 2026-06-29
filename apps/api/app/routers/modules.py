@@ -26,14 +26,14 @@ def _normalize_role(role: str | None) -> str:
 
 
 def _is_owner(role: str | None) -> bool:
-    return _normalize_role(role) == "owner"
+    return _normalize_role(role) in {"owner", "master admin"}
 
 
 @router.get("")
 def list_modules(current_user: dict = Depends(require_current_user)):
     permissions = current_user.get("module_permissions") or {}
     role_name = current_user.get("rol_adi")
-    if _is_owner(role_name) or not permissions:
+    if _is_owner(role_name):
         visible_modules = MODULES
     else:
         visible_modules = [module for module in MODULES if bool(permissions.get(module["key"]))]

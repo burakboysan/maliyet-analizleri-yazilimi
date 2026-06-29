@@ -106,6 +106,9 @@ def ensure_account_security_schema(connection: MySQLConnection) -> None:
     if not _column_exists(connection, "kullanicilar", "module_permissions"):
         column_type = "JSONB" if backend == "postgres" else "JSON"
         cursor.execute(f"ALTER TABLE kullanicilar ADD COLUMN module_permissions {column_type} NULL")
+    if not _column_exists(connection, "kullanicilar", "mobile_module_permissions"):
+        column_type = "JSONB" if backend == "postgres" else "JSON"
+        cursor.execute(f"ALTER TABLE kullanicilar ADD COLUMN mobile_module_permissions {column_type} NULL")
 
     if backend == "postgres":
         _ensure_postgres_auth_tables(cursor)
