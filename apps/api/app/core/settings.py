@@ -1,6 +1,7 @@
 import sys
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -38,6 +39,10 @@ def _load_desktop_db_config() -> dict[str, object]:
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     settings = Settings()
+    if settings.api_env != "dev" and (
+        settings.token_secret == "local-dev-secret-change-me" or len(settings.token_secret.strip()) < 32
+    ):
+        raise RuntimeError("BOMAKSAN_TOKEN_SECRET must be set to a strong production secret.")
     if settings.database_url:
         return settings
     if settings.db_host and settings.db_user and settings.db_password and settings.db_name:
@@ -68,8 +73,15 @@ def get_allowed_origins() -> list[str]:
         for origin in settings.allowed_origins.split(",")
         if origin.strip()
     ]
-    return configured or defaults
+    if configured:
+        return configured
+    if settings.api_env == "dev":
+        return defaults
+    return []
 
 
-def get_allowed_origin_regex() -> str:
-    return r"https://.*\.(lovableproject\.com|lovable\.app)"
+def get_allowed_origin_regex() -> Optional[str]:
+    settings = get_settings()
+    if settings.api_env == "dev":
+        return r"https://.*\.(lovableproject\.com|lovable\.app)"
+    return None

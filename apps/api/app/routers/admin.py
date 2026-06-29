@@ -28,6 +28,7 @@ DESKTOP_MODULE_KEYS = (
     "documents",
 )
 MOBILE_MODULE_KEYS = (
+    "products",
     "selection_wizard",
     "field_service",
     "ai_assistant",
@@ -62,7 +63,7 @@ class MobileModulePermissionsUpdateRequest(BaseModel):
 
 
 def _is_owner(user: dict[str, Any]) -> bool:
-    return str(user.get("rol_adi") or "").strip().lower() in {"owner", "master admin", "admin"}
+    return str(user.get("rol_adi") or "").strip().lower() in {"owner", "master admin"}
 
 
 def _require_owner(current_user: dict[str, Any]) -> None:

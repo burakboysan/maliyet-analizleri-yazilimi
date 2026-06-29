@@ -15,24 +15,37 @@ from pydantic import BaseModel
 
 from app.core.account_security import (
     ensure_account_security_schema,
-    reset_password_with_code,
-    send_password_reset_code,
-    send_verification_email,
-    verify_email_code,
 )
 from app.core.db import get_connection
-from app.core.security import parse_module_permissions, require_current_user, require_module_access
-from app.models import (
-    EmailVerificationConfirmRequest,
-    EmailVerificationSendRequest,
-    MessageResponse,
-    PasswordResetConfirmRequest,
-    PasswordResetSendRequest,
-)
-
-
+from app.core.security import parse_module_permissions, require_current_user, require_mobile_module_access
 router = APIRouter(tags=["mobile-compat"])
 tail_router = APIRouter(tags=["mobile-compat"])
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+UPLOAD_CHUNK_BYTES = 1024 * 1024
+ALLOWED_UPLOADS = {
+    "documents": {
+        "extensions": {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".png", ".jpg", ".jpeg", ".webp"},
+        "content_types": {
+            "application/pdf",
+            "application/msword",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "image/png",
+            "image/jpeg",
+            "image/webp",
+        },
+    },
+    "menu-images": {
+        "extensions": {".png", ".jpg", ".jpeg", ".webp"},
+        "content_types": {"image/png", "image/jpeg", "image/webp"},
+    },
+    "products": {
+        "extensions": {".png", ".jpg", ".jpeg", ".webp"},
+        "content_types": {"image/png", "image/jpeg", "image/webp"},
+    },
+}
 
 
 class CustomerUpsert(BaseModel):
@@ -197,7 +210,7 @@ def _latest_datetime_text(*values: Any) -> str | None:
 
 
 def _is_owner(user: dict[str, Any]) -> bool:
-    return str(user.get("rol_adi") or "").strip().lower() in {"owner", "master admin", "admin"}
+    return str(user.get("rol_adi") or "").strip().lower() in {"owner", "master admin"}
 
 
 def _require_int_id(value: str) -> int:
@@ -375,52 +388,18 @@ def mobile_module_permissions(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    permissions = current_user.get("module_permissions") or {}
+    permissions = current_user.get("mobile_module_permissions") or {}
     if _column_exists(connection, "kullanicilar", "mobile_module_permissions"):
         cursor = connection.cursor(dictionary=True)
         cursor.execute("SELECT mobile_module_permissions FROM kullanicilar WHERE id = %s LIMIT 1", (current_user["id"],))
         row = cursor.fetchone() or {}
-        mobile_permissions = parse_module_permissions(row.get("mobile_module_permissions"))
-        if mobile_permissions:
-            permissions = mobile_permissions
+        permissions = parse_module_permissions(row.get("mobile_module_permissions"))
     return {"user_id": current_user["id"], "module_permissions": permissions, "mobile_module_permissions": permissions}
-
-
-@router.post("/admin/auth/email/send-verification", response_model=MessageResponse)
-def admin_send_email_verification(payload: EmailVerificationSendRequest, connection: MySQLConnection = Depends(get_connection)):
-    try:
-        return MessageResponse(**send_verification_email(connection, payload.email))
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-
-@router.post("/admin/auth/email/verify", response_model=MessageResponse)
-def admin_confirm_email_verification(payload: EmailVerificationConfirmRequest, connection: MySQLConnection = Depends(get_connection)):
-    try:
-        return MessageResponse(**verify_email_code(connection, payload.email, payload.code))
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-
-@router.post("/admin/auth/password/send-reset-code", response_model=MessageResponse)
-def admin_send_password_reset(payload: PasswordResetSendRequest, connection: MySQLConnection = Depends(get_connection)):
-    try:
-        return MessageResponse(**send_password_reset_code(connection, payload.identifier))
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-
-@router.post("/admin/auth/password/reset", response_model=MessageResponse)
-def admin_confirm_password_reset(payload: PasswordResetConfirmRequest, connection: MySQLConnection = Depends(get_connection)):
-    try:
-        return MessageResponse(**reset_password_with_code(connection, payload.identifier, payload.code, payload.new_password))
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/admin/leave/users")
 def admin_leave_users(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "leave_management")
+    require_mobile_module_access(current_user, "leave_management")
     if not _is_owner(current_user):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli.")
     _ensure_leave_admin_schema(connection)
@@ -468,7 +447,7 @@ def update_admin_leave_user(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "leave_management")
+    require_mobile_module_access(current_user, "leave_management")
     if not _is_owner(current_user):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli.")
     _ensure_leave_admin_schema(connection)
@@ -492,7 +471,7 @@ def list_mobile_products(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "products")
+    require_mobile_module_access(current_user, "products")
     offset = (page - 1) * page_size
     params: list[Any] = []
     where_sql = "1 = 1"
@@ -525,7 +504,7 @@ def products_cost_version(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "products")
+    require_mobile_module_access(current_user, "products")
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
@@ -571,7 +550,7 @@ def products_by_codes(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "products")
+    require_mobile_module_access(current_user, "products")
     normalized = [code.strip() for code in codes if code and code.strip()]
     if not normalized:
         return []
@@ -590,7 +569,7 @@ def products_by_codes(
 
 @tail_router.get("/products/{product_id}")
 def get_mobile_product(product_id: str = FastApiPath(...), connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "products")
+    require_mobile_module_access(current_user, "products")
     numeric_product_id = _require_int_id(product_id)
     return _fetch_product_row(connection, numeric_product_id)
 
@@ -602,7 +581,7 @@ def update_mobile_admin_product(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "products")
+    require_mobile_module_access(current_user, "products")
     if not _is_owner(current_user):
         raise HTTPException(status_code=403, detail="Ürün düzenleme yetkisi gerekli.")
 
@@ -627,7 +606,7 @@ def update_mobile_admin_product(
 
 @tail_router.get("/products/{product_id}/configurations")
 def product_configurations(product_id: int, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "products")
+    require_mobile_module_access(current_user, "products")
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
@@ -676,7 +655,7 @@ def product_configurations(product_id: int, connection: MySQLConnection = Depend
 
 @router.get("/desktop/customers")
 def customer_options(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "selection_wizard")
+    require_mobile_module_access(current_user, "selection_wizard")
     cursor = connection.cursor(dictionary=True)
     cursor.execute("SELECT id, musteri_adi, musteri_kodu, telefon, email, adres, vergi_no, vergi_dairesi, kontak_kisi_adi FROM musteriler ORDER BY musteri_adi")
     rows = cursor.fetchall()
@@ -686,7 +665,7 @@ def customer_options(connection: MySQLConnection = Depends(get_connection), curr
 
 @router.get("/desktop/order-codes")
 def order_code_options(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "selection_wizard")
+    require_mobile_module_access(current_user, "selection_wizard")
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
@@ -708,7 +687,7 @@ def list_configurations(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "selection_wizard")
+    require_mobile_module_access(current_user, "selection_wizard")
     offset = (page - 1) * page_size
     params: list[Any] = []
     where_parts = ["1 = 1"]
@@ -759,7 +738,7 @@ def create_configuration(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "selection_wizard")
+    require_mobile_module_access(current_user, "selection_wizard")
     cursor = connection.cursor(dictionary=True)
     try:
         customer_id = _upsert_customer(cursor, payload.customer)
@@ -839,13 +818,13 @@ def create_configuration(
 
 @router.get("/configurations/{config_id}")
 def get_configuration(config_id: int, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "selection_wizard")
+    require_mobile_module_access(current_user, "selection_wizard")
     return _configuration_response(connection.cursor(dictionary=True), config_id)
 
 
 @router.delete("/configurations/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_configuration(config_id: int, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "selection_wizard")
+    require_mobile_module_access(current_user, "selection_wizard")
     cursor = connection.cursor()
     cursor.execute("DELETE FROM urun_konfigurasyon_kalemleri WHERE konfigurasyon_id = %s", (config_id,))
     cursor.execute("DELETE FROM urun_konfigurasyonlari WHERE id = %s", (config_id,))
@@ -861,7 +840,7 @@ def list_documents(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "documents")
+    require_mobile_module_access(current_user, "documents")
     params: list[Any] = []
     where = ["is_active = TRUE"]
     if _clean(series_key):
@@ -887,11 +866,30 @@ def list_documents(
 
 
 def _save_upload(file: UploadFile, folder: str) -> str:
+    policy = ALLOWED_UPLOADS.get(folder)
+    if not policy:
+        raise HTTPException(status_code=500, detail="Yükleme politikası tanımlı değil.")
+    safe_name = Path(file.filename or "upload.bin").name
+    extension = Path(safe_name).suffix.lower()
+    content_type = str(file.content_type or "").split(";", 1)[0].strip().lower()
+    if extension not in policy["extensions"] or content_type not in policy["content_types"]:
+        raise HTTPException(status_code=415, detail="Dosya türü desteklenmiyor.")
+
     upload_root = Path("static") / "uploads" / folder
     upload_root.mkdir(parents=True, exist_ok=True)
-    safe_name = Path(file.filename or "upload.bin").name
     target = upload_root / f"{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}_{safe_name}"
-    target.write_bytes(file.file.read())
+    total_bytes = 0
+    with target.open("wb") as output:
+        while True:
+            chunk = file.file.read(UPLOAD_CHUNK_BYTES)
+            if not chunk:
+                break
+            total_bytes += len(chunk)
+            if total_bytes > MAX_UPLOAD_BYTES:
+                output.close()
+                target.unlink(missing_ok=True)
+                raise HTTPException(status_code=413, detail="Dosya boyutu en fazla 10 MB olabilir.")
+            output.write(chunk)
     return "/" + str(target).replace(os.sep, "/")
 
 
@@ -907,7 +905,7 @@ def upload_document(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "documents")
+    require_mobile_module_access(current_user, "documents")
     file_url = _save_upload(file, "documents")
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
@@ -929,7 +927,7 @@ def delete_document(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "documents")
+    require_mobile_module_access(current_user, "documents")
     if not _is_owner(current_user):
         raise HTTPException(status_code=403, detail="Doküman silme için admin yetkisi gerekli.")
     cursor = connection.cursor()
@@ -943,7 +941,7 @@ def delete_document(
 
 @router.get("/menu-images")
 def menu_images(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "selection_wizard")
+    require_mobile_module_access(current_user, "selection_wizard")
     cursor = connection.cursor(dictionary=True)
     cursor.execute("SELECT menu_key, image_url FROM menu_images ORDER BY menu_key")
     return cursor.fetchall()
@@ -956,7 +954,7 @@ def upload_menu_image(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "selection_wizard")
+    require_mobile_module_access(current_user, "selection_wizard")
     file_url = _save_upload(file, "menu-images")
     cursor = connection.cursor()
     cursor.execute("DELETE FROM menu_images WHERE menu_key = %s", (menu_key,))
@@ -972,7 +970,7 @@ def upload_product_image(
     connection: MySQLConnection = Depends(get_connection),
     current_user: dict = Depends(require_current_user),
 ):
-    require_module_access(current_user, "products")
+    require_mobile_module_access(current_user, "products")
     file_url = _save_upload(file, "products")
     cursor = connection.cursor()
     cursor.execute("UPDATE urunler SET image_url = %s WHERE UPPER(TRIM(urun_kodu)) = UPPER(TRIM(%s))", (file_url, code))
@@ -982,7 +980,7 @@ def upload_product_image(
 
 @router.get("/service/forms")
 def list_service_forms(connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "service_management")
+    require_mobile_module_access(current_user, "field_service")
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         """
@@ -1010,7 +1008,7 @@ def list_service_forms(connection: MySQLConnection = Depends(get_connection), cu
 
 @router.post("/service/forms")
 def create_service_form(payload: ServiceFormCreate, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "service_management")
+    require_mobile_module_access(current_user, "field_service")
     cursor = connection.cursor(dictionary=True)
     try:
         customer_id = _upsert_customer(cursor, payload.customer)
@@ -1048,7 +1046,7 @@ def create_service_form(payload: ServiceFormCreate, connection: MySQLConnection 
 
 @router.post("/service/forms/{service_form_id}/delete", status_code=status.HTTP_204_NO_CONTENT)
 def delete_service_form(service_form_id: int, connection: MySQLConnection = Depends(get_connection), current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "service_management")
+    require_mobile_module_access(current_user, "field_service")
     cursor = connection.cursor()
     cursor.execute("DELETE FROM servis_formlari WHERE id = %s", (service_form_id,))
     connection.commit()
@@ -1057,7 +1055,7 @@ def delete_service_form(service_form_id: int, connection: MySQLConnection = Depe
 
 @router.post("/ai/chat")
 def assistant_chat(payload: AssistantChatRequest, current_user: dict = Depends(require_current_user)):
-    require_module_access(current_user, "ai_assistant")
+    require_mobile_module_access(current_user, "ai_assistant")
     if not os.getenv("OPENAI_API_KEY") and not os.getenv("BOMAKSAN_OPENAI_API_KEY"):
         return JSONResponse(status_code=503, content={"message": "AI assistant is not configured.", "related_products": []})
     return {"message": "AI assistant backend is not yet migrated to the shared API.", "related_products": []}

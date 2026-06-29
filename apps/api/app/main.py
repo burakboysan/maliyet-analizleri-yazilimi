@@ -1,13 +1,19 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.settings import get_allowed_origin_regex, get_allowed_origins
+from app.core.settings import get_allowed_origin_regex, get_allowed_origins, get_settings
 from app.routers import admin, auth, documents, fixed_costs, health, leave, materials, mobile_compat, modules, products, selection_wizard
 
+
+settings = get_settings()
+is_dev = settings.api_env == "dev"
 
 app = FastAPI(
     title="Bomaksan Maliyet API",
     version="0.1.0",
+    docs_url="/docs" if is_dev else None,
+    redoc_url="/redoc" if is_dev else None,
+    openapi_url="/openapi.json" if is_dev else None,
 )
 
 app.add_middleware(
