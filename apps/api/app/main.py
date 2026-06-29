@@ -1,5 +1,10 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 from app.core.settings import get_allowed_origin_regex, get_allowed_origins, get_settings
 from app.routers import admin, auth, documents, fixed_costs, health, leave, materials, mobile_compat, modules, products, selection_wizard
@@ -7,6 +12,7 @@ from app.routers import admin, auth, documents, fixed_costs, health, leave, mate
 
 settings = get_settings()
 is_dev = settings.api_env == "dev"
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Bomaksan Maliyet API",
@@ -16,6 +22,20 @@ app = FastAPI(
     openapi_url="/openapi.json" if is_dev else None,
 )
 
+
+class JsonUnhandledExceptionMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception:
+            logger.exception("Unhandled API error: %s %s", request.method, request.url.path)
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Sunucu beklenmeyen bir hata döndürdü. Lütfen daha sonra tekrar deneyin."},
+            )
+
+
+app.add_middleware(JsonUnhandledExceptionMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_allowed_origins(),

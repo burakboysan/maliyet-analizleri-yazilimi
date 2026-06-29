@@ -109,9 +109,18 @@ def _ensure_schema(connection: Any) -> None:
         ("aciklama", "TEXT NULL"),
         ("sistem_kalemi", "BOOLEAN NOT NULL DEFAULT FALSE"),
         ("olusturma_tarihi", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
+        ("guncelleme_tarihi", "TIMESTAMP NULL"),
     ):
         if not _column_exists(connection, "sabit_maliyet_kalemleri", column):
             cursor.execute(f"ALTER TABLE sabit_maliyet_kalemleri ADD COLUMN {column} {definition}")
+
+    cursor.execute(
+        """
+        UPDATE sabit_maliyet_kalemleri
+        SET guncelleme_tarihi = CURRENT_TIMESTAMP
+        WHERE guncelleme_tarihi IS NULL
+        """
+    )
 
     for name, category, unit, currency, price in DEFAULT_FIXED_COST_ITEMS:
         cursor.execute("SELECT id FROM sabit_maliyet_kalemleri WHERE kalem_adi = %s LIMIT 1", (name,))

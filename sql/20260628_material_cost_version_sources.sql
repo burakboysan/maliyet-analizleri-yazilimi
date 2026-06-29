@@ -1,3 +1,9 @@
+ALTER TABLE malzemeler
+ADD COLUMN IF NOT EXISTS guncelleme_tarihi TIMESTAMP NULL;
+
+ALTER TABLE sabit_maliyet_kalemleri
+ADD COLUMN IF NOT EXISTS guncelleme_tarihi TIMESTAMP NULL;
+
 UPDATE malzemeler
 SET guncelleme_tarihi = CURRENT_TIMESTAMP
 WHERE guncelleme_tarihi IS NULL;
