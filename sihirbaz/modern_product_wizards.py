@@ -167,6 +167,7 @@ class _ModernWizard:
     def _render_left(self, parent):
         ctk.CTkFrame(parent, fg_color=BORDER, height=1).pack(fill="x", pady=(0, 16))
         key = self.current_key()
+        self.refs["_option_cards"] = {}
         if key == "criteria":
             self._render_criteria(parent)
             return
@@ -264,28 +265,60 @@ class _ModernWizard:
                 ctk.CTkLabel(text, text=description, font=ctk.CTkFont(size=11), text_color=MUTED, wraplength=420, justify="left").pack(anchor="w", pady=(2, 0))
             check = ctk.CTkLabel(card, text="✓" if selected else "", font=ctk.CTkFont(size=16, weight="bold"), text_color=GREEN)
             check.grid(row=0, column=2, rowspan=2, sticky="e", padx=(8, 18))
+            self.refs.setdefault("_option_cards", {}).setdefault(field, []).append(
+                {"value": value, "label": label, "card": card, "circle": circle, "check": check}
+            )
             for widget in (card, circle, text):
                 widget.bind("<Button-1>", lambda _e, f=field, v=value: self.set_value(f, v))
             for child in text.winfo_children():
                 child.bind("<Button-1>", lambda _e, f=field, v=value: self.set_value(f, v))
 
     def set_value(self, field, value):
+        before_signature = self._current_section_signature()
         self.adapter.set_value(self.state, field, value)
-        self._refresh_left_and_summary()
+        self._refresh_left_and_summary(before_signature)
 
-    def _refresh_left_and_summary(self):
+    def _refresh_left_and_summary(self, before_signature=None):
         self.adapter.normalize(self.state)
         content = self.refs.get("content")
         summary = self.refs.get("summary")
         if not content or not summary or not content.winfo_exists() or not summary.winfo_exists():
             self.render()
             return
-        for child in content.winfo_children():
-            child.destroy()
-        for child in summary.winfo_children():
-            child.destroy()
-        self._render_left(content)
-        self._render_summary(summary)
+        if before_signature is None or before_signature != self._current_section_signature():
+            for child in content.winfo_children():
+                child.destroy()
+            self._render_left(content)
+        else:
+            self._update_option_cards()
+        self._update_summary()
+
+    def _current_section_signature(self):
+        key = self.current_key()
+        if key in ("criteria", "summary"):
+            return key
+        signature = []
+        for section in self.adapter.sections(self.state, key):
+            option_values = []
+            for option in section.get("options", []):
+                value = option.get("value") if isinstance(option, dict) else option
+                title = option.get("title") if isinstance(option, dict) else option
+                option_values.append((repr(value), repr(title)))
+            signature.append((section.get("field"), section.get("title"), section.get("note"), tuple(option_values)))
+        return tuple(signature)
+
+    def _update_option_cards(self):
+        option_cards = self.refs.get("_option_cards") or {}
+        for field, handles in option_cards.items():
+            selected_value = self.state.get(field)
+            for handle in handles:
+                selected = handle["value"] == selected_value or handle["label"] == selected_value
+                handle["card"].configure(border_width=2 if selected else 1, border_color=ACCENT_COLOR if selected else "#dfe3ea")
+                handle["circle"].delete("all")
+                handle["circle"].create_oval(5, 5, 35, 35, width=4, outline=ACCENT_COLOR if selected else "#9aa3b2", fill="#ffffff")
+                if selected:
+                    handle["circle"].create_oval(12, 12, 28, 28, width=0, fill=ACCENT_COLOR)
+                handle["check"].configure(text="\u2713" if selected else "")
 
     def _transition(self):
         self.adapter.normalize(self.state)
@@ -349,13 +382,14 @@ class _ModernWizard:
         overlay.after(500, finish)
 
     def _render_summary(self, parent):
+        self.refs["_summary_cards"] = []
         ctk.CTkLabel(parent, text="Mevcut Secim", font=ctk.CTkFont(size=15, weight="bold"), text_color=TEXT).pack(anchor="w", padx=18, pady=(18, 12))
         grid = ctk.CTkFrame(parent, fg_color="transparent")
         grid.pack(fill="both", expand=True, padx=16, pady=(0, 16))
         grid.grid_columnconfigure(0, weight=1, uniform="summary")
         grid.grid_columnconfigure(1, weight=1, uniform="summary")
         for idx, item in enumerate(self.adapter.summary_cards(self.state)):
-            self._summary_card(grid, idx // 2, idx % 2, item)
+            self.refs["_summary_cards"].append(self._summary_card(grid, idx // 2, idx % 2, item))
         if self.current_key() == "summary":
             row = (len(self.adapter.summary_cards(self.state)) + 1) // 2
             self._documents_card(grid, row)
@@ -363,8 +397,7 @@ class _ModernWizard:
 
     def _summary_card(self, parent, row, column, item):
         if item.get("kind") == "metric" or item.get("status"):
-            self._metric_summary_card(parent, row, column, item)
-            return
+            return self._metric_summary_card(parent, row, column, item)
 
         icon = item.get("icon")
         card = ctk.CTkFrame(parent, fg_color=PANEL, corner_radius=8, border_width=1, border_color=BORDER)
@@ -380,11 +413,23 @@ class _ModernWizard:
         ctk.CTkLabel(text_frame, text=item.get("label", ""), font=ctk.CTkFont(size=13, weight="bold"), text_color=TEXT).pack(anchor="w")
         value = item.get("value", "Secilmedi")
         if isinstance(value, list):
-            self._render_code_rows(text_frame, value)
+            value_handle = {"kind": "list", "frame": self._render_code_rows(text_frame, value)}
         else:
-            ctk.CTkLabel(text_frame, text=value or "Secilmedi", font=ctk.CTkFont(size=14), text_color="#374151", wraplength=360, justify="left").pack(anchor="w", pady=(4, 0))
+            value_label = ctk.CTkLabel(text_frame, text=value or "Secilmedi", font=ctk.CTkFont(size=14), text_color="#374151", wraplength=360, justify="left")
+            value_label.pack(anchor="w", pady=(4, 0))
+            value_handle = {"kind": "text", "label": value_label}
+        subtext_label = None
         if item.get("subtext"):
-            ctk.CTkLabel(text_frame, text=item["subtext"], font=ctk.CTkFont(size=11), text_color=MUTED, wraplength=360, justify="left").pack(anchor="w", pady=(4, 0))
+            subtext_label = ctk.CTkLabel(text_frame, text=item["subtext"], font=ctk.CTkFont(size=11), text_color=MUTED, wraplength=360, justify="left")
+            subtext_label.pack(anchor="w", pady=(4, 0))
+        return {
+            "kind": "summary",
+            "label": item.get("label", ""),
+            "text_frame": text_frame,
+            "value": value_handle,
+            "subtext": subtext_label,
+            "columnspan": item.get("columnspan", 1),
+        }
 
     def _metric_summary_card(self, parent, row, column, item):
         status = item.get("status")
@@ -400,15 +445,29 @@ class _ModernWizard:
         ctk.CTkLabel(top, text=item.get("label", ""), font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT).grid(row=0, column=0, sticky="w")
         badge = ctk.CTkFrame(top, fg_color="transparent")
         badge.grid(row=0, column=1, sticky="e")
-        ctk.CTkLabel(badge, text=status_icon, width=24, height=24, corner_radius=12, fg_color=color if status_text else "transparent", text_color="#ffffff", font=ctk.CTkFont(size=15, weight="bold")).pack(side="left")
-        ctk.CTkLabel(badge, text=status_text, font=ctk.CTkFont(size=11, weight="bold"), text_color=color).pack(side="left", padx=(6, 0))
-        ctk.CTkLabel(card, text=item.get("value") or "Secilmedi", font=ctk.CTkFont(size=22, weight="bold"), text_color="#111827").grid(row=1, column=0, sticky="w", padx=16)
-        ctk.CTkLabel(card, text=item.get("message") or item.get("subtext") or "", font=ctk.CTkFont(size=11), text_color=color, wraplength=390, justify="left").grid(row=2, column=0, sticky="w", padx=16, pady=(12, 14))
+        status_icon_label = ctk.CTkLabel(badge, text=status_icon, width=24, height=24, corner_radius=12, fg_color=color if status_text else "transparent", text_color="#ffffff", font=ctk.CTkFont(size=15, weight="bold"))
+        status_icon_label.pack(side="left")
+        status_text_label = ctk.CTkLabel(badge, text=status_text, font=ctk.CTkFont(size=11, weight="bold"), text_color=color)
+        status_text_label.pack(side="left", padx=(6, 0))
+        value_label = ctk.CTkLabel(card, text=item.get("value") or "Secilmedi", font=ctk.CTkFont(size=22, weight="bold"), text_color="#111827")
+        value_label.grid(row=1, column=0, sticky="w", padx=16)
+        message_label = ctk.CTkLabel(card, text=item.get("message") or item.get("subtext") or "", font=ctk.CTkFont(size=11), text_color=color, wraplength=390, justify="left")
+        message_label.grid(row=2, column=0, sticky="w", padx=16, pady=(12, 14))
+        return {
+            "kind": "metric",
+            "label": item.get("label", ""),
+            "value": value_label,
+            "message": message_label,
+            "status_icon": status_icon_label,
+            "status_text": status_text_label,
+            "columnspan": item.get("columnspan", 1),
+        }
 
     def _render_code_rows(self, parent, rows):
         if not rows:
-            ctk.CTkLabel(parent, text="Secimler tamamlanmadi", font=ctk.CTkFont(size=13), text_color=MUTED).pack(anchor="w", pady=(8, 0))
-            return
+            label = ctk.CTkLabel(parent, text="Secimler tamamlanmadi", font=ctk.CTkFont(size=13), text_color=MUTED)
+            label.pack(anchor="w", pady=(8, 0))
+            return label
         split_index = (len(rows) + 1) // 2
         grid = ctk.CTkFrame(parent, fg_color="transparent")
         grid.pack(fill="x", pady=(8, 0))
@@ -419,6 +478,69 @@ class _ModernWizard:
             column_frame.grid(row=0, column=column, sticky="nw", padx=(0, 24 if column == 0 else 0))
             for label, code in items:
                 ctk.CTkLabel(column_frame, text=f"{label}: {code or 'HARIC'}", font=ctk.CTkFont(size=12), text_color="#4b5563").pack(anchor="w", pady=(0, 5))
+        return grid
+
+    def _update_summary(self):
+        summary = self.refs.get("summary")
+        handles = self.refs.get("_summary_cards") or []
+        if not summary or not summary.winfo_exists():
+            return
+        items = self.adapter.summary_cards(self.state)
+        if self.current_key() == "summary" or not self._summary_layout_matches(handles, items):
+            for child in summary.winfo_children():
+                child.destroy()
+            self._render_summary(summary)
+            return
+        for handle, item in zip(handles, items):
+            if handle["kind"] == "metric":
+                self._update_metric_summary_card(handle, item)
+            else:
+                self._update_summary_card(handle, item)
+
+    def _summary_layout_matches(self, handles, items):
+        if len(handles) != len(items):
+            return False
+        for handle, item in zip(handles, items):
+            item_kind = "metric" if item.get("kind") == "metric" or item.get("status") else "summary"
+            if handle.get("kind") != item_kind:
+                return False
+            if handle.get("label") != item.get("label", ""):
+                return False
+            if handle.get("columnspan", 1) != item.get("columnspan", 1):
+                return False
+            if item_kind == "summary":
+                value_kind = "list" if isinstance(item.get("value", "Secilmedi"), list) else "text"
+                if handle.get("value", {}).get("kind") != value_kind:
+                    return False
+        return True
+
+    def _update_summary_card(self, handle, item):
+        value = item.get("value", "Secilmedi")
+        value_handle = handle.get("value") or {}
+        if value_handle.get("kind") == "list":
+            old_frame = value_handle.get("frame")
+            if old_frame and old_frame.winfo_exists():
+                old_frame.destroy()
+            value_handle["frame"] = self._render_code_rows(handle["text_frame"], value)
+        else:
+            value_handle["label"].configure(text=value or "Secilmedi")
+        subtext = item.get("subtext") or ""
+        subtext_label = handle.get("subtext")
+        if subtext_label and subtext_label.winfo_exists():
+            subtext_label.configure(text=subtext)
+        elif subtext:
+            handle["subtext"] = ctk.CTkLabel(handle["text_frame"], text=subtext, font=ctk.CTkFont(size=11), text_color=MUTED, wraplength=360, justify="left")
+            handle["subtext"].pack(anchor="w", pady=(4, 0))
+
+    def _update_metric_summary_card(self, handle, item):
+        status = item.get("status")
+        color = GREEN if status == "green" else YELLOW if status == "yellow" else ACCENT_COLOR if status == "red" else MUTED
+        status_text = "Uygun" if status == "green" else "Dikkat" if status == "yellow" else "Uygun Degil" if status == "red" else ""
+        status_icon = "\u2713" if status == "green" else "!" if status == "yellow" else "x" if status == "red" else ""
+        handle["value"].configure(text=item.get("value") or "Secilmedi")
+        handle["message"].configure(text=item.get("message") or item.get("subtext") or "", text_color=color)
+        handle["status_icon"].configure(text=status_icon, fg_color=color if status_text else "transparent")
+        handle["status_text"].configure(text=status_text, text_color=color)
 
     def _render_summary_actions(self, parent):
         summary = self.adapter.build_summary(self.state)
