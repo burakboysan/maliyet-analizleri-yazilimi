@@ -62,7 +62,10 @@ def get_settings() -> Settings:
 
 def get_allowed_origins() -> list[str]:
     settings = get_settings()
-    defaults = [
+    canonical_origins = [
+        "https://masterapp.bomaksan.com",
+    ]
+    dev_defaults = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:5180",
@@ -73,11 +76,10 @@ def get_allowed_origins() -> list[str]:
         for origin in settings.allowed_origins.split(",")
         if origin.strip()
     ]
-    if configured:
-        return configured
-    if settings.api_env == "dev":
-        return defaults
-    return []
+    origins = canonical_origins + configured
+    if not configured and settings.api_env == "dev":
+        origins.extend(dev_defaults)
+    return list(dict.fromkeys(origins))
 
 
 def get_allowed_origin_regex() -> Optional[str]:
