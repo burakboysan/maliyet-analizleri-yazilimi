@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 import hashlib
 import json
@@ -197,8 +197,12 @@ def _optional_decimal_value(value: Any) -> Decimal | None:
 def _datetime_text(value: Any) -> str | None:
     if value is None:
         return None
-    if hasattr(value, "isoformat"):
+    if isinstance(value, datetime):
         return value.isoformat(sep=" ")
+    if isinstance(value, date):
+        return value.isoformat()
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
     return str(value)
 
 

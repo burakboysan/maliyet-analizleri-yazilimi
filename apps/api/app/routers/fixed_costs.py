@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+from datetime import date, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -66,6 +67,33 @@ def _column_exists(connection: Any, table_name: str, column_name: str) -> bool:
     return cursor.fetchone() is not None
 
 
+def _table_columns(connection: Any, table_name: str) -> set[str]:
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = %s
+        """,
+        (table_name,),
+    )
+    return {str(row[0] if not isinstance(row, dict) else row["column_name"]) for row in cursor.fetchall()}
+
+
+def _table_exists(connection: Any, table_name: str) -> bool:
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public' AND table_name = %s
+        LIMIT 1
+        """,
+        (table_name,),
+    )
+    return cursor.fetchone() is not None
+
+
 def _to_float(value: Any) -> float:
     if value in (None, ""):
         return 0.0
@@ -78,62 +106,58 @@ def _to_float(value: Any) -> float:
 def _datetime_text(value: Any) -> str | None:
     if value is None:
         return None
-    if hasattr(value, "isoformat"):
+    if isinstance(value, datetime):
         return value.isoformat(sep=" ")
+    if isinstance(value, date):
+        return value.isoformat()
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
     return str(value)
 
 
 def _ensure_schema(connection: Any) -> None:
-    cursor = connection.cursor()
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sabit_maliyet_kalemleri (
-            id BIGSERIAL PRIMARY KEY,
-            kalem_adi VARCHAR(255) UNIQUE NOT NULL,
-            kategori VARCHAR(100) NULL,
-            birim VARCHAR(50) NULL,
-            birim_fiyat NUMERIC(14, 4) NOT NULL DEFAULT 0,
-            para_birimi VARCHAR(10) NOT NULL DEFAULT 'EUR',
-            aktif BOOLEAN NOT NULL DEFAULT TRUE,
-            aciklama TEXT NULL,
-            sistem_kalemi BOOLEAN NOT NULL DEFAULT FALSE,
-            olusturma_tarihi TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            guncelleme_tarihi TIMESTAMP NULL
+    table_name = "sabit_maliyet_kalemleri"
+    if not _table_exists(connection, table_name):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Sabit maliyet veritabanı tablosu hazır değil. Lütfen veritabanı migration'ını çalıştırın.",
         )
-        """
+    required_columns = (
+        "id",
+        "kalem_adi",
+        "birim",
+        "birim_fiyat",
+        "sistem_kalemi",
+        "guncelleme_tarihi",
     )
-    for column, definition in (
-        ("kategori", "VARCHAR(100) NULL"),
-        ("para_birimi", "VARCHAR(10) NOT NULL DEFAULT 'EUR'"),
-        ("aktif", "BOOLEAN NOT NULL DEFAULT TRUE"),
-        ("aciklama", "TEXT NULL"),
-        ("sistem_kalemi", "BOOLEAN NOT NULL DEFAULT FALSE"),
-        ("olusturma_tarihi", "TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"),
-        ("guncelleme_tarihi", "TIMESTAMP NULL"),
-    ):
-        if not _column_exists(connection, "sabit_maliyet_kalemleri", column):
-            cursor.execute(f"ALTER TABLE sabit_maliyet_kalemleri ADD COLUMN {column} {definition}")
+    columns = _table_columns(connection, table_name)
+    missing_columns = [column for column in required_columns if column not in columns]
+    if missing_columns:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Sabit maliyet veritabanı şeması eksik: {', '.join(missing_columns)}.",
+        )
 
-    cursor.execute(
-        """
-        UPDATE sabit_maliyet_kalemleri
-        SET guncelleme_tarihi = CURRENT_TIMESTAMP
-        WHERE guncelleme_tarihi IS NULL
-        """
-    )
 
-    for name, category, unit, currency, price in DEFAULT_FIXED_COST_ITEMS:
-        cursor.execute("SELECT id FROM sabit_maliyet_kalemleri WHERE kalem_adi = %s LIMIT 1", (name,))
-        if not cursor.fetchone():
-            cursor.execute(
-                """
-                INSERT INTO sabit_maliyet_kalemleri
-                    (kalem_adi, kategori, birim, birim_fiyat, para_birimi, aktif, sistem_kalemi)
-                VALUES (%s, %s, %s, %s, %s, TRUE, TRUE)
-                """,
-                (name, category, unit, price, currency),
-            )
-    connection.commit()
+def _select_expr(columns: set[str], column_name: str, fallback_sql: str) -> str:
+    return column_name if column_name in columns else fallback_sql
+
+
+def _fixed_cost_select_sql(columns: set[str]) -> str:
+    return f"""
+        SELECT id,
+               kalem_adi,
+               {_select_expr(columns, "kategori", "NULL::text")} AS kategori,
+               birim,
+               birim_fiyat,
+               {_select_expr(columns, "para_birimi", "'EUR'::text")} AS para_birimi,
+               {_select_expr(columns, "aktif", "TRUE")} AS aktif,
+               {_select_expr(columns, "aciklama", "NULL::text")} AS aciklama,
+               sistem_kalemi,
+               {_select_expr(columns, "olusturma_tarihi", "NULL::timestamp")} AS olusturma_tarihi,
+               guncelleme_tarihi
+        FROM sabit_maliyet_kalemleri
+    """
 
 
 def _row_response(row: dict[str, Any]) -> dict[str, Any]:
@@ -154,12 +178,12 @@ def _row_response(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _fetch_item(connection: Any, item_id: int) -> dict[str, Any]:
+    _ensure_schema(connection)
+    columns = _table_columns(connection, "sabit_maliyet_kalemleri")
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
-        """
-        SELECT id, kalem_adi, kategori, birim, birim_fiyat, para_birimi, aktif, aciklama,
-               sistem_kalemi, olusturma_tarihi, guncelleme_tarihi
-        FROM sabit_maliyet_kalemleri
+        f"""
+        {_fixed_cost_select_sql(columns)}
         WHERE id = %s
         LIMIT 1
         """,
@@ -182,29 +206,45 @@ def list_fixed_costs(
 ):
     _require_manager(current_user)
     _ensure_schema(connection)
+    columns = _table_columns(connection, "sabit_maliyet_kalemleri")
     where: list[str] = []
     params: list[Any] = []
     if search.strip():
         like = f"%{search.strip()}%"
-        where.append("(kalem_adi LIKE %s OR kategori LIKE %s OR aciklama LIKE %s)")
-        params.extend([like, like, like])
+        search_parts = ["kalem_adi ILIKE %s", "birim ILIKE %s"]
+        params.extend([like, like])
+        if "kategori" in columns:
+            search_parts.append("kategori ILIKE %s")
+            params.append(like)
+        if "aciklama" in columns:
+            search_parts.append("aciklama ILIKE %s")
+            params.append(like)
+        where.append(f"({' OR '.join(search_parts)})")
     if category.strip():
-        where.append("kategori = %s")
-        params.append(category.strip())
+        if "kategori" in columns:
+            where.append("kategori = %s")
+            params.append(category.strip())
+        else:
+            where.append("1 = 0")
     if currency.strip():
-        where.append("para_birimi = %s")
-        params.append(currency.strip())
+        if "para_birimi" in columns:
+            where.append("para_birimi = %s")
+            params.append(currency.strip())
+        elif currency.strip().upper() != "EUR":
+            where.append("1 = 0")
     if active.lower() in {"true", "active", "1"}:
-        where.append("aktif = TRUE")
+        if "aktif" in columns:
+            where.append("aktif = TRUE")
     elif active.lower() in {"false", "passive", "0"}:
-        where.append("aktif = FALSE")
+        if "aktif" in columns:
+            where.append("aktif = FALSE")
+        else:
+            where.append("1 = 0")
     where_sql = f"WHERE {' AND '.join(where)}" if where else ""
     cursor = connection.cursor(dictionary=True)
     cursor.execute(
         f"""
-        SELECT id, kalem_adi, kategori, birim, birim_fiyat, para_birimi, aktif, aciklama,
-               sistem_kalemi, olusturma_tarihi, guncelleme_tarihi
-        FROM sabit_maliyet_kalemleri
+        {_fixed_cost_select_sql(columns)}
         {where_sql}
         ORDER BY sistem_kalemi DESC, kalem_adi ASC
         """,
@@ -222,25 +262,31 @@ def create_fixed_cost(
 ):
     _require_manager(current_user)
     _ensure_schema(connection)
+    columns = _table_columns(connection, "sabit_maliyet_kalemleri")
     name = str(payload.kalem_adi or "").strip()
     if not name:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Kalem adı gerekli.")
     cursor = connection.cursor(dictionary=True)
+    insert_columns = ["kalem_adi", "birim", "birim_fiyat", "sistem_kalemi", "guncelleme_tarihi"]
+    placeholders = ["%s", "%s", "%s", "%s", "NOW()"]
+    values: list[Any] = [name, payload.birim, _to_float(payload.birim_fiyat), False]
+    optional_values = {
+        "kategori": payload.kategori,
+        "para_birimi": payload.para_birimi or "EUR",
+        "aktif": bool(payload.aktif),
+        "aciklama": payload.aciklama,
+    }
+    for column, value in optional_values.items():
+        if column in columns:
+            insert_columns.insert(-1, column)
+            placeholders.insert(-1, "%s")
+            values.append(value)
     cursor.execute(
-        """
-        INSERT INTO sabit_maliyet_kalemleri
-            (kalem_adi, kategori, birim, birim_fiyat, para_birimi, aktif, aciklama, sistem_kalemi, guncelleme_tarihi)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, FALSE, NOW())
+        f"""
+        INSERT INTO sabit_maliyet_kalemleri ({', '.join(insert_columns)})
+        VALUES ({', '.join(placeholders)})
         """,
-        (
-            name,
-            payload.kategori,
-            payload.birim,
-            _to_float(payload.birim_fiyat),
-            payload.para_birimi or "EUR",
-            bool(payload.aktif),
-            payload.aciklama,
-        ),
+        tuple(values),
     )
     connection.commit()
     cursor.execute("SELECT id FROM sabit_maliyet_kalemleri WHERE kalem_adi = %s LIMIT 1", (name,))
@@ -256,33 +302,31 @@ def update_fixed_cost(
 ):
     _require_manager(current_user)
     _ensure_schema(connection)
+    columns = _table_columns(connection, "sabit_maliyet_kalemleri")
     name = str(payload.kalem_adi or "").strip()
     if not name:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Kalem adı gerekli.")
     cursor = connection.cursor()
+    assignments = ["kalem_adi = %s", "birim = %s", "birim_fiyat = %s", "guncelleme_tarihi = NOW()"]
+    values: list[Any] = [name, payload.birim, _to_float(payload.birim_fiyat)]
+    optional_values = {
+        "kategori": payload.kategori,
+        "para_birimi": payload.para_birimi or "EUR",
+        "aktif": bool(payload.aktif),
+        "aciklama": payload.aciklama,
+    }
+    for column, value in optional_values.items():
+        if column in columns:
+            assignments.insert(-1, f"{column} = %s")
+            values.append(value)
+    values.append(item_id)
     cursor.execute(
-        """
+        f"""
         UPDATE sabit_maliyet_kalemleri
-        SET kalem_adi = %s,
-            kategori = %s,
-            birim = %s,
-            birim_fiyat = %s,
-            para_birimi = %s,
-            aktif = %s,
-            aciklama = %s,
-            guncelleme_tarihi = NOW()
+        SET {', '.join(assignments)}
         WHERE id = %s
         """,
-        (
-            name,
-            payload.kategori,
-            payload.birim,
-            _to_float(payload.birim_fiyat),
-            payload.para_birimi or "EUR",
-            bool(payload.aktif),
-            payload.aciklama,
-            item_id,
-        ),
+        tuple(values),
     )
     if int(cursor.rowcount or 0) == 0:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sabit maliyet kalemi bulunamadı.")
