@@ -1,4 +1,5 @@
 ﻿from decimal import Decimal, InvalidOperation
+from time import monotonic
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -222,6 +223,29 @@ PRODUCT_SORT_COLUMNS["kategori"] = "urun_kategorisi"
 PRODUCT_SORT_COLUMNS["tip"] = "urun_tipi"
 PRODUCT_SORT_COLUMNS["model"] = "urun_modeli"
 
+PRODUCT_FACET_COLUMNS = [
+    "urun_kategorisi",
+    "urun_tipi",
+    "urun_modeli",
+    "filtre_medyasi",
+    "filtre_medyasi_kodu",
+    "patlac_kumanda_tipi",
+    "fan_basinc_birimi",
+    "fan_kumanda_tipi",
+    "motor",
+    "patlama_kapagi",
+]
+PRODUCT_RANGE_FACET_COLUMNS = [
+    "maliyet",
+    "debi",
+    "fan_basinc",
+    "toplam_filtre_alani",
+    "filtre_elemani_sayisi",
+]
+PRODUCT_FACETS_CACHE_TTL_SECONDS = 300
+PRODUCT_FACETS_CACHE_MAX_ITEMS = 128
+_PRODUCT_FACETS_CACHE: dict[tuple[Any, ...], tuple[float, dict[str, Any]]] = {}
+
 
 def _stringify_date(value: Any) -> str | None:
     return value.isoformat(sep=" ") if hasattr(value, "isoformat") else value
@@ -385,39 +409,92 @@ def _product_search_filters(
     return " AND ".join(where_parts), params
 
 
-def _product_facet_options(cursor: Any, column: str, where_sql: str, params: list[Any]) -> list[dict[str, Any]]:
+def _product_facets_cache_key(where_sql: str, params: list[Any]) -> tuple[Any, ...]:
+    return (where_sql, tuple(str(param) for param in params))
+
+
+def _clear_product_facets_cache() -> None:
+    _PRODUCT_FACETS_CACHE.clear()
+
+
+def _cached_product_facets(cache_key: tuple[Any, ...]) -> dict[str, Any] | None:
+    cached = _PRODUCT_FACETS_CACHE.get(cache_key)
+    if not cached:
+        return None
+    cached_at, payload = cached
+    if monotonic() - cached_at > PRODUCT_FACETS_CACHE_TTL_SECONDS:
+        _PRODUCT_FACETS_CACHE.pop(cache_key, None)
+        return None
+    return payload
+
+
+def _store_product_facets_cache(cache_key: tuple[Any, ...], payload: dict[str, Any]) -> None:
+    if len(_PRODUCT_FACETS_CACHE) >= PRODUCT_FACETS_CACHE_MAX_ITEMS:
+        oldest_key = min(_PRODUCT_FACETS_CACHE, key=lambda key: _PRODUCT_FACETS_CACHE[key][0])
+        _PRODUCT_FACETS_CACHE.pop(oldest_key, None)
+    _PRODUCT_FACETS_CACHE[cache_key] = (monotonic(), payload)
+
+
+def _product_facet_options_bulk(cursor: Any, where_sql: str, params: list[Any]) -> dict[str, list[dict[str, Any]]]:
+    grouping_sets = ", ".join(f"({column})" for column in PRODUCT_FACET_COLUMNS)
+    facet_case = " ".join(
+        f"WHEN GROUPING({column}) = 0 THEN '{column}'" for column in PRODUCT_FACET_COLUMNS
+    )
+    value_case = " ".join(
+        f"WHEN GROUPING({column}) = 0 THEN {column}::text" for column in PRODUCT_FACET_COLUMNS
+    )
     cursor.execute(
         f"""
-        SELECT {column} AS value, COUNT(*) AS count
-        FROM urunler
-        WHERE {where_sql}
-          AND {column} IS NOT NULL
-          AND TRIM({column}::text) <> ''
-        GROUP BY {column}
-        ORDER BY {column}
+        WITH grouped AS (
+            SELECT
+                CASE {facet_case} END AS facet,
+                CASE {value_case} END AS value,
+                COUNT(*) AS count
+            FROM urunler
+            WHERE {where_sql}
+            GROUP BY GROUPING SETS ({grouping_sets})
+        )
+        SELECT facet, value, count
+        FROM grouped
+        WHERE value IS NOT NULL
+          AND TRIM(value) <> ''
+        ORDER BY facet, value
         """,
         tuple(params),
     )
-    return [{"value": str(row["value"]), "count": int(row["count"] or 0)} for row in cursor.fetchall()]
+    facets = {column: [] for column in PRODUCT_FACET_COLUMNS}
+    for row in cursor.fetchall():
+        facet = str(row.get("facet") or "")
+        if facet not in facets:
+            continue
+        facets[facet].append({"value": str(row["value"]), "count": int(row["count"] or 0)})
+    return facets
 
 
-def _product_range_facet(cursor: Any, column: str, where_sql: str, params: list[Any]) -> RangeFacetResponse:
-    numeric_expr = _numeric_sql(column)
+def _product_range_facets_bulk(cursor: Any, where_sql: str, params: list[Any]) -> dict[str, RangeFacetResponse]:
+    select_parts = []
+    for column in PRODUCT_RANGE_FACET_COLUMNS:
+        numeric_expr = _numeric_sql(column)
+        select_parts.append(f"MIN({numeric_expr}) AS {column}_min")
+        select_parts.append(f"MAX({numeric_expr}) AS {column}_max")
     cursor.execute(
         f"""
-        SELECT MIN({numeric_expr}) AS min_value, MAX({numeric_expr}) AS max_value
+        SELECT {", ".join(select_parts)}
         FROM urunler
         WHERE {where_sql}
         """,
         tuple(params),
     )
     row = cursor.fetchone() or {}
-    min_value = row.get("min_value")
-    max_value = row.get("max_value")
-    return RangeFacetResponse(
-        min=float(min_value) if min_value is not None else None,
-        max=float(max_value) if max_value is not None else None,
-    )
+    ranges: dict[str, RangeFacetResponse] = {}
+    for column in PRODUCT_RANGE_FACET_COLUMNS:
+        min_value = row.get(f"{column}_min")
+        max_value = row.get(f"{column}_max")
+        ranges[column] = RangeFacetResponse(
+            min=float(min_value) if min_value is not None else None,
+            max=float(max_value) if max_value is not None else None,
+        )
+    return ranges
 
 
 def _recalculate_product_cost(connection: Any, product_id: int) -> tuple[bool, str | None]:
@@ -663,8 +740,6 @@ def search_products(
     sort_column = PRODUCT_SORT_COLUMNS.get(sort, "urun_kodu")
     sort_direction = "DESC" if order.lower() == "desc" else "ASC"
     cursor = connection.cursor(dictionary=True)
-    cursor.execute(f"SELECT COUNT(*) AS value FROM urunler WHERE {where_sql}", tuple(params))
-    total = int((cursor.fetchone() or {}).get("value") or 0)
     cursor.execute(
         f"""
         SELECT {", ".join(PRODUCT_LIST_COLUMNS)}
@@ -673,19 +748,22 @@ def search_products(
         ORDER BY {sort_column} {sort_direction}, id {sort_direction}
         LIMIT %s OFFSET %s
         """,
-        (*params, limit, offset),
+        (*params, limit + 1, offset),
     )
-    rows = cursor.fetchall()
+    fetched_rows = cursor.fetchall()
+    has_more = len(fetched_rows) > limit
+    rows = fetched_rows[:limit]
     for row in rows:
         row["maliyet_hesaplama_tarihi"] = _stringify_date(row.get("maliyet_hesaplama_tarihi"))
-    next_offset = offset + limit if offset + limit < total else None
+    next_offset = offset + limit if has_more else None
+    total = next_offset + 1 if has_more and next_offset is not None else offset + len(rows)
     return {
         "items": rows,
         "total": total,
         "limit": limit,
         "offset": offset,
         "next_offset": next_offset,
-        "has_more": next_offset is not None,
+        "has_more": has_more,
     }
 
 
@@ -741,24 +819,17 @@ def get_product_facets(
         filtre_elemani_sayisi_min=filtre_elemani_sayisi_min,
         filtre_elemani_sayisi_max=filtre_elemani_sayisi_max,
     )
+    cache_key = _product_facets_cache_key(where_sql, params)
+    cached_facets = _cached_product_facets(cache_key)
+    if cached_facets is not None:
+        return cached_facets
+
     cursor = connection.cursor(dictionary=True)
-    return {
-        "urun_kategorisi": _product_facet_options(cursor, "urun_kategorisi", where_sql, params),
-        "urun_tipi": _product_facet_options(cursor, "urun_tipi", where_sql, params),
-        "urun_modeli": _product_facet_options(cursor, "urun_modeli", where_sql, params),
-        "filtre_medyasi": _product_facet_options(cursor, "filtre_medyasi", where_sql, params),
-        "filtre_medyasi_kodu": _product_facet_options(cursor, "filtre_medyasi_kodu", where_sql, params),
-        "patlac_kumanda_tipi": _product_facet_options(cursor, "patlac_kumanda_tipi", where_sql, params),
-        "fan_basinc_birimi": _product_facet_options(cursor, "fan_basinc_birimi", where_sql, params),
-        "fan_kumanda_tipi": _product_facet_options(cursor, "fan_kumanda_tipi", where_sql, params),
-        "motor": _product_facet_options(cursor, "motor", where_sql, params),
-        "patlama_kapagi": _product_facet_options(cursor, "patlama_kapagi", where_sql, params),
-        "maliyet": _product_range_facet(cursor, "maliyet", where_sql, params),
-        "debi": _product_range_facet(cursor, "debi", where_sql, params),
-        "fan_basinc": _product_range_facet(cursor, "fan_basinc", where_sql, params),
-        "toplam_filtre_alani": _product_range_facet(cursor, "toplam_filtre_alani", where_sql, params),
-        "filtre_elemani_sayisi": _product_range_facet(cursor, "filtre_elemani_sayisi", where_sql, params),
-    }
+    categorical_facets = _product_facet_options_bulk(cursor, where_sql, params)
+    range_facets = _product_range_facets_bulk(cursor, where_sql, params)
+    facets = {**categorical_facets, **range_facets}
+    _store_product_facets_cache(cache_key, facets)
+    return facets
 
 
 @router.get("/{product_id}/detail", response_model=ProductDetailResponse)
@@ -877,6 +948,7 @@ def revise_product_costs(
             except Exception:
                 continue
         connection.commit()
+        _clear_product_facets_cache()
     except Exception as exc:
         connection.rollback()
         raise HTTPException(status_code=500, detail=f"Fiyat revizyonu başlatılamadı: {exc}") from exc
@@ -944,6 +1016,7 @@ def update_product(
             labor_updated = True
 
         connection.commit()
+        _clear_product_facets_cache()
     except HTTPException:
         connection.rollback()
         raise
@@ -996,6 +1069,7 @@ def delete_product(
         cursor.execute("DELETE FROM urun_iscilik WHERE urun_id = %s", (product_id,))
         cursor.execute("DELETE FROM urunler WHERE id = %s", (product_id,))
         connection.commit()
+        _clear_product_facets_cache()
     except Exception as exc:
         connection.rollback()
         raise HTTPException(status_code=500, detail=f"Ürün silinemedi: {exc}") from exc
@@ -1078,6 +1152,7 @@ def copy_product(
             )
 
         connection.commit()
+        _clear_product_facets_cache()
     except Exception as exc:
         connection.rollback()
         raise HTTPException(status_code=500, detail=f"Ürün kopyalanamadı: {exc}") from exc
