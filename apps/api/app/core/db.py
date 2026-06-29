@@ -33,10 +33,11 @@ def get_postgres_pool() -> Any:
 
         _postgres_pool = ConnectionPool(
             conninfo=settings.database_url,
-            min_size=1,
-            max_size=5,
+            min_size=3,
+            max_size=10,
             kwargs={"autocommit": False},
         )
+        _postgres_pool.wait(timeout=10)
     return _postgres_pool
 
 
@@ -130,9 +131,7 @@ class PostgresCursor:
 
 def get_connection() -> Iterator[Any]:
     with get_postgres_pool().connection() as connection:
-        wrapped = PostgresConnection(connection)
-        wrapped.ping()
-        yield wrapped
+        yield PostgresConnection(connection)
 
 
 def check_database() -> dict[str, str]:

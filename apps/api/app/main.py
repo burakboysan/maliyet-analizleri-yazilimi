@@ -6,6 +6,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from app.core.db import get_connection, get_postgres_pool
 from app.core.settings import get_allowed_origin_regex, get_allowed_origins, get_settings
 from app.routers import admin, auth, documents, fixed_costs, health, leave, materials, mobile_compat, modules, products, selection_wizard
 
@@ -44,6 +45,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.on_event("startup")
+def warm_up_database() -> None:
+    try:
+        get_postgres_pool()
+        connection_iter = get_connection()
+        try:
+            connection = next(connection_iter)
+            from app.core.account_security import ensure_account_security_schema
+
+            ensure_account_security_schema(connection)
+        finally:
+            connection_iter.close()
+    except Exception:
+        logger.exception("Database warmup failed")
 
 app.include_router(health.router)
 app.include_router(auth.router)

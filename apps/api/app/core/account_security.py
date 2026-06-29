@@ -24,6 +24,7 @@ VERIFICATION_VERIFY_RATE_LIMIT = (5, 10)
 PASSWORD_RESET_SEND_RATE_LIMIT = (3, 10)
 PASSWORD_RESET_VERIFY_RATE_LIMIT = (5, 10)
 SIGNUP_DEFAULT_ROLE_NAMES = ("Kullanici", "Kullanıcı")
+_ACCOUNT_SECURITY_SCHEMA_READY = False
 
 
 def _send_email(to_email: str, subject: str, body: str, html_body: str | None = None) -> dict[str, str]:
@@ -88,6 +89,10 @@ def _table_exists(cursor: Any, table_name: str) -> bool:
 
 
 def ensure_account_security_schema(connection: Any) -> None:
+    global _ACCOUNT_SECURITY_SCHEMA_READY
+    if _ACCOUNT_SECURITY_SCHEMA_READY:
+        return
+
     cursor = connection.cursor()
     backend = get_database_backend()
     if not _column_exists(connection, "kullanicilar", "email"):
@@ -111,6 +116,7 @@ def ensure_account_security_schema(connection: Any) -> None:
 
     _ensure_postgres_auth_tables(cursor)
     connection.commit()
+    _ACCOUNT_SECURITY_SCHEMA_READY = True
 
 
 def _ensure_postgres_auth_tables(cursor: Any) -> None:

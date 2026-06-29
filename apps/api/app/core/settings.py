@@ -35,6 +35,8 @@ def get_allowed_origins() -> list[str]:
     settings = get_settings()
     canonical_origins = [
         "https://masterapp.bomaksan.com",
+        "https://bomaksan-maliyet.lovable.app",
+        "https://id-preview--1c01b7d2-8b87-42f3-89d9-5f63c58b8c1b.lovable.app",
     ]
     dev_defaults = [
         "http://localhost:5173",
@@ -54,7 +56,4 @@ def get_allowed_origins() -> list[str]:
 
 
 def get_allowed_origin_regex() -> Optional[str]:
-    settings = get_settings()
-    if settings.api_env == "dev":
-        return r"https://.*\.(lovableproject\.com|lovable\.app)"
-    return None
+    return r"https://([a-z0-9-]+--)?[a-z0-9-]+\.(lovableproject\.com|lovable\.app)"
