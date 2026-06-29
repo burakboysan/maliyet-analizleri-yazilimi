@@ -22,7 +22,6 @@ https://github.com/burakboysan/maliyet-analizleri-yazilimi
 Bu repo su sorumluluklari tasir:
 
 - `apps/api`: FastAPI backend kaynak kodu.
-- `core/`, mevcut masaustu modul klasorleri ve installer akislari.
 - Database migration, SQL, runbook ve deploy scriptleri.
 - Cloud Run backend deploy kaynaklari.
 - API kontrati, authorization, authentication ve guvenlik kontrolleri.
@@ -166,7 +165,7 @@ Lovable frontend ana repoya alinacaksa:
 7. Build ve smoke kontrolleri yapilir.
 8. Degisiklikler tek, anlasilir bir commit ile ana repoya pushlanir.
 
-Bu islem sirasinda masaustu uygulama klasorlerinde davranis degisikligi yapilmamalidir.
+Bu islem sirasinda backend API kontrati, env ayarlari ve deploy akisi korunmalidir.
 
 ## Deploy Akisi
 

@@ -499,7 +499,7 @@ def _product_range_facets_bulk(cursor: Any, where_sql: str, params: list[Any]) -
 
 def _recalculate_product_cost(connection: Any, product_id: int) -> tuple[bool, str | None]:
     try:
-        from maliyet.cost_calculator import maliyet_hesapla
+        from app.services.cost_calculator import maliyet_hesapla
 
         cursor = connection.cursor(dictionary=True, buffered=True)
         maliyet_hesapla(product_id, cursor)
@@ -906,44 +906,13 @@ def revise_product_costs(
     if not existing_ids:
         raise HTTPException(status_code=404, detail="Güncellenecek ürün bulunamadı.")
 
-    cursor.execute("SELECT kalem_adi, birim_fiyat FROM sabit_maliyet_kalemleri")
-    fixed_costs = {row["kalem_adi"]: row["birim_fiyat"] for row in cursor.fetchall()}
-
-    cursor.execute("SELECT malzeme_kodu, birim_fiyat FROM malzemeler")
-    material_prices = {row["malzeme_kodu"]: row["birim_fiyat"] for row in cursor.fetchall()}
-
-    cursor.execute("SELECT birim_adi, saat_ucreti_usta, saat_ucreti_yardimci FROM iscilik")
-    labor_rates = {row["birim_adi"]: row for row in cursor.fetchall()}
-
     updated_count = 0
     try:
-        from urun_konfigurator import _calculate_unit_cost
+        from app.services.cost_calculator import maliyet_hesapla
 
         for product_id in existing_ids:
             try:
-                unit = _calculate_unit_cost(cursor, product_id, fixed_costs, material_prices, labor_rates)
-                cursor.execute(
-                    """
-                    UPDATE urunler SET
-                        maliyet = %s,
-                        malzeme_maliyeti = %s,
-                        iscilik_maliyeti = %s,
-                        uretim_gideri = %s,
-                        yonetim_gideri = %s,
-                        alt_urun_maliyeti = %s,
-                        maliyet_hesaplama_tarihi = NOW()
-                    WHERE id = %s
-                    """,
-                    (
-                        unit.get("genel_toplam"),
-                        unit.get("malzeme_maliyeti", 0),
-                        unit.get("iscilik_maliyeti", 0),
-                        unit.get("uretim_gideri", 0),
-                        unit.get("yonetim_gideri", 0),
-                        unit.get("alt_urun_maliyeti", 0),
-                        product_id,
-                    ),
-                )
+                maliyet_hesapla(product_id, cursor)
                 updated_count += 1
             except Exception:
                 continue

@@ -1,8 +1,8 @@
 # Web App Çalışma Alanı
 
-Bu klasör, masaüstü yazılımı değiştirmeden web app dönüşümünü başlatmak için ayrılmıştır.
+Bu klasör, Maliyet Analizleri ürününün aktif web uygulaması kaynaklarını içerir.
 
-- `api`: FastAPI backend iskeleti
-- `web`: React + TypeScript + Vite frontend iskeleti
+- `api`: FastAPI backend kaynak kodu.
+- `web`: React + TypeScript + Vite frontend kaynak kodu.
 
-Masaüstü uygulama mevcut akışıyla çalışmaya devam eder. Web app aynı `urun_maliyet_db` veritabanına backend üzerinden bağlanacak şekilde geliştirilecektir.
+Masaüstü uygulama kodu bu repodan kaldırılmıştır. Yeni geliştirme ve deploy akışı web frontend, FastAPI backend ve canlı veritabanı üzerinden yürütülür.
