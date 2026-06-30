@@ -1,116 +1,46 @@
 # Web App Repo ve Deploy Akisi
 
-Bu dokuman, Bomaksan Maliyet Analizleri web uygulamasinda Lovable, local calisma alani, GitHub repolari ve canli deploy arasindaki dogru akisi tarif eder.
+Bu dokuman, Bomaksan Maliyet Analizleri web uygulamasinda ana repo, frontend, backend, mobil uygulama ve canli deploy arasindaki dogru akisi tarif eder.
 
-## Amac
+## Source of Truth
 
-- Frontend ve backend kaynaklarini karistirmadan gelistirmek.
-- Lovable'da yapilan UI degisikliklerinin hangi repoda durdugunu netlestirmek.
-- Backend degisikliklerinin hangi repoya pushlanacagini ve nasil deploy edilecegini standartlastirmak.
-- Canli deploy oncesi guvenlik, API kontrati ve Turkce karakter kontrollerini unutmamak.
-
-## Kaynak Reposu Ayrimi
-
-### Backend source of truth
-
-Backend ve ana uygulama reposu:
+Ana uygulama reposu:
 
 ```text
 https://github.com/burakboysan/maliyet-analizleri-yazilimi
 ```
 
-Bu repo su sorumluluklari tasir:
+Bu repo su alanlarin source of truth kaynagidir:
 
+- `apps/web`: React + TypeScript + Vite SPA frontend.
 - `apps/api`: FastAPI backend kaynak kodu.
-- Database migration, SQL, runbook ve deploy scriptleri.
-- Cloud Run backend deploy kaynaklari.
-- API kontrati, authorization, authentication ve guvenlik kontrolleri.
+- `sql`, `migrations`, `supabase`: veritabani kaynaklari ve migration/runbook dosyalari.
+- `docs`: deploy, migration ve operasyon runbook'lari.
 
-Backend veya veritabani davranisi degistiginde commit/push hedefi bu repodur.
+Eski UI snapshot klasoru olan `.codex-lovable-source` aktif kaynak degildir, git'e alinmaz ve sadece gecmis UI kararlarini karsilastirmak icin gecici referans olarak tutulabilir.
 
-### Lovable frontend source of truth
-
-Lovable'in olusturdugu frontend reposu:
-
-```text
-https://github.com/burakboysan/sweet-ui-makeover
-```
-
-Bu repo su sorumluluklari tasir:
-
-- Lovable tarafindan uretilen React/Vite frontend.
-- UI route, component, layout, state ve API client kodlari.
-- Lovable uzerinden yapilan revizyonlar.
-
-Lovable degisiklikleri otomatik olarak bu repoya gider. Lovable dogrudan `maliyet-analizleri-yazilimi` reposuna push yapmaz.
-
-### Mobil uygulama source of truth
-
-Mobil uygulama reposu:
+Mobil uygulama source of truth reposu ayridir:
 
 ```text
 https://github.com/burakboysan/urunkonfigapp
 ```
 
-Bu repo su sorumluluklari tasir:
+Mobil uygulama backend'e dogrudan veritabani ile degil, canli FastAPI API uzerinden baglanmalidir.
 
-- Android/Kotlin mobil uygulama kaynak kodu.
-- Mobil uygulamanin API client, model, repository ve ekran kodlari.
-- Mobil build ayarlari, Android kaynaklari ve mobil release sureci.
+## Gunluk Gelistirme Akisi
 
-Mobil uygulama backend'e dogrudan veritabani ile degil, canli FastAPI API uzerinden baglanmalidir. Ornek Android ayari su backend URL'sini gostermelidir:
+1. UI veya ekran revizyonu `apps/web` icinde yapilir.
+2. Backend/API/DB degisikligi `apps/api`, `sql`, `migrations` veya ilgili runbook alaninda yapilir.
+3. Mobil uygulama degisikligi gerekiyorsa `urunkonfigapp` reposunda yapilir.
+4. Frontend ve backend degisiklikleri localde dogrulanir.
+5. Degisiklikler sadece ilgili dosyalar stage edilerek commit edilir.
+6. Backend Cloud Run'a, frontend Cloudflare Pages'a deploy edilir.
+7. Frontend ve mobil uygulama canli backend API URL'sine baglanir.
+8. Tarayici ve mobil istemci uzerinden gercek kullanici akislari test edilir.
 
-```text
-https://maliyet-api-416688102123.europe-west1.run.app/
-```
+Standart git akisi:
 
-Mobil repoda bulunan `app/`, `sql/` ve root seviyesindeki eski migration dosyalari legacy mobil API/DB kaynaklari olarak kabul edilir. Bu kaynaklar silinmeden once ana backend'de karsiliklari dogrulanmali ve `docs/mobile_backend_consolidation_runbook.md` akisi tamamlanmalidir.
-
-### Local snapshot
-
-Ana repoda bulunan:
-
-```text
-.codex-lovable-source
-```
-
-Lovable frontend kodunun local inceleme/snapshot alanidir. Bu klasor aktif source of truth olarak kabul edilmemelidir. Gerektiginde Lovable frontend kodunu incelemek, API cagri kontratini karsilastirmak veya kontrollu import hazirlamak icin kullanilir.
-
-### Eski web app alani
-
-Ana repoda bulunan:
-
-```text
-apps/web
-```
-
-Baslangic web app iskeleti olarak durur. Lovable frontend ana repoya bilincli sekilde tasinana kadar aktif frontend source of truth olarak kullanilmamalidir. Karisikligi azaltmak icin bu klasorun durumu dokumante edilmeli veya import karari verildiginde temizlenmelidir.
-
-## Olmasi Gereken Gunluk Gelistirme Akisi
-
-1. UI veya ekran revizyonu gerekiyorsa Lovable'da yapilir.
-2. Lovable degisikligi `burakboysan/sweet-ui-makeover` reposuna otomatik pushlanir.
-3. Backend/API/DB degisikligi gerekiyorsa `maliyet-analizleri-yazilimi` reposunda yapilir.
-4. Mobil uygulama degisikligi gerekiyorsa `urunkonfigapp` reposunda yapilir.
-5. Backend degisikligi localde dogrulanir.
-6. Backend degisikligi `maliyet-analizleri-yazilimi` reposuna commit edilir ve pushlanir.
-7. Backend Cloud Run'a deploy edilir.
-8. Lovable frontend ve mobil uygulama canli backend API URL'sine baglanir.
-9. Tarayici ve mobil istemci uzerinden gercek kullanici akislari test edilir.
-
-## Push Kurallari
-
-### Backend degisiklikleri
-
-Backend degisiklikleri bu repoya pushlanir:
-
-```text
-origin = https://github.com/burakboysan/maliyet-analizleri-yazilimi.git
-```
-
-Standart akis:
-
-```text
+```powershell
 git status
 git add <degisen-dosyalar>
 git commit -m "<aciklayici mesaj>"
@@ -119,57 +49,42 @@ git push
 
 Calisma agacinda alakasiz degisiklikler varsa sadece ilgili dosyalar stage edilir. Alakasiz veya kullanici tarafindan yapilmis degisiklikler geri alinmaz.
 
-### Lovable frontend degisiklikleri
+## Frontend Build ve Deploy
 
-Lovable degisiklikleri su repoya gider:
+Frontend hedefi Cloudflare Pages'tir.
 
-```text
-https://github.com/burakboysan/sweet-ui-makeover
+Cloudflare Pages ayarlari:
+
+- Root directory: `apps/web`
+- Build command: `npm run build`
+- Output directory: `dist`
+- Environment variable: `VITE_API_BASE_URL=https://<cloud-run-api-url>`
+- SPA deep-link fallback: `apps/web/public/_redirects` icindeki `/* /index.html 200`
+
+Local kontrol komutlari:
+
+```powershell
+cd apps/web
+npm install
+npm run build:local
 ```
 
-Bu degisiklikler ana backend reposuna otomatik olarak gelmez. Ana repoya alinacaksa ayrica kontrollu import veya merge yapilir.
+Production build `VITE_API_BASE_URL` olmadan fail etmelidir:
 
-### Mobil uygulama degisiklikleri
-
-Mobil uygulama degisiklikleri su repoya gider:
-
-```text
-https://github.com/burakboysan/urunkonfigapp
+```powershell
+cd apps/web
+npm run build
 ```
 
-Mobil repo icinde yeni backend veya DB source of truth olusturulmamali. Mobilin ihtiyac duydugu yeni API, auth veya veritabani davranisi once ana backend reposunda uygulanir; mobil client sadece bu kontrata uyarlanir.
+Env verilerek production build kontrolu:
 
-## Lovable Frontend Ana Repoya Ne Zaman Alinir?
+```powershell
+cd apps/web
+$env:VITE_API_BASE_URL = "https://<cloud-run-api-url>"
+npm run build
+```
 
-Lovable frontend su kosullar saglandiginda ana repoya alinabilir:
-
-- UI gelistirmeleri stabil hale gelmis olmalidir.
-- Backend API kontrati netlesmis olmalidir.
-- Eksik API etiketleri ve mock/placeholder alanlari listelenmis olmalidir.
-- `VITE_API_BASE_URL` ve build ayarlari ana repo standardina uyarlanmalidir.
-- Frontend test/build komutlari ana repo icinde calismalidir.
-
-O zamana kadar frontend'in ayri repo olarak kalmasi daha temizdir.
-
-## Kontrollu Import Akisi
-
-Lovable frontend ana repoya alinacaksa:
-
-1. `sweet-ui-makeover` reposundan son frontend kodu alinir.
-2. Ana repoda hedef klasor secilir:
-   - Tercih edilen hedef: `apps/web`
-3. Mevcut `apps/web` durumu incelenir.
-4. Gerekirse eski `apps/web` arsivlenir veya temizlenir.
-5. Lovable frontend dosyalari `apps/web` altina tasinir.
-6. Env ve API base URL ayarlari duzenlenir.
-7. Build ve smoke kontrolleri yapilir.
-8. Degisiklikler tek, anlasilir bir commit ile ana repoya pushlanir.
-
-Bu islem sirasinda backend API kontrati, env ayarlari ve deploy akisi korunmalidir.
-
-## Deploy Akisi
-
-### Backend deploy
+## Backend Deploy
 
 Backend deploy hedefi Cloud Run servisidir:
 
@@ -196,30 +111,6 @@ GET /auth/me
 GET /modules
 ```
 
-Kritik modul testleri:
-
-- Products
-- Materials
-- Leave management
-- Selection wizard
-- Documents
-- Fixed costs
-- User management
-- Mobile module permissions
-- Mobile configuration flows
-
-### Frontend deploy
-
-Frontend deploy Lovable veya `sweet-ui-makeover` repo akisi uzerinden yapilir.
-
-Frontend icin kontrol listesi:
-
-- `VITE_API_BASE_URL` canli backend URL'sini gosteriyor.
-- Login calisiyor.
-- Token `Authorization: Bearer <token>` olarak gonderiliyor.
-- CORS hatasi yok.
-- Eksik API olan ekranlar gercekten disabled veya `API bekliyor` durumunda.
-
 ## API Kontrati Kurali
 
 Frontend API kullanmadan once backend tarafinda endpoint mevcut olmalidir.
@@ -231,13 +122,13 @@ GET /openapi.json
 apps/api/app/routers/*
 ```
 
-Lovable tarafinda endpoint eklenmisse ama backend'de yoksa:
+Frontend tarafinda endpoint eklenmisse ama backend'de yoksa:
 
 - Frontend mock basari uretmemeli.
 - UI `API bekliyor` veya disabled state gostermeli.
 - Backend endpoint ayri task olarak eklenmeli.
 
-Mobil tarafta endpoint kullanilmadan once de ayni kural gecerlidir. Android `ApiService.kt` icindeki endpointler canli `/openapi.json` ile karsilastirilmali; ana backend'de olmayan endpointler icin mobil client mock basari uretmemeli ve backend task'i acilmalidir.
+Mobil tarafta endpoint kullanilmadan once de ayni kural gecerlidir. Android `ApiService.kt` icindeki endpointler canli `/openapi.json` ile karsilastirilmalidir.
 
 ## Guvenlik Kurallari
 
@@ -248,7 +139,7 @@ Yanlis:
 ```text
 Sadece sidebar'i gizlemek
 Sadece route guard kullanmak
-Sadece Lovable component icinde rol kontrolu yapmak
+Sadece component icinde rol kontrolu yapmak
 ```
 
 Dogru:
@@ -259,17 +150,6 @@ Her admin endpoint backend tarafinda owner/admin guard kullanir.
 Her module endpoint backend tarafinda module permission kontrolu yapar.
 Token dogrulama ve account state kontrolu merkezi dependency uzerinden yapilir.
 ```
-
-Backend authorization zorunludur. UI guard sadece kullanici deneyimi icindir.
-
-## Bilinen Risk Alanlari
-
-- `module_permissions` bos veya bozuk oldugunda fail-open davranmamali; deny-by-default olmali.
-- Inactive veya unverified kullanicilar login olamamali ve mevcut token ile API kullanamamali.
-- Admin ekranlari backend tarafinda rol kontrolu olmadan acik olmamali.
-- Lovable UI ile backend role modeli ayni olmali. Ornegin UI sadece `Owner` kabul ederken backend `Owner`, `Master Admin`, `Admin` kabul ediyorsa bu policy farki bilincli karar olarak dokumante edilmeli.
-- Canli Cloud Run kaynagi local `main` ile farkli olabilir. Deploy oncesi kaynak farki kontrol edilmelidir.
-- Mobil repodaki legacy FastAPI kodu yanlislikla yeni backend kaynagi gibi kullanilmamali. Tek backend source of truth `maliyet-analizleri-yazilimi/apps/api` olmalidir.
 
 ## Turkce Karakter ve Encoding Kurali
 
@@ -284,25 +164,23 @@ Kontrol edilmesi gerekenler:
 
 ## Rollback Akisi
 
-### Backend rollback
+Backend rollback:
 
 1. Cloud Run revisions listelenir.
 2. Son saglikli revision secilir.
 3. Trafik onceki revision'a alinir.
 4. `/health`, `/ready`, login ve kritik endpointler test edilir.
 
-### Frontend rollback
+Frontend rollback:
 
-1. Lovable veya frontend deploy platformunda onceki stabil deploy secilir.
-2. API base URL'nin dogru oldugu kontrol edilir.
+1. Cloudflare Pages'ta onceki stabil deploy secilir.
+2. `VITE_API_BASE_URL` degerinin dogru oldugu kontrol edilir.
 3. Login ve ana modul navigasyonu test edilir.
 
 ## Kisa Karar
 
-Su an icin onerilen akis:
-
 - Backend ana repo olarak `maliyet-analizleri-yazilimi` kalir.
-- Lovable frontend ayri repo olarak `sweet-ui-makeover` uzerinde kalir.
-- UI revizyonlari Lovable'da yapilir.
+- Frontend source of truth `apps/web` klasorudur.
+- UI revizyonlari `apps/web` icinde yapilir.
 - API, DB, security ve deploy isleri ana repoda yapilir.
-- Lovable frontend ana repoya ancak stabil oldugunda kontrollu import ile alinir.
+- Mobil uygulama ayri `urunkonfigapp` reposunda kalir.
