@@ -11,3 +11,6 @@ node_modules/
 apps/web/dist/
 apps/web/.vite/
 supabase/.temp/
+.codex-cli-home/
+.codex-lovable-source/
+outputs/

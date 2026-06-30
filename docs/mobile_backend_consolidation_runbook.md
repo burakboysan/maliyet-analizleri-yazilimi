@@ -18,7 +18,7 @@ Bu dokuman, `urunkonfigapp` mobil uygulamasinin web app ile ayni FastAPI backend
 |---|---|---|
 | FastAPI backend | `maliyet-analizleri-yazilimi/apps/api` | Auth, role, module permission ve tum kritik API kontrolleri burada olur. |
 | Veritabani migrationlari | `maliyet-analizleri-yazilimi/sql` | Mobil ihtiyaclari da ana repo migrationlariyla ilerler. |
-| Lovable web frontend | `sweet-ui-makeover` | UI ve API client kodu; backend kontratini takip eder. |
+| Web frontend | `maliyet-analizleri-yazilimi/apps/web` | UI ve API client kodu; backend kontratini takip eder. |
 | Android mobil app | `urunkonfigapp/android` | Mobil client, ana backend API'sini kullanir. |
 | Legacy mobil API | `urunkonfigapp/app` | Yeni source of truth degildir; sadece karsilastirma ve tasima referansidir. |
 
