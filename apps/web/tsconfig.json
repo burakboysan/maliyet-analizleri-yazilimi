@@ -12,6 +12,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "strict": true,
+    "ignoreDeprecations": "5.0",
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
