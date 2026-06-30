@@ -14,8 +14,8 @@ import {
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
-import logo from "../assets/logo.png";
 
+const logoLight = "/assets/lovable/logo-light.png";
 const loginHero = "/assets/lovable/login-hero.webp";
 
 export const Route = createFileRoute("/login")({
@@ -202,7 +202,7 @@ function LoginPage() {
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(100%_60%_at_50%_0%,rgba(239,68,68,0.07)_0%,transparent_60%)]" />
         <div className="relative w-full max-w-sm">
           <img
-            src={logo}
+            src={logoLight}
             alt="Bomaksan"
             className="mb-5 h-9 w-auto"
           />
