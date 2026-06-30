@@ -25,7 +25,13 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Skeleton } from "../components/ui/skeleton";
 
-const productImages: Record<string, string> = {};
+const productImages: Record<string, string> = {
+  alverpro: "/assets/lovable/products/ALVERpro.png",
+  ecog: "/assets/lovable/products/ECOG.png",
+  line: "/assets/lovable/products/LINE.png",
+  pkfc: "/assets/lovable/products/PKFC.png",
+  verty: "/assets/lovable/products/Verty.png",
+};
 
 // Friendly Turkish labels for configuration summary keys returned by the API.
 const FIELD_LABELS: Record<string, string> = {

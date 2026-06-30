@@ -16,6 +16,8 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import logo from "../assets/logo.png";
 
+const loginHero = "/assets/lovable/login-hero.webp";
+
 export const Route = createFileRoute("/login")({
   head: () => ({
     meta: [{ title: "Giriş — Bomaksan Maliyet Analizleri" }],
@@ -131,7 +133,11 @@ function LoginPage() {
 
   return (
     <div className="login-dark relative grid min-h-screen overflow-hidden bg-background text-foreground lg:grid-cols-[1fr_1.05fr]">
-      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,#151515_0%,#2a1114_45%,#0f0f10_100%)]" />
+      <img
+        src={loginHero}
+        alt="Bomaksan endüstriyel filtrasyon sistemleri"
+        className="pointer-events-none absolute inset-0 size-full object-cover"
+      />
       {/* layered background overlays span the whole screen */}
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_120%_at_85%_0%,rgba(26,6,8,0.78)_0%,rgba(10,10,11,0.9)_60%)]" />
       <div
